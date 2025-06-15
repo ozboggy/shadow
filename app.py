@@ -58,31 +58,53 @@ marker_cluster = MarkerCluster().add_to(fmap)
 
 now = datetime.utcnow()
 for ac in aircraft_states:
-    icao24, callsign, origin_country, time_position, last_contact, lon, lat, baro_altitude, on_ground, velocity, heading, vertical_rate, sensors, geo_altitude, squawk, spi, position_source = ac
+    try:
+        icao24, callsign, origin_country, time_position, last_contact, lon, lat, baro_altitude, on_ground, velocity, heading, vertical_rate, sensors, geo_altitude, squawk, spi, position_source = ac
 
-    if lat is not None and lon is not None and geo_altitude is not None:
-        alt = geo_altitude
-        heading = heading or 0
-        callsign = callsign.strip() if callsign else "N/A"
+        if lat is not None and lon is not None and geo_altitude is not None:
+            alt = geo_altitude
+            heading = heading or 0
+            callsign = callsign.strip() if callsign else "N/A"
 
-        shadow_distance = alt / math.tan(math.radians(max(1, solar_elevation(lat, lon, now))))
-        shadow_lat = lat - (shadow_distance / 111111) * math.cos(math.radians(heading))
-        shadow_lon = lon - (shadow_distance / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(heading))
+            # Calculate shadow point
+            sun_elevation = max(1, solar_elevation(lat, lon, now))
+            shadow_distance = alt / math.tan(math.radians(sun_elevation))
+            shadow_lat = lat - (shadow_distance / 111111) * math.cos(math.radians(heading))
+            shadow_lon = lon - (shadow_distance / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(heading))
 
-        folium.Marker(
-            location=(lat, lon),
-            icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
-            popup=f"Callsign: {callsign}\nAlt: {round(alt)} m"
-        ).add_to(marker_cluster)
+            # Aircraft marker
+            folium.Marker(
+                location=(lat, lon),
+                icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
+                popup=f"Callsign: {callsign}\nAlt: {round(alt)} m"
+            ).add_to(marker_cluster)
 
-        folium.CircleMarker(
-            location=(shadow_lat, shadow_lon),
-            radius=5,
-            color='black',
-            fill=True,
-            fill_color='black',
-            fill_opacity=0.5,
-            popup=f"Shadow of {callsign}"
-        ).add_to(fmap)
+            # Shadow marker
+            folium.CircleMarker(
+                location=(shadow_lat, shadow_lon),
+                radius=5,
+                color='black',
+                fill=True,
+                fill_color='black',
+                fill_opacity=0.6,
+                popup=f"Shadow of {callsign}"
+            ).add_to(fmap)
+
+            # Shadow line
+            folium.PolyLine(
+                locations=[(lat, lon), (shadow_lat, shadow_lon)],
+                color='gray',
+                weight=2,
+                opacity=0.6,
+                tooltip=f"{callsign} ➝ Shadow"
+            ).add_to(fmap)
+
+            # Aircraft label
+            folium.Marker(
+                location=(lat + 0.01, lon + 0.01),  # Slight offset to avoid overlapping the marker
+                icon=folium.DivIcon(html=f"<div style='font-size: 10pt'>{callsign}</div>")
+            ).add_to(fmap)
+    except Exception as err:
+        continue
 
 st_folium(fmap, width=1000, height=700)
