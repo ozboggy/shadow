@@ -9,7 +9,7 @@ import math
 from pysolar.solar import get_altitude, get_azimuth
 
 st.set_page_config(layout="wide")
-st.title("☀️ OpenSky Aircraft Shadow Tracker (Corrected Shadows)")
+st.title("☀️ OpenSky Aircraft Shadow Tracker (With Time Control)")
 
 st.sidebar.header("🔧 Settings")
 
@@ -20,6 +20,9 @@ east = st.sidebar.number_input("East Longitude", value=151.5)
 
 username = st.sidebar.text_input("OpenSky Username (optional)")
 password = st.sidebar.text_input("OpenSky Password", type="password")
+
+selected_time = st.sidebar.datetime_input("📅 Select UTC Time for Sun Position", value=datetime.utcnow())
+st.sidebar.caption("This affects where shadows fall (or if they appear at all).")
 
 def fetch_opensky_aircraft(north, south, west, east, username=None, password=None):
     url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
@@ -34,58 +37,61 @@ def fetch_opensky_aircraft(north, south, west, east, username=None, password=Non
 data = fetch_opensky_aircraft(north, south, west, east, username, password)
 aircraft_states = data.get("states", [])
 st.write(f"✅ Found {len(aircraft_states)} aircraft in the selected region.")
-
-map_center = [(north + south) / 2, (east + west) / 2]
-fmap = folium.Map(location=map_center, zoom_start=9)
+fmap = folium.Map(location=[(north + south)/2, (east + west)/2], zoom_start=9)
 marker_cluster = MarkerCluster().add_to(fmap)
 
-now = datetime.utcnow()
+sun_state_message_shown = False
+
 for ac in aircraft_states:
     try:
         icao24, callsign, origin_country, time_position, last_contact, lon, lat, baro_altitude, on_ground, velocity, heading, vertical_rate, sensors, geo_altitude, squawk, spi, position_source = ac
 
-        if lat is not None and lon is not None and geo_altitude is not None:
-            alt = geo_altitude
+        if lat is not None and lon is not None:
+            alt = geo_altitude if geo_altitude is not None else 0
             callsign = callsign.strip() if callsign else "N/A"
 
-            sun_alt = get_altitude(lat, lon, now)
-            sun_az = get_azimuth(lat, lon, now)
+            sun_alt = get_altitude(lat, lon, selected_time)
+            sun_az = get_azimuth(lat, lon, selected_time)
 
-            if sun_alt <= 0:
-                continue  # sun is below horizon
-
-            shadow_dist = alt / math.tan(math.radians(sun_alt))
-            shadow_lat = lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
-            shadow_lon = lon + (shadow_dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
-
+            # Aircraft marker
             folium.Marker(
                 location=(lat, lon),
                 icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
                 popup=f"Callsign: {callsign}\nAlt: {round(alt)} m"
             ).add_to(marker_cluster)
 
-            folium.CircleMarker(
-                location=(shadow_lat, shadow_lon),
-                radius=5,
-                color='black',
-                fill=True,
-                fill_color='black',
-                fill_opacity=0.6,
-                popup=f"Shadow of {callsign}"
-            ).add_to(fmap)
-
-            folium.PolyLine(
-                locations=[(lat, lon), (shadow_lat, shadow_lon)],
-                color='gray',
-                weight=2,
-                opacity=0.6,
-                tooltip=f"{callsign} ➝ Shadow"
-            ).add_to(fmap)
-
+            # Aircraft label
             folium.Marker(
                 location=(lat + 0.01, lon + 0.01),
                 icon=folium.DivIcon(html=f"<div style='font-size: 10pt'>{callsign}</div>")
             ).add_to(fmap)
+
+            if sun_alt > 0 and alt > 0:
+                shadow_dist = alt / math.tan(math.radians(sun_alt))
+                shadow_lat = lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
+                shadow_lon = lon + (shadow_dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
+
+                folium.CircleMarker(
+                    location=(shadow_lat, shadow_lon),
+                    radius=5,
+                    color='black',
+                    fill=True,
+                    fill_color='black',
+                    fill_opacity=0.6,
+                    popup=f"Shadow of {callsign}"
+                ).add_to(fmap)
+
+                folium.PolyLine(
+                    locations=[(lat, lon), (shadow_lat, shadow_lon)],
+                    color='gray',
+                    weight=2,
+                    opacity=0.6,
+                    tooltip=f"{callsign} ➝ Shadow"
+                ).add_to(fmap)
+            else:
+                if not sun_state_message_shown:
+                    st.info("🌙 The sun is currently below the horizon at aircraft locations — shadows will not appear.")
+                    sun_state_message_shown = True
     except Exception:
         continue
 
