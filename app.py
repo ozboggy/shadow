@@ -153,12 +153,7 @@ if alerts_triggered:
     </script>
     ''', unsafe_allow_html=True)
     
-    
-    # Zoom to first alert
-    if alerts_triggered:
-        fmap.location = [alerts_triggered[0][2], alerts_triggered[0][3]]
-        fmap.zoom_start = 13
-    for cs, t, _, _ in alerts_triggered:
+        for cs, t, _, _ in alerts_triggered:
     
         st.write(f"✈️ {cs} — in approx. {t} seconds")
 else:
