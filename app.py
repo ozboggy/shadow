@@ -4,12 +4,12 @@ import requests
 import folium
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timezone
 import math
 from pysolar.solar import get_altitude, get_azimuth
 
 st.set_page_config(layout="wide")
-st.title("🔎 DEBUG: OpenSky Aircraft Shadow Tracker")
+st.title("🔎 DEBUG: OpenSky Aircraft Shadow Tracker (Fixed Timezone)")
 
 st.sidebar.header("🔧 Settings")
 
@@ -23,7 +23,7 @@ password = st.sidebar.text_input("OpenSky Password", type="password")
 
 selected_date = st.sidebar.date_input("📅 Select UTC Date", value=datetime.utcnow().date())
 selected_time_only = st.sidebar.time_input("⏰ Select UTC Time", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
-selected_time = datetime.combine(selected_date, selected_time_only)
+selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
 
 st.sidebar.caption("Use this to simulate time of day for sun position.")
 
