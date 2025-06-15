@@ -73,7 +73,20 @@ folium.Marker(
     popup="Target Alert Location"
 ).add_to(fmap)
 
+
+import csv
+import os
+
 alerts_triggered = []
+log_file = "alert_log.csv"
+log_path = os.path.join(os.path.dirname(__file__), log_file)
+
+# Ensure file exists with header
+if not os.path.exists(log_path):
+    with open(log_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
+
 
 
 home_lat = -33.7608864
@@ -118,7 +131,12 @@ for ac in filtered_states:
                     trail.append((shadow_lat, shadow_lon))
 
                     if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
-                        alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
+                        
+alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
+with open(log_path, "a", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
+
                         shadow_alerted = True
 
             if trail:
@@ -160,3 +178,30 @@ else:
     st.success("✅ No forecast shadow paths intersect target area.")
 
 st_folium(fmap, width=1000, height=700)
+
+
+import pandas as pd
+import plotly.express as px
+
+if os.path.exists(log_path):
+    st.sidebar.markdown("### 📥 Download Alert Log")
+    with open(log_path, "rb") as f:
+        st.sidebar.download_button(
+            label="Download alert_log.csv",
+            data=f,
+            file_name="alert_log.csv",
+            mime="text/csv"
+        )
+
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        df_recent = df_log.sort_values(by="Time UTC", ascending=False).head(10)
+
+        st.markdown("### 📊 Recent Shadow Alerts (Last 10)")
+        st.dataframe(df_recent)
+
+        st.markdown("### ⏳ Alerts Over Time")
+        fig = px.scatter(df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)",
+                         hover_data=["Lat", "Lon"], title="Alert Timing vs Aircraft")
+        st.plotly_chart(fig, use_container_width=True)
