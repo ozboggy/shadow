@@ -1,104 +1,86 @@
+
 import streamlit as st
 import requests
-from datetime import datetime
-from math import tan, radians, cos
-from geopy.distance import distance
-from geopy import Point
 import folium
+from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
-from astral import LocationInfo
-from astral.location import Location
+from datetime import datetime
+import math
 
 st.set_page_config(layout="wide")
-st.title("Live Aircraft Shadow Tracker ✈️ with Labels and Manual Refresh")
+st.title("✈️ FlightRadar24 Aircraft Shadow Tracker - Western Sydney")
 
-# Sidebar configuration
-st.sidebar.header("🔍 Filter Settings")
-center_lat = st.sidebar.number_input("Center Latitude", value=35.6895)
-center_lon = st.sidebar.number_input("Center Longitude", value=139.6917)
-radius_km = st.sidebar.slider("Search Radius (km)", 10, 300, 100)
-min_altitude = st.sidebar.number_input("Minimum Altitude (m)", value=500)
-max_aircraft = st.sidebar.slider("Max Aircraft to Show", 1, 25, 5)
-callsign_filter = st.sidebar.text_input("Filter by Callsign (optional)")
-manual_refresh = st.sidebar.button("🔄 Refresh Data")
+st.sidebar.header("🔧 Settings")
 
-now = datetime.utcnow()
-st.write(f"🕒 **Current UTC Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
+# FR24 token input
+fr24_token = st.sidebar.text_input("Enter your FR24 session token", type="password")
 
-# Bounding box
-lat_margin = radius_km / 111
-lon_margin = radius_km / (111 * abs(cos(radians(center_lat))))
-min_lat = center_lat - lat_margin
-max_lat = center_lat + lat_margin
-min_lon = center_lon - lon_margin
-max_lon = center_lon + lon_margin
+# Bounding box around Western Sydney (-33.7604795, 150.9691273)
+north = st.sidebar.number_input("North Latitude", value=-33.2605)
+south = st.sidebar.number_input("South Latitude", value=-34.2605)
+west = st.sidebar.number_input("West Longitude", value=150.4691)
+east = st.sidebar.number_input("East Longitude", value=151.4691)
 
-@st.cache_data(ttl=30, show_spinner=True)
-def fetch_opensky():
-    url = "https://opensky-network.org/api/states/all"
-    params = {
-        "lamin": min_lat,
-        "lamax": max_lat,
-        "lomin": min_lon,
-        "lomax": max_lon
+# Fetch FR24 data
+def fetch_fr24_aircraft(token, north, south, west, east):
+    url = f"https://data-cloud.flightradar24.com/zones/fcgi/feed.js?bounds={north},{south},{west},{east}&faa=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=0&estimated=1&maxage=14400"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Cookie": f"fr24_cookie={token}"
     }
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, headers=headers)
         r.raise_for_status()
-        return r.json().get("states", [])
+        return r.json()
     except Exception as e:
-        st.error(f"OpenSky API error: {e}")
-        return []
+        st.error(f"Error fetching FR24 data: {e}")
+        return {}
 
-# Optionally clear cache if button is pressed
-if manual_refresh:
-    fetch_opensky.clear()
+# Calculate solar elevation angle
+def solar_elevation(lat, lon, date_time):
+    day_of_year = date_time.timetuple().tm_yday
+    decl = 23.44 * math.cos(math.radians((360 / 365) * (day_of_year - 81)))
+    hour_angle = 15 * (date_time.hour + date_time.minute / 60 - 12)
+    elevation = math.degrees(math.asin(
+        math.sin(math.radians(lat)) * math.sin(math.radians(decl)) +
+        math.cos(math.radians(lat)) * math.cos(math.radians(decl)) * math.cos(math.radians(hour_angle))
+    ))
+    return elevation
 
-aircraft_data = fetch_opensky()
+if fr24_token:
+    data = fetch_fr24_aircraft(fr24_token, north, south, west, east)
+    aircraft_data = {k: v for k, v in data.items() if isinstance(v, dict)}
 
-m = folium.Map(location=[center_lat, center_lon], zoom_start=7)
-count = 0
+    map_center = [(north + south) / 2, (east + west) / 2]
+    fmap = folium.Map(location=map_center, zoom_start=9)
+    marker_cluster = MarkerCluster().add_to(fmap)
 
-for ac in aircraft_data:
-    try:
-        icao, callsign, origin_country, _, _, lon, lat, geo_alt, _, heading = ac[:10]
-        if not all([lat, lon, geo_alt]) or geo_alt < min_altitude:
-            continue
-        if callsign_filter and callsign_filter.upper() not in (callsign or ""):
-            continue
+    now = datetime.utcnow()
+    for k, ac in aircraft_data.items():
+        if 'lat' in ac and 'lon' in ac and 'altitude' in ac:
+            lat, lon, alt = ac['lat'], ac['lon'], ac['altitude']
+            heading = ac.get('track', 0)
+            callsign = ac.get('callsign', 'N/A')
+            shadow_distance = alt / math.tan(math.radians(max(1, solar_elevation(lat, lon, now))))
+            shadow_lat = lat - (shadow_distance / 111111) * math.cos(math.radians(heading))
+            shadow_lon = lon - (shadow_distance / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(heading))
 
-        # Sun position
-        location = LocationInfo(latitude=lat, longitude=lon)
-        loc = Location(location)
-        loc.timezone = 'UTC'
-        elev_angle = loc.solar_elevation(now, observer_elevation=0)
-        az_angle = loc.solar_azimuth(now, observer_elevation=0)
-        if elev_angle <= 0:
-            continue
+            folium.Marker(
+                location=(lat, lon),
+                icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
+                popup=f"Callsign: {callsign}\nAlt: {alt} ft"
+            ).add_to(marker_cluster)
 
-        # Shadow point
-        shadow_dist = geo_alt / tan(radians(elev_angle))
-        aircraft_pt = Point(lat, lon)
-        shadow_pt = distance(meters=shadow_dist).destination(aircraft_pt, az_angle)
+            folium.CircleMarker(
+                location=(shadow_lat, shadow_lon),
+                radius=5,
+                color='black',
+                fill=True,
+                fill_color='black',
+                fill_opacity=0.5,
+                popup=f"Shadow of {callsign}"
+            ).add_to(fmap)
 
-        # Heading animation (trail)
-        trail_points = []
-        for d in range(1000, 6000, 1000):
-            next_point = distance(meters=d).destination(aircraft_pt, heading or 0)
-            trail_points.append((next_point.latitude, next_point.longitude))
-
-        # Markers and lines
-        label = f"{callsign.strip() if callsign else 'N/A'} ({origin_country})\nAlt: {int(geo_alt)} m"
-        folium.Marker([lat, lon], popup=label, icon=folium.DivIcon(html=f"<b>{callsign.strip() if callsign else '✈️'}</b>")).add_to(m)
-        folium.Marker([shadow_pt.latitude, shadow_pt.longitude], popup="Shadow", icon=folium.Icon(color="black")).add_to(m)
-        folium.PolyLine([(lat, lon), (shadow_pt.latitude, shadow_pt.longitude)], color="gray").add_to(m)
-        folium.PolyLine([(lat, lon)] + trail_points, color="green", dash_array="5").add_to(m)
-
-        count += 1
-        if count >= max_aircraft:
-            break
-    except:
-        continue
-
-st.success(f"🛩️ Displaying {count} aircraft with shadows and trails")
-st_folium(m, width=1000, height=600)
+    st_folium(fmap, width=1000, height=700)
+else:
+    st.info("Enter your FR24 token in the sidebar to begin.")
