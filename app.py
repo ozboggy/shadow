@@ -9,58 +9,60 @@ import math
 from pysolar.solar import get_altitude, get_azimuth
 
 st.set_page_config(layout="wide")
-st.title("🔎 DEBUG: OpenSky Aircraft Shadow Tracker (Fixed Timezone)")
+st.title("✈️ Aircraft Shadow Tracker with Alert")
 
-st.sidebar.header("🔧 Settings")
+st.sidebar.header("🕒 Select Time")
 
-north = st.sidebar.number_input("North Latitude", value=-33.0)
-south = st.sidebar.number_input("South Latitude", value=-34.5)
-west = st.sidebar.number_input("West Longitude", value=150.0)
-east = st.sidebar.number_input("East Longitude", value=151.5)
-
-username = st.sidebar.text_input("OpenSky Username (optional)")
-password = st.sidebar.text_input("OpenSky Password", type="password")
-
-selected_date = st.sidebar.date_input("📅 Select UTC Date", value=datetime.utcnow().date())
-selected_time_only = st.sidebar.time_input("⏰ Select UTC Time", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
+selected_date = st.sidebar.date_input("📅 UTC Date", value=datetime.utcnow().date())
+selected_time_only = st.sidebar.time_input("⏰ UTC Time", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
 selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
 
-st.sidebar.caption("Use this to simulate time of day for sun position.")
+st.sidebar.caption("Simulates sunlight and aircraft shadows.")
 
-def fetch_opensky_aircraft(north, south, west, east, username=None, password=None):
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
-    try:
-        r = requests.get(url, auth=(username, password)) if username and password else requests.get(url)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        st.error(f"Error fetching OpenSky data: {e}")
-        return {}
+TARGET_LAT = -33.7575936
+TARGET_LON = 150.9687296
+ALERT_RADIUS_METERS = 300
 
-data = fetch_opensky_aircraft(north, south, west, east, username, password)
-st.subheader("🧾 Raw API Response")
-st.json(data)
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371000  # meters
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    return R * c
+
+# OpenSky bounding box (Sydney region)
+north, south, west, east = -33.0, -34.5, 150.0, 151.5
+url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+try:
+    r = requests.get(url)
+    r.raise_for_status()
+    data = r.json()
+except Exception as e:
+    st.error(f"Error fetching OpenSky data: {e}")
+    data = {}
 
 aircraft_states = data.get("states", [])
 st.write(f"✅ Found {len(aircraft_states)} aircraft entries.")
-
 fmap = folium.Map(location=[(north + south)/2, (east + west)/2], zoom_start=9)
 marker_cluster = MarkerCluster().add_to(fmap)
 
-sun_state_message_shown = False
+folium.Marker(
+    location=(TARGET_LAT, TARGET_LON),
+    icon=folium.Icon(color="red", icon="flag"),
+    popup="Target Alert Location"
+).add_to(fmap)
+
+alerts_triggered = []
 
 for ac in aircraft_states:
     try:
         icao24, callsign, origin_country, time_position, last_contact, lon, lat, baro_altitude, on_ground, velocity, heading, vertical_rate, sensors, geo_altitude, squawk, spi, position_source = ac
-
         if lat is not None and lon is not None:
             alt = geo_altitude if geo_altitude is not None else 0
             callsign = callsign.strip() if callsign else "N/A"
-
             sun_alt = get_altitude(lat, lon, selected_time)
             sun_az = get_azimuth(lat, lon, selected_time)
-
-            st.write(f"🛩️ {callsign}: lat={lat}, lon={lon}, alt={alt}m, sun_elev={sun_alt:.2f}°, sun_az={sun_az:.2f}°")
 
             folium.Marker(
                 location=(lat, lon),
@@ -77,8 +79,6 @@ for ac in aircraft_states:
                 shadow_dist = alt / math.tan(math.radians(sun_alt))
                 shadow_lat = lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
                 shadow_lon = lon + (shadow_dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
-
-                st.write(f"    ➤ Shadow at lat={shadow_lat:.5f}, lon={shadow_lon:.5f}, dist={shadow_dist:.1f}m")
 
                 folium.CircleMarker(
                     location=(shadow_lat, shadow_lon),
@@ -97,9 +97,18 @@ for ac in aircraft_states:
                     opacity=0.6,
                     tooltip=f"{callsign} ➝ Shadow"
                 ).add_to(fmap)
-            else:
-                st.write("    🚫 Sun is below horizon — shadow not drawn.")
+
+                dist = haversine(TARGET_LAT, TARGET_LON, shadow_lat, shadow_lon)
+                if dist <= ALERT_RADIUS_METERS:
+                    alerts_triggered.append((callsign, dist))
     except Exception as e:
         st.warning(f"⚠️ Error processing aircraft: {e}")
+
+if alerts_triggered:
+    st.error("🚨 ALERT! Shadow over target location:")
+    for cs, d in alerts_triggered:
+        st.write(f"✈️ {cs} — approx. {int(d)} meters away")
+else:
+    st.success("✅ No aircraft shadows over the target at this time.")
 
 st_folium(fmap, width=1000, height=700)
