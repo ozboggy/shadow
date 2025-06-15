@@ -8,6 +8,7 @@ from datetime import datetime, time as dt_time, timezone, timedelta
 import math
 from pysolar.solar import get_altitude, get_azimuth
 
+import math
 from math import radians, cos, sin, asin, sqrt
 
 st.set_page_config(layout="wide")
@@ -118,7 +119,18 @@ for ac in aircraft_states:
         st.warning(f"⚠️ Error processing aircraft: {e}")
 
 if alerts_triggered:
+    
     st.error("🚨 Forecast ALERT! Shadow will cross target:")
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg")
+    st.markdown(f'''
+    <script>
+        new Notification("✈️ Shadow Alert", {{
+            body: "An aircraft shadow will pass over the target area!",
+            icon: "https://cdn-icons-png.flaticon.com/512/684/684908.png"
+        }});
+    </script>
+    ''', unsafe_allow_html=True)
+    
     for cs, t in alerts_triggered:
         st.write(f"✈️ {cs} — in approx. {t} seconds")
 else:
