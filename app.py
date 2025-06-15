@@ -8,18 +8,18 @@ from datetime import datetime
 import math
 
 st.set_page_config(layout="wide")
-st.title("✈️ FlightRadar24 Aircraft Shadow Tracker - Western Sydney")
+st.title("✈️ FlightRadar24 Aircraft Shadow Tracker - Western Sydney [DEBUG MODE]")
 
 st.sidebar.header("🔧 Settings")
 
 # FR24 token input
 fr24_token = st.sidebar.text_input("Enter your FR24 session token", type="password")
 
-# Bounding box around Western Sydney (-33.7604795, 150.9691273)
-north = st.sidebar.number_input("North Latitude", value=-33.2605)
-south = st.sidebar.number_input("South Latitude", value=-34.2605)
-west = st.sidebar.number_input("West Longitude", value=150.4691)
-east = st.sidebar.number_input("East Longitude", value=151.4691)
+# Bounding box around Western Sydney
+north = st.sidebar.number_input("North Latitude", value=-33.0)
+south = st.sidebar.number_input("South Latitude", value=-34.5)
+west = st.sidebar.number_input("West Longitude", value=150.0)
+east = st.sidebar.number_input("East Longitude", value=151.5)
 
 # Fetch FR24 data
 def fetch_fr24_aircraft(token, north, south, west, east):
@@ -49,7 +49,14 @@ def solar_elevation(lat, lon, date_time):
 
 if fr24_token:
     data = fetch_fr24_aircraft(fr24_token, north, south, west, east)
+    st.subheader("🔍 API Raw Response (DEBUG)")
+    st.write(data)
+
     aircraft_data = {k: v for k, v in data.items() if isinstance(v, dict)}
+    st.write(f"✅ Found {len(aircraft_data)} aircraft.")
+
+    if not aircraft_data:
+        st.warning("No aircraft found or token might be invalid. Try expanding the area or double-check your token.")
 
     map_center = [(north + south) / 2, (east + west) / 2]
     fmap = folium.Map(location=map_center, zoom_start=9)
