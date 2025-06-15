@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 from datetime import datetime
-from math import tan, radians, cos, sin
+from math import tan, radians, cos
 from geopy.distance import distance
 from geopy import Point
 import folium
@@ -10,9 +10,9 @@ from astral import LocationInfo
 from astral.location import Location
 
 st.set_page_config(layout="wide")
-st.title("Enhanced Aircraft Shadow Tracker ✈️ with OpenSky")
+st.title("Live Aircraft Shadow Tracker ✈️ with Labels and Heading Animation")
 
-# Settings
+# Sidebar configuration
 st.sidebar.header("🔍 Filter Settings")
 center_lat = st.sidebar.number_input("Center Latitude", value=35.6895)
 center_lon = st.sidebar.number_input("Center Longitude", value=139.6917)
@@ -22,7 +22,6 @@ max_aircraft = st.sidebar.slider("Max Aircraft to Show", 1, 25, 5)
 callsign_filter = st.sidebar.text_input("Filter by Callsign (optional)")
 refresh_interval = st.sidebar.selectbox("Auto-Refresh Interval", [0, 10, 30, 60], index=2)
 
-# Refresh
 if refresh_interval > 0:
     st.experimental_rerun()
 
@@ -73,7 +72,6 @@ for ac in aircraft_data:
         loc.timezone = 'UTC'
         elev_angle = loc.solar_elevation(now, observer_elevation=0)
         az_angle = loc.solar_azimuth(now, observer_elevation=0)
-
         if elev_angle <= 0:
             continue
 
@@ -82,25 +80,24 @@ for ac in aircraft_data:
         aircraft_pt = Point(lat, lon)
         shadow_pt = distance(meters=shadow_dist).destination(aircraft_pt, az_angle)
 
-        # Heading vector
-        heading_point = distance(meters=5000).destination(aircraft_pt, heading or 0)
+        # Heading animation (trail)
+        trail_points = []
+        for d in range(1000, 6000, 1000):
+            next_point = distance(meters=d).destination(aircraft_pt, heading or 0)
+            trail_points.append((next_point.latitude, next_point.longitude))
 
-        # Markers
-        folium.Marker([lat, lon],
-                      popup=f"{callsign or 'N/A'} ({origin_country})\nAlt: {int(geo_alt)} m",
-                      icon=folium.Icon(color="blue")).add_to(m)
-        folium.Marker([shadow_pt.latitude, shadow_pt.longitude],
-                      popup="Shadow",
-                      icon=folium.Icon(color="black")).add_to(m)
+        # Markers and lines
+        label = f"{callsign.strip() if callsign else 'N/A'} ({origin_country})\nAlt: {int(geo_alt)} m"
+        folium.Marker([lat, lon], popup=label, icon=folium.DivIcon(html=f"<b>{callsign.strip() if callsign else '✈️'}</b>")).add_to(m)
+        folium.Marker([shadow_pt.latitude, shadow_pt.longitude], popup="Shadow", icon=folium.Icon(color="black")).add_to(m)
         folium.PolyLine([(lat, lon), (shadow_pt.latitude, shadow_pt.longitude)], color="gray").add_to(m)
-        folium.PolyLine([(lat, lon), (heading_point.latitude, heading_point.longitude)], color="green", dash_array="5").add_to(m)
+        folium.PolyLine([(lat, lon)] + trail_points, color="green", dash_array="5").add_to(m)
 
         count += 1
         if count >= max_aircraft:
             break
-
-    except Exception as e:
+    except:
         continue
 
-st.success(f"🛩️ Displaying {count} aircraft with shadow projections")
+st.success(f"🛩️ Displaying {count} aircraft with shadows and heading vectors")
 st_folium(m, width=1000, height=600)
