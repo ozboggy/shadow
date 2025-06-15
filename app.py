@@ -132,12 +132,12 @@ for ac in filtered_states:
 
                     if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
                         
-alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
-with open(log_path, "a", newline="") as f:
+    alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
+    with open(log_path, "a", newline="") as f:
     writer = csv.writer(f)
-    writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
+            writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
 
-                        shadow_alerted = True
+                            shadow_alerted = True
 
             if trail:
                 folium.PolyLine(
