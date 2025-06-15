@@ -8,32 +8,32 @@ from datetime import datetime
 import math
 
 st.set_page_config(layout="wide")
-st.title("✈️ FlightRadar24 Aircraft Shadow Tracker - Western Sydney [DEBUG MODE]")
+st.title("✈️ OpenSky Aircraft Shadow Tracker - Western Sydney")
 
 st.sidebar.header("🔧 Settings")
 
-# FR24 token input
-fr24_token = st.sidebar.text_input("Enter your FR24 session token", type="password")
-
-# Bounding box around Western Sydney
+# Define bounding box for Western Sydney
 north = st.sidebar.number_input("North Latitude", value=-33.0)
 south = st.sidebar.number_input("South Latitude", value=-34.5)
 west = st.sidebar.number_input("West Longitude", value=150.0)
 east = st.sidebar.number_input("East Longitude", value=151.5)
 
-# Fetch FR24 data
-def fetch_fr24_aircraft(token, north, south, west, east):
-    url = f"https://data-cloud.flightradar24.com/zones/fcgi/feed.js?bounds={north},{south},{west},{east}&faa=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=0&estimated=1&maxage=14400"
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Cookie": f"fr24_cookie={token}"
-    }
+# Optional: OpenSky Basic Auth (optional, helps with rate limit)
+username = st.sidebar.text_input("OpenSky Username (optional)")
+password = st.sidebar.text_input("OpenSky Password", type="password")
+
+# Fetch OpenSky data
+def fetch_opensky_aircraft(north, south, west, east, username=None, password=None):
+    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
     try:
-        r = requests.get(url, headers=headers)
+        if username and password:
+            r = requests.get(url, auth=(username, password))
+        else:
+            r = requests.get(url)
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        st.error(f"Error fetching FR24 data: {e}")
+        st.error(f"Error fetching OpenSky data: {e}")
         return {}
 
 # Calculate solar elevation angle
@@ -47,47 +47,42 @@ def solar_elevation(lat, lon, date_time):
     ))
     return elevation
 
-if fr24_token:
-    data = fetch_fr24_aircraft(fr24_token, north, south, west, east)
-    st.subheader("🔍 API Raw Response (DEBUG)")
-    st.write(data)
+# Main logic
+data = fetch_opensky_aircraft(north, south, west, east, username, password)
+aircraft_states = data.get("states", [])
+st.write(f"✅ Found {len(aircraft_states)} aircraft in the selected region.")
 
-    aircraft_data = {k: v for k, v in data.items() if isinstance(v, dict)}
-    st.write(f"✅ Found {len(aircraft_data)} aircraft.")
+map_center = [(north + south) / 2, (east + west) / 2]
+fmap = folium.Map(location=map_center, zoom_start=9)
+marker_cluster = MarkerCluster().add_to(fmap)
 
-    if not aircraft_data:
-        st.warning("No aircraft found or token might be invalid. Try expanding the area or double-check your token.")
+now = datetime.utcnow()
+for ac in aircraft_states:
+    icao24, callsign, origin_country, time_position, last_contact, lon, lat, baro_altitude, on_ground, velocity, heading, vertical_rate, sensors, geo_altitude, squawk, spi, position_source = ac
 
-    map_center = [(north + south) / 2, (east + west) / 2]
-    fmap = folium.Map(location=map_center, zoom_start=9)
-    marker_cluster = MarkerCluster().add_to(fmap)
+    if lat is not None and lon is not None and geo_altitude is not None:
+        alt = geo_altitude
+        heading = heading or 0
+        callsign = callsign.strip() if callsign else "N/A"
 
-    now = datetime.utcnow()
-    for k, ac in aircraft_data.items():
-        if 'lat' in ac and 'lon' in ac and 'altitude' in ac:
-            lat, lon, alt = ac['lat'], ac['lon'], ac['altitude']
-            heading = ac.get('track', 0)
-            callsign = ac.get('callsign', 'N/A')
-            shadow_distance = alt / math.tan(math.radians(max(1, solar_elevation(lat, lon, now))))
-            shadow_lat = lat - (shadow_distance / 111111) * math.cos(math.radians(heading))
-            shadow_lon = lon - (shadow_distance / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(heading))
+        shadow_distance = alt / math.tan(math.radians(max(1, solar_elevation(lat, lon, now))))
+        shadow_lat = lat - (shadow_distance / 111111) * math.cos(math.radians(heading))
+        shadow_lon = lon - (shadow_distance / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(heading))
 
-            folium.Marker(
-                location=(lat, lon),
-                icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
-                popup=f"Callsign: {callsign}\nAlt: {alt} ft"
-            ).add_to(marker_cluster)
+        folium.Marker(
+            location=(lat, lon),
+            icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
+            popup=f"Callsign: {callsign}\nAlt: {round(alt)} m"
+        ).add_to(marker_cluster)
 
-            folium.CircleMarker(
-                location=(shadow_lat, shadow_lon),
-                radius=5,
-                color='black',
-                fill=True,
-                fill_color='black',
-                fill_opacity=0.5,
-                popup=f"Shadow of {callsign}"
-            ).add_to(fmap)
+        folium.CircleMarker(
+            location=(shadow_lat, shadow_lon),
+            radius=5,
+            color='black',
+            fill=True,
+            fill_color='black',
+            fill_opacity=0.5,
+            popup=f"Shadow of {callsign}"
+        ).add_to(fmap)
 
-    st_folium(fmap, width=1000, height=700)
-else:
-    st.info("Enter your FR24 token in the sidebar to begin.")
+st_folium(fmap, width=1000, height=700)
