@@ -11,7 +11,12 @@ from pysolar.solar import get_altitude, get_azimuth
 import math
 from math import radians, cos, sin, asin, sqrt
 
+
 st.set_page_config(layout="wide")
+st.markdown("""
+    <meta http-equiv="refresh" content="30">
+""", unsafe_allow_html=True)
+
 st.title("🔮 Aircraft Shadow Forecast (5-min Prediction)")
 
 st.sidebar.header("🕒 Select Time")
@@ -70,7 +75,24 @@ folium.Marker(
 
 alerts_triggered = []
 
+
+home_lat = -33.7608864
+home_lon = 150.9709575
+RADIUS_KM = 24.14
+
+filtered_states = []
 for ac in aircraft_states:
+    try:
+        _, _, _, _, _, lon, lat, *_ = ac
+        if lat is not None and lon is not None:
+            distance_km = haversine(lat, lon, home_lat, home_lon) / 1000
+            if distance_km <= RADIUS_KM:
+                filtered_states.append(ac)
+    except:
+        continue
+
+for ac in filtered_states:
+
     try:
         icao24, callsign, origin_country, time_position, last_contact, lon, lat, baro_altitude, on_ground, velocity, heading, vertical_rate, sensors, geo_altitude, squawk, spi, position_source = ac
 
@@ -121,7 +143,7 @@ for ac in aircraft_states:
 if alerts_triggered:
     
     st.error("🚨 Forecast ALERT! Shadow will cross target:")
-    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg")
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
     st.markdown(f'''
     <script>
         new Notification("✈️ Shadow Alert", {{
