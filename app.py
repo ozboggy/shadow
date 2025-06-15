@@ -10,7 +10,7 @@ from astral import LocationInfo
 from astral.location import Location
 
 st.set_page_config(layout="wide")
-st.title("Live Aircraft Shadow Tracker ✈️ with Labels and Heading Animation")
+st.title("Live Aircraft Shadow Tracker ✈️ with Labels and Manual Refresh")
 
 # Sidebar configuration
 st.sidebar.header("🔍 Filter Settings")
@@ -20,10 +20,7 @@ radius_km = st.sidebar.slider("Search Radius (km)", 10, 300, 100)
 min_altitude = st.sidebar.number_input("Minimum Altitude (m)", value=500)
 max_aircraft = st.sidebar.slider("Max Aircraft to Show", 1, 25, 5)
 callsign_filter = st.sidebar.text_input("Filter by Callsign (optional)")
-refresh_interval = st.sidebar.selectbox("Auto-Refresh Interval", [0, 10, 30, 60], index=2)
-
-if refresh_interval > 0:
-    st.experimental_rerun()
+manual_refresh = st.sidebar.button("🔄 Refresh Data")
 
 now = datetime.utcnow()
 st.write(f"🕒 **Current UTC Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -36,7 +33,7 @@ max_lat = center_lat + lat_margin
 min_lon = center_lon - lon_margin
 max_lon = center_lon + lon_margin
 
-@st.cache_data(ttl=refresh_interval if refresh_interval else 60)
+@st.cache_data(ttl=30, show_spinner=True)
 def fetch_opensky():
     url = "https://opensky-network.org/api/states/all"
     params = {
@@ -52,6 +49,10 @@ def fetch_opensky():
     except Exception as e:
         st.error(f"OpenSky API error: {e}")
         return []
+
+# Optionally clear cache if button is pressed
+if manual_refresh:
+    fetch_opensky.clear()
 
 aircraft_data = fetch_opensky()
 
@@ -99,5 +100,5 @@ for ac in aircraft_data:
     except:
         continue
 
-st.success(f"🛩️ Displaying {count} aircraft with shadows and heading vectors")
+st.success(f"🛩️ Displaying {count} aircraft with shadows and trails")
 st_folium(m, width=1000, height=600)
