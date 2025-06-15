@@ -96,7 +96,7 @@ for ac in aircraft_states:
                     trail.append((shadow_lat, shadow_lon))
 
                     if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
-                        alerts_triggered.append((callsign, int(i)))
+                        alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
                         shadow_alerted = True
 
             if trail:
@@ -131,7 +131,13 @@ if alerts_triggered:
     </script>
     ''', unsafe_allow_html=True)
     
-    for cs, t in alerts_triggered:
+    
+    # Zoom to first alert
+    if alerts_triggered:
+        fmap.location = [alerts_triggered[0][2], alerts_triggered[0][3]]
+        fmap.zoom_start = 13
+    for cs, t, _, _ in alerts_triggered:
+    
         st.write(f"✈️ {cs} — in approx. {t} seconds")
 else:
     st.success("✅ No forecast shadow paths intersect target area.")
