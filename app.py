@@ -20,7 +20,9 @@ with col1:
     heading = st.slider("Aircraft Heading (° from North)", 0, 359, 90)
 
 with col2:
-    now = st.datetime_input("Select Date and Time (UTC)", value=datetime.utcnow())
+    selected_date = st.date_input("Select Date (UTC)", value=datetime.utcnow().date())
+    selected_time = st.time_input("Select Time (UTC)", value=datetime.utcnow().time())
+    now = datetime.combine(selected_date, selected_time)
     st.markdown("Note: All times are in UTC")
 
 # Calculate sun position using Astral
