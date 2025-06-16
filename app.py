@@ -150,7 +150,7 @@ else:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
 # Initialize map center and zoom
-default_center():
+def default_center():
     return [HOME_LAT, HOME_LON]
 
 if "zoom" not in st.session_state:
@@ -195,8 +195,11 @@ for ac in filtered_states:
             sun_az = get_azimuth(future_lat, future_lon, future_time)
             if sun_alt > 0 and alt > 0:
                 shadow_dist = alt / math.tan(math.radians(sun_alt))
-                shadow_lat = future_lat + (shadow_dist/111111)*math.cos(math.radians(sun_az+180))
-                shadow_lon = future_lon + (shadow_dist/(111111*math.cos(math.radians(future_lat))))*math.sin(math.radians(sun_az+180))
+                shadow_lat = future_lat + (shadow_dist/111111)*
+                    math.cos(math.radians(sun_az+180))
+                shadow_lon = future_lon + (shadow_dist/
+                    (111111*math.cos(math.radians(future_lat))))*
+                    math.sin(math.radians(sun_az+180))
                 trail.append((shadow_lat, shadow_lon))
 
                 if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
