@@ -59,7 +59,7 @@ TARGET_LON = 150.971709164045
 ALERT_RADIUS_METERS = 50
 HOME_LAT = -33.7603831919607
 HOME_LON = 150.971709164045
-RADIUS_KM = 20
+RADIUS_KM = 20  # kilometers
 
 # Utility functions
 def haversine(lat1, lon1, lat2, lon2):
@@ -124,77 +124,84 @@ else:
         except Exception as e:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
-# Initialize map center and zoom
-if "zoom" not in st.session_state:
-    st.session_state.zoom = 12
-if "center" not in st.session_state:
-    st.session_state.center = [HOME_LAT, HOME_LON]
+# Filter current aircraft within 20 miles
+filtered_states = []
+for ac in aircraft_states:
+    lon = ac[5]; lat = ac[6]
+    if lat is None or lon is None: continue
+    if haversine(lat, lon, HOME_LAT, HOME_LON)/1000 <= RADIUS_KM:
+        filtered_states.append(ac)
 
-# Create map
+# Display log of current aircraft
+st.markdown("### Aircraft within 20 miles of Home")
+if filtered_states:
+    df_aircraft = pd.DataFrame([{
+        'Callsign': ac[1],
+        'Latitude': ac[6],
+        'Longitude': ac[5],
+        'Velocity (m/s)': ac[8],
+        'Heading (°)': ac[9],
+        'Altitude (m)': ac[10]
+    } for ac in filtered_states])
+    st.dataframe(df_aircraft)
+else:
+    st.info("No aircraft currently within 20 miles.")
+
+# History of alerts
+st.markdown("### Alert History")
+if os.path.exists(log_path):
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        st.dataframe(df_log)
+    else:
+        st.info("No alerts logged yet.")
+else:
+    st.info("Alert log file not found.")
+
+# Map setup
+if "zoom" not in st.session_state: st.session_state.zoom = 12
+if "center" not in st.session_state: st.session_state.center = [HOME_LAT, HOME_LON]
+
 fmap = folium.Map(location=st.session_state.center, zoom_start=st.session_state.zoom)
 MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
-# Filter and forecast
+# Forecast and alerts
 alerts = []
-filtered_states = []
-for ac in aircraft_states:
-    try:
-        lon = ac[5]; lat = ac[6]
-        if lat is None or lon is None or haversine(lat, lon, HOME_LAT, HOME_LON)/1000 > RADIUS_KM:
-            continue
-        filtered_states.append(ac)
-    except Exception:
-        continue
-
 for ac in filtered_states:
-    try:
-        callsign = ac[1]
-        lon = ac[5]
-        lat = ac[6]
-        velocity = ac[8]
-        heading = ac[9]
-        alt = ac[10] or 0
+    callsign = ac[1]; lon = ac[5]; lat = ac[6]; velocity = ac[8]; heading = ac[9]; alt = ac[10] or 0
+    trail = []
+    alerted_flag = False
+    for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
+        future_time = selected_dt + timedelta(seconds=i)
+        fl_lat, fl_lon = move_position(lat, lon, heading, velocity*i)
+        sun_alt = get_altitude(fl_lat, fl_lon, future_time)
+        if sun_alt <= 0 or alt <= 0: continue
+        sun_az = get_azimuth(fl_lat, fl_lon, future_time)
+        shadow_dist = alt / math.tan(math.radians(sun_alt))
+        slat = fl_lat + (shadow_dist/111111)*math.cos(math.radians(sun_az+180))
+        slon = fl_lon + (shadow_dist/(111111*math.cos(math.radians(fl_lat))))*math.sin(math.radians(sun_az+180))
+        trail.append((slat, slon))
+        if not alerted_flag and haversine(slat, slon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
+            alerts.append((callsign, i))
+            with open(log_path, "a", newline="") as f:
+                csv.writer(f).writerow([datetime.utcnow().isoformat(), callsign, i, slat, slon])
+            send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {i} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
+            alerted_flag = True
+    if trail:
+        folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5").add_to(fmap)
+    folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=callsign).add_to(fmap)
 
-        trail = []
-        alerted_flag = False
-        for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
-            future_time = selected_dt + timedelta(seconds=i)
-            future_lat, future_lon = move_position(lat, lon, heading, velocity*i)
-            sun_alt = get_altitude(future_lat, future_lon, future_time)
-            if sun_alt <= 0 or alt <= 0:
-                continue
-            sun_az = get_azimuth(future_lat, future_lon, future_time)
-            shadow_dist = alt / math.tan(math.radians(sun_alt))
-            shadow_lat = future_lat + (shadow_dist/111111)*math.cos(math.radians(sun_az+180))
-            shadow_lon = future_lon + (shadow_dist/(111111*math.cos(math.radians(future_lat))))*math.sin(math.radians(sun_az+180))
-            trail.append((shadow_lat, shadow_lon))
-            if not alerted_flag and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
-                alerts.append((callsign, i))
-                with open(log_path, "a", newline="") as f:
-                    csv.writer(f).writerow([datetime.utcnow().isoformat(), callsign, i, shadow_lat, shadow_lon])
-                send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {i} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
-                alerted_flag = True
-
-        if trail:
-            folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5").add_to(fmap)
-        folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=callsign).add_to(fmap)
-    except Exception:
-        continue
-
-# Display alerts and log download
+# Display alerts
 if alerts:
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    for cs, t in alerts:
-        st.write(f"✈️ {cs} in ~{t}s")
+    for cs, t in alerts: st.write(f"✈️ {cs} in ~{t}s")
 else:
     st.success("✅ No shadows crossing target.")
 
-if os.path.exists(log_path):
-    st.sidebar.download_button("Download log", open(log_path, "rb"), "alert_log.csv")
-
-# Render map and update session state
+# Map rendering and state update
 md = st_folium(fmap, width=700, height=500)
 if md and "center" in md and "zoom" in md:
     st.session_state.center = md["center"]
