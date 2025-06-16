@@ -25,9 +25,6 @@ OPENSKY_PASS = os.getenv("OPENSKY_PASSWORD")
 FR24_API_KEY = os.getenv("FLIGHTRADAR_API_KEY")
 
 # Pushover setup
-PUSHOVER_USER_KEY = "usasa4y2iuvz75krztrma829s21nvy"
-PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
-
 def send_pushover(title, message, user_key, api_token):
     try:
         requests.post(
@@ -37,7 +34,7 @@ def send_pushover(title, message, user_key, api_token):
     except Exception as e:
         st.warning(f"Pushover notification failed: {e}")
 
-# Streamlit UI setup
+# UI setup
 st.set_page_config(layout="wide")
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
@@ -45,10 +42,12 @@ st.title("✈️ Aircraft Shadow Forecast")
 # Time selector (UTC)
 st.sidebar.header("Select Time")
 selected_date = st.sidebar.date_input("Date", value=datetime.utcnow().date())
-selected_time = st.sidebar.time_input("Time", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
+selected_time = st.sidebar.time_input(
+    "Time", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
+)
 selected_dt = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
 
-# Data source selector (default FlightRadar24)
+# Data source
 data_source = st.sidebar.selectbox("Data Source", ("OpenSky", "FlightRadar24"), index=1)
 
 # Constants
@@ -59,9 +58,9 @@ TARGET_LON = 150.971709164045
 ALERT_RADIUS_METERS = 50  # meters
 HOME_LAT = -33.7603831919607
 HOME_LON = 150.971709164045
-RADIUS_KM = 50  # kilometers
+RADIUS_KM = 20  # kilometers
 
-# Utility functions
+# Helpers
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = radians(lat2 - lat1)
@@ -72,10 +71,10 @@ def haversine(lat1, lon1, lat2, lon2):
 def move_position(lat, lon, heading_deg, distance_m):
     R = 6371000
     heading_rad = math.radians(heading_deg)
-    lat1 = math.radians(lat)
-    lon1 = math.radians(lon)
+    lat1 = math.radians(lat); lon1 = math.radians(lon)
     lat2 = math.asin(
-        math.sin(lat1)*math.cos(distance_m/R) + math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad)
+        math.sin(lat1)*math.cos(distance_m/R) +
+        math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad)
     )
     lon2 = lon1 + math.atan2(
         math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1),
@@ -103,81 +102,63 @@ if data_source == "OpenSky":
         st.error(f"Error fetching OpenSky data: {e}")
 else:
     if not FR24_API_KEY:
-        st.error("Please set FLIGHTRADAR_API_KEY in your environment.")
+        st.error("Please set FLIGHTRADAR_API_KEY in environment.")
     else:
         try:
-            # 1️⃣ Try PyFR24
             fr_api = FR24API(FR24_API_KEY)
             bounds = f"{south},{west},{north},{east}"
             resp = fr_api.get_flight_positions_light(bounds)
-            st.sidebar.write("⚙️ FR24API raw response:", resp)  # ← debug here
             data_list = []
             if isinstance(resp, dict):
                 data_list = resp.get("data", [])
             elif isinstance(resp, list):
                 data_list = resp
-
-            # 2️⃣ If nothing, fall back to the public feed.js
+            # Fallback to public feed.js if empty
             if not data_list:
-                st.sidebar.warning("FR24API empty — falling back to feed.js")
                 fr_url = "https://data-live.flightradar24.com/zones/fcgi/feed.js"
                 params = {"bounds": bounds, "adsb": 1, "mlat": 1, "flarm": 1, "array": 1}
                 r2 = requests.get(fr_url, params=params)
                 r2.raise_for_status()
                 raw = r2.json()
-                # strip metadata keys
-                data_list = [
-                    v for k, v in raw.items()
-                    if k not in ("full_count", "version", "stats")
-                ]
-                st.sidebar.write("⚙️ feed.js raw items:", len(data_list), "records")  # ← debug here
-
-            # 3️⃣ Massage into your aircraft_states
+                data_list = [v for k, v in raw.items() if k not in ("full_count", "version", "stats")]
+            # Normalize entries
             for p in data_list:
-                # feed.js items are lists; p[1]=lat, p[2]=lon, p[4]=speed, p[3]=track, p[13]=alt, p[-1]=flight
                 if isinstance(p, list):
-                    lat, lon = p[1], p[2]
-                    callsign = (p[-1] or "").strip()
-                    velocity, heading, alt = p[4], p[3], p[13]
+                    lat = p[1] if len(p) > 1 else None
+                    lon = p[2] if len(p) > 2 else None
+                    heading = p[3] if len(p) > 3 else 0
+                    velocity = p[4] if len(p) > 4 else 0
+                    alt = p[6] if len(p) > 6 else 0
+                    callsign = p[8] if len(p) > 8 and p[8] else "N/A"
                 else:
-                    lat, lon = p.get("lat"), p.get("lon")
+                    lat = p.get("lat"); lon = p.get("lon")
+                    heading = p.get("track", 0); velocity = p.get("speed", 0)
+                    alt = p.get("altitude", 0)
                     callsign = p.get("flight", p.get("callsign", "N/A")).strip()
-                    velocity, heading, alt = p.get("speed", 0), p.get("track", 0), p.get("altitude", 0)
-
                 if lat is None or lon is None:
                     continue
-
                 aircraft_states.append([
                     None, callsign, None, None, None,
                     lon, lat, None, velocity, heading,
                     alt, None, None, None, None
                 ])
-
-            st.sidebar.write("⚙️ Normalized aircraft_states count:", len(aircraft_states))  # ← debug here
-
         except Exception as e:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
-# Debug info: total fetched
-st.sidebar.markdown(f"**Total flights fetched:** {len(aircraft_states)}")
-if st.sidebar.checkbox("Show raw sample data", False):
-    st.sidebar.write(aircraft_states[:5])
-
-# Filter current aircraft within 20 miles
-filtered_states = [ac for ac in aircraft_states if ac[6] and ac[5] and haversine(ac[6], ac[5], HOME_LAT, HOME_LON)/1000 <= RADIUS_KM]
-
-# Display log of current aircraft
+# Show current aircraft within range
+filtered_states = [ac for ac in aircraft_states if ac[6] and ac[5] and 
+                   haversine(ac[6], ac[5], HOME_LAT, HOME_LON)/1000 <= RADIUS_KM]
 st.markdown("### Aircraft within 20 miles of Home")
 if filtered_states:
-    df_aircraft = pd.DataFrame([{  
+    df = pd.DataFrame([{
         'Callsign': ac[1], 'Latitude': ac[6], 'Longitude': ac[5],
-        'Velocity (m/s)': ac[8], 'Heading (°)': ac[9], 'Altitude (m)': ac[10]
+        'Velocity': ac[8], 'Heading': ac[9], 'Altitude': ac[10]
     } for ac in filtered_states])
-    st.dataframe(df_aircraft)
+    st.dataframe(df)
 else:
-    st.info("No aircraft currently within 20 miles. Try switching to OpenSky source if needed.")
+    st.info("No aircraft currently within 20 miles. Switch to OpenSky if needed.")
 
-# History of alerts
+# Show alert history
 st.markdown("### Alert History")
 if os.path.exists(log_path):
     df_log = pd.read_csv(log_path)
@@ -189,60 +170,59 @@ if os.path.exists(log_path):
 else:
     st.info("Alert log file not found.")
 
-# Initialize map with valid center
-if "zoom" not in st.session_state:
-    st.session_state.zoom = 12
-center = st.session_state.get("center")
-if not (isinstance(center, (list, tuple)) and len(center) == 2 
-        and all(isinstance(x, (int, float)) for x in center)):
+# Initialize map center/zoom
+if "zoom" not in st.session_state: st.session_state.zoom = 12
+if not (isinstance(st.session_state.get("center"), list) and len(st.session_state.center)==2):
     st.session_state.center = [HOME_LAT, HOME_LON]
-# Create map
+
+# Map
 fmap = folium.Map(location=st.session_state.center, zoom_start=st.session_state.zoom)
 MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
-# Forecast and alerts plotting
+# Forecast & Alerts
 alerts = []
 for ac in filtered_states:
-    callsign, lon, lat, velocity, heading, alt = ac[1], ac[5], ac[6], ac[8], ac[9], ac[10] or 0
-    trail = []
-    alerted_flag = False
+    callsign, lon, lat, velocity, heading, alt = ac[1], ac[5], ac[6], ac[8], ac[9], ac[10]
+    trail, alerted = [], False
     for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
-        future_time = selected_dt + timedelta(seconds=i)
+        ft = selected_dt + timedelta(seconds=i)
         fl_lat, fl_lon = move_position(lat, lon, heading, velocity*i)
-        sun_alt = get_altitude(fl_lat, fl_lon, future_time)
-        if sun_alt <= 0 or alt <= 0: continue
-        sun_az = get_azimuth(fl_lat, fl_lon, future_time)
-        shadow_dist = alt / math.tan(math.radians(sun_alt))
-        slat = fl_lat + (shadow_dist/111111)*math.cos(math.radians(sun_az+180))
-        slon = fl_lon + (shadow_dist/(111111*math.cos(math.radians(fl_lat))))*math.sin(math.radians(sun_az+180))
+        sun_alt = get_altitude(fl_lat, fl_lon, ft)
+        if sun_alt<=0 or alt<=0: continue
+        sun_az = get_azimuth(fl_lat, fl_lon, ft)
+        sd = alt/math.tan(math.radians(sun_alt))
+        slat = fl_lat + (sd/111111)*math.cos(math.radians(sun_az+180))
+        slon = fl_lon + (sd/(111111*math.cos(math.radians(fl_lat))))*math.sin(math.radians(sun_az+180))
         trail.append((slat, slon))
-        if not alerted_flag and haversine(slat, slon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
+        if not alerted and haversine(slat, slon, TARGET_LAT, TARGET_LON)<=ALERT_RADIUS_METERS:
             alerts.append((callsign, i))
             with open(log_path, "a", newline="") as f:
                 csv.writer(f).writerow([datetime.utcnow().isoformat(), callsign, i, slat, slon])
-            send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {i} sec",  
-                         PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
-            alerted_flag = True
+            send_pushover("✈️ Shadow Alert",
+                         f"{callsign} will pass over target in {i} sec",
+                         os.getenv("PUSHOVER_USER_KEY"), os.getenv("PUSHOVER_API_TOKEN"))
+            alerted = True
     if trail:
-        folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5").add_to(fmap)
-    folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=callsign).add_to(fmap)
+        folium.PolyLine(trail, color="black", weight=2, opacity=0.7,
+                        dash_array="5,5").add_to(fmap)
+    folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
+                  popup=callsign).add_to(fmap)
 
-# Display alerts
+# Alert display
 if alerts:
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    for cs, t in alerts:
-        st.write(f"✈️ {cs} in ~{t}s")
+    for cs, t in alerts: st.write(f"✈️ {cs} in ~{t}s")
 else:
     st.success("✅ No shadows crossing target.")
 
-# Download log button
+# Download
 if os.path.exists(log_path):
-    st.sidebar.markdown("### 📥 Download Log")
-    st.sidebar.download_button("Download log", open(log_path, "rb"), "alert_log.csv", mime="text/csv")
+    with open(log_path, "rb") as file:
+        st.sidebar.download_button("Download log", file, "alert_log.csv", mime="text/csv")
 
-# Render map and update session state
+# Render map & update state
 md = st_folium(fmap, width=700, height=500)
 if md and "center" in md and "zoom" in md:
     st.session_state.center = md["center"]
