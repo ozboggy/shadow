@@ -15,8 +15,8 @@ import pandas as pd
 import plotly.express as px
 
 # Pushover setup
-PUSHOVER_USER_KEY = "your_user_key"
-PUSHOVER_API_TOKEN = "your_api_token"
+PUSHOVER_USER_KEY = "usasa4y2iuvz75krztrma829s21nvy"
+PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
 
 def send_pushover(title, message, user_key, api_token):
     try:
