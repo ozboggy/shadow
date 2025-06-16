@@ -56,7 +56,7 @@ FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 TARGET_LAT = -33.7603831919607
 TARGET_LON = 150.971709164045
-ALERT_RADIUS_METERS = 50
+ALERT_RADIUS_METERS = 50  # meters
 HOME_LAT = -33.7603831919607
 HOME_LON = 150.971709164045
 RADIUS_KM = 20  # kilometers
@@ -75,12 +75,11 @@ def move_position(lat, lon, heading_deg, distance_m):
     lat1 = math.radians(lat)
     lon1 = math.radians(lon)
     lat2 = math.asin(
-        math.sin(lat1)*math.cos(distance_m/R) +
-        math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad)
+        math.sin(lat1)*math.cos(distance_m/R) + math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad)
     )
     lon2 = lon1 + math.atan2(
         math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1),
-        math.cos(distance_m/R)-math.sin(lat1)*math.sin(lat2)
+        math.cos(distance_m/R) - math.sin(lat1)*math.sin(lat2)
     )
     return math.degrees(lat2), math.degrees(lon2)
 
@@ -89,13 +88,11 @@ log_file = "alert_log.csv"
 log_path = os.path.join(os.path.dirname(__file__), log_file)
 if not os.path.exists(log_path):
     with open(log_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
+        csv.writer(f).writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
 
 # Fetch aircraft data
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
 aircraft_states = []
-
 if data_source == "OpenSky":
     url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
     try:
@@ -124,24 +121,24 @@ else:
         except Exception as e:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
+# Debug info: total fetched
+st.sidebar.markdown(f"**Total flights fetched:** {len(aircraft_states)}")
+if st.sidebar.checkbox("Show raw sample data", False):
+    st.sidebar.write(aircraft_states[:5])
+
 # Filter current aircraft within 20 miles
-filtered_states = [ac for ac in aircraft_states if ac[6] is not None and ac[5] is not None \
-                   and haversine(ac[6], ac[5], HOME_LAT, HOME_LON)/1000 <= RADIUS_KM]
+filtered_states = [ac for ac in aircraft_states if ac[6] and ac[5] and haversine(ac[6], ac[5], HOME_LAT, HOME_LON)/1000 <= RADIUS_KM]
 
 # Display log of current aircraft
 st.markdown("### Aircraft within 20 miles of Home")
 if filtered_states:
-    df_aircraft = pd.DataFrame([{
-        'Callsign': ac[1],
-        'Latitude': ac[6],
-        'Longitude': ac[5],
-        'Velocity (m/s)': ac[8],
-        'Heading (°)': ac[9],
-        'Altitude (m)': ac[10]
+    df_aircraft = pd.DataFrame([{  
+        'Callsign': ac[1], 'Latitude': ac[6], 'Longitude': ac[5],
+        'Velocity (m/s)': ac[8], 'Heading (°)': ac[9], 'Altitude (m)': ac[10]
     } for ac in filtered_states])
     st.dataframe(df_aircraft)
 else:
-    st.info("No aircraft currently within 20 miles.")
+    st.info("No aircraft currently within 20 miles. Try switching to OpenSky source if needed.")
 
 # History of alerts
 st.markdown("### Alert History")
@@ -155,20 +152,19 @@ if os.path.exists(log_path):
 else:
     st.info("Alert log file not found.")
 
-# Initialize map center and zoom with validation
+# Initialize map with valid center
 if "zoom" not in st.session_state:
     st.session_state.zoom = 12
 center = st.session_state.get("center")
 if not (isinstance(center, (list, tuple)) and len(center) == 2 
         and all(isinstance(x, (int, float)) for x in center)):
     st.session_state.center = [HOME_LAT, HOME_LON]
-
 # Create map
 fmap = folium.Map(location=st.session_state.center, zoom_start=st.session_state.zoom)
 MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
-# Forecast and alerts
+# Forecast and alerts plotting
 alerts = []
 for ac in filtered_states:
     callsign, lon, lat, velocity, heading, alt = ac[1], ac[5], ac[6], ac[8], ac[9], ac[10] or 0
@@ -188,7 +184,7 @@ for ac in filtered_states:
             alerts.append((callsign, i))
             with open(log_path, "a", newline="") as f:
                 csv.writer(f).writerow([datetime.utcnow().isoformat(), callsign, i, slat, slon])
-            send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {i} sec", 
+            send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {i} sec",  
                          PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
             alerted_flag = True
     if trail:
@@ -207,8 +203,7 @@ else:
 # Download log button
 if os.path.exists(log_path):
     st.sidebar.markdown("### 📥 Download Log")
-    with open(log_path, "rb") as file:
-        st.sidebar.download_button("Download log", file, "alert_log.csv", mime="text/csv")
+    st.sidebar.download_button("Download log", open(log_path, "rb"), "alert_log.csv", mime="text/csv")
 
 # Render map and update session state
 md = st_folium(fmap, width=700, height=500)
