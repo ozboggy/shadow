@@ -252,9 +252,9 @@ if map_data and "zoom" in map_data and "center" in map_data:
         st.session_state.center = map_data["center"]
     with open(config_file, "w") as f:
         try:
-    json.dump({"zoom": st.session_state.zoom, "center": st.session_state.center}, f)
-except Exception as e:
-    st.warning(f"Failed to save map state: {e}")
+        json.dump({"zoom": st.session_state.zoom, "center": st.session_state.center}, f)
+    except Exception as e:
+        st.warning(f"Failed to save map state: {e}")
 
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
