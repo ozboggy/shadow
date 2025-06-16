@@ -117,7 +117,8 @@ for ac in filtered_states:
                     shadow_lon = future_lon + (shadow_dist / (111111 * math.cos(math.radians(future_lat)))) * math.sin(math.radians(sun_az + 180))
                     trail.append((shadow_lat, shadow_lon))
 
-                    if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
+                    
+if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
     alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
     with open(log_path, "a", newline="") as f:
         writer = csv.writer(f)
@@ -132,11 +133,7 @@ for ac in filtered_states:
         )
     except Exception as e:
         st.warning(f"Pushover failed: {e}")
-                        alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
-                        with open(log_path, "a", newline="") as f:
-                            writer = csv.writer(f)
-                            writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
-                            shadow_alerted = True
+
     send_pushover(
         title="✈️ Shadow Alert",
         message=f"{callsign} will pass over target in {int(i)} seconds!",
