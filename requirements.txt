@@ -6,3 +6,4 @@ pysolar
 pandas
 plotly
 pyfr24
+python-dotenv
