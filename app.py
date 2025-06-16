@@ -33,7 +33,6 @@ def send_pushover(title, message, user_key, api_token):
 
 # Streamlit UI
 st.set_page_config(layout="wide")
-show_sidebar_controls = st.checkbox("🧭 Show Sidebar Controls", value=True)
 
 
 config_file = "map_config.json"
@@ -55,13 +54,13 @@ else:
     st.session_state.zoom = default_zoom
 
 # Sidebar zoom control
-    zoom_lock = st.sidebar.checkbox("🔒 Lock Zoom to 3-Mile Radius from Home", value=True)
+zoom_lock = st.sidebar.checkbox("🔒 Lock Zoom to 3-Mile Radius from Home", value=True)
 
 # Sidebar home config
-    st.sidebar.markdown("### 📍 Set Home Location")
-    home_lat = st.sidebar.number_input("Home Latitude", value=st.session_state.center[0], format="%.7f")
-    home_lon = st.sidebar.number_input("Home Longitude", value=st.session_state.center[1], format="%.7f")
-    st.session_state.home = [home_lat, home_lon]
+st.sidebar.markdown("### 📍 Set Home Location")
+home_lat = st.sidebar.number_input("Home Latitude", value=st.session_state.center[0], format="%.7f")
+home_lon = st.sidebar.number_input("Home Longitude", value=st.session_state.center[1], format="%.7f")
+st.session_state.home = [home_lat, home_lon]
 
 
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
@@ -70,8 +69,7 @@ st.title("✈️ Aircraft Shadow Forecast")
 
 zoom_lock = True  # Default if sidebar hidden
 
-if show_sidebar_controls:
-    st.sidebar.header("Select Time")
+st.sidebar.header("Select Time")
 
 selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
 selected_time_only = st.sidebar.time_input("Time (UTC)", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
@@ -253,7 +251,10 @@ if map_data and "zoom" in map_data and "center" in map_data:
         st.session_state.zoom = map_data["zoom"]
         st.session_state.center = map_data["center"]
     with open(config_file, "w") as f:
+        try:
         json.dump({"zoom": st.session_state.zoom, "center": st.session_state.center}, f)
+    except Exception as e:
+        st.warning(f"Failed to save map state: {e}")
 
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
