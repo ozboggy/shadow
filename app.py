@@ -13,6 +13,7 @@ import math
 from time import time
 import os
 import time
+import csv
 
 st.set_page_config(layout="wide")
 
@@ -97,6 +98,16 @@ def haversine(lat1, lon1, lat2, lon2):
 alert_radius = 100  # meters
 alert_triggered = False
 
+
+# ---- Logging Setup ----
+LOG_FILE = "alert_log.csv"
+def log_alert(callsign, shadow_lat, shadow_lon):
+    try:
+        with open(LOG_FILE, "a") as logf:
+            logf.write(f"{datetime.utcnow()},{callsign},{shadow_lat},{shadow_lon}\n")
+    except Exception as e:
+        st.warning(f"⚠️ Failed to log alert: {e}")
+
     for callsign, lat, lon, alt in aircraft_data:
         try:
             theta = radians(90 - sun_elevation)
@@ -108,6 +119,8 @@ alert_triggered = False
             folium.CircleMarker(location=[lat, lon], radius=4, color='blue', tooltip=callsign).add_to(fmap)
             folium.CircleMarker(location=[shadow_lat, shadow_lon], radius=3, color='gray', fill=True, fill_opacity=0.5, tooltip='Shadow').add_to(fmap)
             if haversine(shadow_lat, shadow_lon, home_lat, home_lon) < alert_radius:
+                log_alert(callsign, shadow_lat, shadow_lon)
+                alert_log.append((callsign, shadow_lat, shadow_lon))
                 alert_triggered = True
         except Exception as se:
             continue
