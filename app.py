@@ -9,9 +9,11 @@ import math
 from pysolar.solar import get_altitude, get_azimuth
 
 from math import radians, cos, sin, tan
-from datetime import timezone
+from datetime import time
+from math import asin, sqrtzone
 from pysolar.solar import get_altitude
-import time, asin, sqrt
+import time
+from math import asin, sqrt, asin, sqrt
 import csv
 import os
 import pandas as pd
