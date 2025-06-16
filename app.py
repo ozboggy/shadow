@@ -68,6 +68,8 @@ st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
 
+zoom_lock = True  # Default if sidebar hidden
+
 if show_sidebar_controls:
     st.sidebar.header("Select Time")
 
