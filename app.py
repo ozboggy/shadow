@@ -15,8 +15,8 @@ import pandas as pd
 import plotly.express as px
 
 # Pushover setup
-PUSHOVER_USER_KEY = "usasa4y2iuvz75krztrma829s21nvy"
-PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
+PUSHOVER_USER_KEY = "your_user_key"
+PUSHOVER_API_TOKEN = "your_api_token"
 
 def send_pushover(title, message, user_key, api_token):
     try:
@@ -90,10 +90,8 @@ except Exception as e:
 
 aircraft_states = data.get("states", [])
 
-if "zoom" not in st.session_state:
-    st.session_state.zoom = 9
-if "center" not in st.session_state:
-    st.session_state.center = [(north + south)/2, (east + west)/2]
+st.session_state.zoom = 12
+st.session_state.center = [-33.7608864, 150.9709575]
 
 
 try:
