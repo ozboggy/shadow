@@ -212,3 +212,42 @@ if map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
 
+    # Fetch aircraft data
+aircraft_states = []
+if data_source == "OpenSky":
+    url = (
+        f"https://opensky-network.org/api/states/all"
+        f"?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+    )
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+        aircraft_states = data.get("states", [])
+    except Exception as e:
+        st.error(f"Error fetching OpenSky data: {e}")
+
+else:  # FlightRadar24
+    fr_token = os.getenv("FLIGHTRADAR_API_KEY", None)
+    if not fr_token:
+        st.error("Please set your FLIGHTRADAR_API_KEY environment variable for FlightRadar24 access.")
+    else:
+        try:
+            fr_api = FR24API(fr_token)
+            bounds_str = f"{south},{west},{north},{east}"
+            flights = fr_api.get_live_flights(bounds=bounds_str)  # adjust per your pyfr24 version
+            for f in flights.get("data", []):
+                lat = f.get("lat"); lon = f.get("lon")
+                if lat is None or lon is None: continue
+                callsign = f.get("callsign", "N/A").strip()
+                velocity = f.get("speed", 0)
+                heading  = f.get("track", 0)
+                alt      = f.get("altitude", 0)
+                aircraft_states.append([
+                    None, callsign, None, None, None,
+                    lon, lat, None, velocity, heading,
+                    alt, None, None, None, None
+                ])
+        except Exception as e:
+            st.error(f"Error fetching FlightRadar24 data: {e}")
+
