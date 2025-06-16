@@ -19,11 +19,11 @@ PUSHOVER_USER_KEY = "your_user_key"
 PUSHOVER_API_TOKEN = "your_api_token"
 
 def send_pushover(title, message, user_key, api_token):
-try:
-except Exception as e:
+    try:
+    except Exception as e:
         st.warning(f"Pushover notification failed: {e}")
 
-# Streamlit UI
+    # Streamlit UI
 st.set_page_config(layout="wide")
 
 
