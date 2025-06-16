@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import os
 import csv
 import math
+from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIGURATION ---
 HOME_LAT = st.sidebar.number_input("Home Latitude", value=-33.7608864, format="%.6f")
@@ -26,8 +27,8 @@ if 'zoom' not in st.session_state:
 st.title("✈️ Aircraft Shadow Tracker")
 
 # Auto-refresh
-count = st.experimental_data_editor([], num_rows=0)  # hack to trigger rerun
-st.experimental_rerun() if st.button("Refresh Now") else None
+# Requires: pip install streamlit-autorefresh
+st_autorefresh(interval=REFRESH_SECONDS * 1000, key="refresh")
 
 # Fetch aircraft data
 @st.experimental_memo(ttl=REFRESH_SECONDS)
