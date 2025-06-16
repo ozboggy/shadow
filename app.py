@@ -1,3 +1,20 @@
+# ---- Shadow Alert Utilities ----
+LOG_FILE = "alert_log.csv"
+
+def haversine(lat1, lon1, lat2, lon2):
+    from math import radians, cos, sin, asin, sqrt
+    R = 6371000  # meters
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+    return 2 * R * asin(sqrt(a))
+
+def log_alert(callsign, shadow_lat, shadow_lon):
+    try:
+        with open(LOG_FILE, "a") as logf:
+            logf.write(f"{datetime.utcnow()},{callsign},{shadow_lat},{shadow_lon}\n")
+    except Exception as e:
+        st.warning(f"⚠️ Failed to log alert: {e}")
 
 import streamlit as st
 import requests
@@ -85,29 +102,6 @@ except Exception as e:
 now = datetime.utcnow().replace(tzinfo=timezone.utc)
 sun_elevation = get_altitude(home_lat, home_lon, now)
 if sun_elevation > 0:
-
-# ---- Check if shadow crosses home ----
-def haversine(lat1, lon1, lat2, lon2):
-    from math import radians, cos, sin, asin, sqrt
-    R = 6371000  # meters
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    return 2 * R * asin(sqrt(a))
-
-alert_radius = 100  # meters
-alert_triggered = False
-
-
-# ---- Logging Setup ----
-LOG_FILE = "alert_log.csv"
-def log_alert(callsign, shadow_lat, shadow_lon):
-    try:
-        with open(LOG_FILE, "a") as logf:
-            logf.write(f"{datetime.utcnow()},{callsign},{shadow_lat},{shadow_lon}\n")
-    except Exception as e:
-        st.warning(f"⚠️ Failed to log alert: {e}")
-
     for callsign, lat, lon, alt in aircraft_data:
         try:
             theta = radians(90 - sun_elevation)
@@ -119,7 +113,6 @@ def log_alert(callsign, shadow_lat, shadow_lon):
             folium.CircleMarker(location=[lat, lon], radius=4, color='blue', tooltip=callsign).add_to(fmap)
             folium.CircleMarker(location=[shadow_lat, shadow_lon], radius=3, color='gray', fill=True, fill_opacity=0.5, tooltip='Shadow').add_to(fmap)
             if haversine(shadow_lat, shadow_lon, home_lat, home_lon) < alert_radius:
-                log_alert(callsign, shadow_lat, shadow_lon)
                 alert_log.append((callsign, shadow_lat, shadow_lon))
                 alert_triggered = True
         except Exception as se:
