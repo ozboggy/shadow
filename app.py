@@ -1,5 +1,10 @@
 
 import streamlit as st
+import os
+from dotenv import load_dotenv
+load_dotenv(dotenv_path='opensky.env')
+USERNAME = os.getenv('OPENSKY_USERNAME')
+PASSWORD = os.getenv('OPENSKY_PASSWORD')
 import requests
 import folium
 from folium.plugins import MarkerCluster
@@ -211,4 +216,3 @@ map_data = st_folium(fmap, width=1000, height=700)
 if map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
-
