@@ -19,6 +19,17 @@ DEFAULT_ZOOM = 14
 def load_map_config():
     try:
         with open("map_config.json", "r") as f:
+            cfg = json.load(f)
+            center = cfg.get("center", DEFAULT_HOME)
+            if (not isinstance(center, list) or len(center) != 2 or
+                not all(isinstance(x, (int, float)) for x in center)):
+                center = DEFAULT_HOME
+            zoom = cfg.get("zoom", DEFAULT_ZOOM)
+            return {"center": center, "zoom": zoom}
+    except Exception:
+        return {"zoom": DEFAULT_ZOOM, "center": DEFAULT_HOME}
+    try:
+        with open("map_config.json", "r") as f:
             return json.load(f)
     except Exception:
         return {"zoom": DEFAULT_ZOOM, "center": DEFAULT_HOME}
