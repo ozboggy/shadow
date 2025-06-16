@@ -105,37 +105,28 @@ north, south, west, east = -33.0, -34.5, 150.0, 151.5
 aircraft_states = []
 
 if data_source == "OpenSky":
-    # OpenSky fetch
-    url = (
-        f"https://opensky-network.org/api/states/all"
-        f"?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
-    )
-    try:
-        r = requests.get(url, auth=(OPENSKY_USER, OPENSKY_PASS))
-        r.raise_for_status()
-        data = r.json()
-        aircraft_states = data.get("states", [])
-    except Exception as e:
-        st.error(f"Error fetching OpenSky data: {e}")
-
+    # … your existing OpenSky fetch …
 else:
-    # FlightRadar24 fetch
+    # FlightRadar24 fetch (fixed)
     if not FR24_API_KEY:
         st.error("Please set your FLIGHTRADAR_API_KEY environment variable for FlightRadar24 access.")
     else:
         try:
             fr_api = FR24API(FR24_API_KEY)
             bounds_str = f"{south},{west},{north},{east}"
-            flights = fr_api.get_live_flights(bounds=bounds_str)
-            for f in flights.get("data", []):
-                lat = f.get("lat"); lon = f.get("lon")
+            # Use the correct method to fetch positions in a bounding box
+            positions = fr_api.get_flight_positions_light(bounds_str)  # :contentReference[oaicite:0]{index=0}
+            # Some versions return a dict with 'data'; others return the list directly
+            data_list = positions.get("data", positions)
+            for p in data_list:
+                lat = p.get("lat"); lon = p.get("lon")
                 if lat is None or lon is None:
                     continue
-                callsign = f.get("callsign", "N/A").strip()
-                velocity = f.get("speed", 0)
-                heading  = f.get("track", 0)
-                alt      = f.get("altitude", 0)
-                # Normalize into OpenSky‐style tuple:
+                callsign = p.get("flight", p.get("callsign", "N/A")).strip()
+                velocity = p.get("speed", 0)
+                heading  = p.get("track", p.get("heading", 0))
+                alt      = p.get("altitude", 0)
+                # Normalize into the same 15-element tuple OpenSky provides
                 aircraft_states.append([
                     None, callsign, None, None, None,
                     lon, lat, None, velocity, heading,
