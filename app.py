@@ -16,28 +16,29 @@ import plotly.express as px
 from pyfr24 import FR24API
 
 # Load environment vars
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    st.warning("python-dotenv not installed; skipping .env loading.")
+
 OPENSKY_USER = os.getenv("OPENSKY_USERNAME")
 OPENSKY_PASS = os.getenv("OPENSKY_PASSWORD")
 FR24_API_KEY = os.getenv("FLIGHTRADAR_API_KEY")
 
-# Pushover config (unchanged)
+# Pushover config
 PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sd"
 PUSHOVER_USER_KEY = "u1i3fvca8o3ztrma829s21nvy"
 
 def send_pushover(title: str, message: str):
-    api_token = PUSHOVER_API_TOKEN
-    user_key  = PUSHOVER_USER_KEY
     try:
         url = "https://api.pushover.net/1/messages.json"
-        payload = {
-            "token": api_token,
-            "user": user_key,
+        requests.post(url, data={
+            "token": PUSHOVER_API_TOKEN,
+            "user": PUSHOVER_USER_KEY,
             "title": title,
             "message": message
-        }
-        requests.post(url, data=payload)
+        })
     except Exception as e:
         st.warning(f"Pushover notification failed: {e}")
 
@@ -59,8 +60,6 @@ selected_time = datetime.combine(selected_date, selected_time_only).replace(tzin
 data_source = st.sidebar.selectbox("Data Source", ("OpenSky", "FlightRadar24"))
 
 # Constants
-FORECAST_INTERVAL_SECONDS = 30
-FORECAST_DURATION_MINUTES = 5
 TARGET_LAT = -33.7603831919607
 TARGET_LON = 150.971709164045
 ALERT_RADIUS_METERS = 50
@@ -68,7 +67,6 @@ HOME_LAT = -33.7603831919607
 HOME_LON = 150.971709164045
 RADIUS_KM = 20
 
-# Utility functions
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = radians(lat2 - lat1)
@@ -94,9 +92,8 @@ def move_position(lat, lon, heading_deg, distance_m):
 
 # Prepare log file
 log_file = "alert_log.csv"
-log_path = os.path.join(os.path.dirname(__file__), log_file)
-if not os.path.exists(log_path):
-    with open(log_path, "w", newline="") as f:
+if not os.path.exists(log_file):
+    with open(log_file, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
 
@@ -105,19 +102,26 @@ north, south, west, east = -33.0, -34.5, 150.0, 151.5
 aircraft_states = []
 
 if data_source == "OpenSky":
-    # … your existing OpenSky fetch …
+    url = (
+        f"https://opensky-network.org/api/states/all"
+        f"?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+    )
+    try:
+        r = requests.get(url, auth=(OPENSKY_USER, OPENSKY_PASS))
+        r.raise_for_status()
+        aircraft_states = r.json().get("states", [])
+    except Exception as e:
+        st.error(f"Error fetching OpenSky data: {e}")
 else:
-    # FlightRadar24 fetch (fixed)
     if not FR24_API_KEY:
-        st.error("Please set your FLIGHTRADAR_API_KEY environment variable for FlightRadar24 access.")
+        st.error("Please set your FLIGHTRADAR_API_KEY environment variable.")
     else:
         try:
             fr_api = FR24API(FR24_API_KEY)
-            bounds_str = f"{south},{west},{north},{east}"
-            # Use the correct method to fetch positions in a bounding box
-            positions = fr_api.get_flight_positions_light(bounds_str)  # :contentReference[oaicite:0]{index=0}
-            # Some versions return a dict with 'data'; others return the list directly
-            data_list = positions.get("data", positions)
+            bounds = f"{south},{west},{north},{east}"
+            # Correct method for live positions in a bbox
+            resp = fr_api.get_flight_positions_light(bounds)
+            data_list = resp.get("data", resp)
             for p in data_list:
                 lat = p.get("lat"); lon = p.get("lon")
                 if lat is None or lon is None:
@@ -126,7 +130,7 @@ else:
                 velocity = p.get("speed", 0)
                 heading  = p.get("track", p.get("heading", 0))
                 alt      = p.get("altitude", 0)
-                # Normalize into the same 15-element tuple OpenSky provides
+                # normalize to OpenSky-style tuple
                 aircraft_states.append([
                     None, callsign, None, None, None,
                     lon, lat, None, velocity, heading,
@@ -135,6 +139,4 @@ else:
         except Exception as e:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
-# The rest of your map, forecast and alert logic remains unchanged,
-# operating on the `aircraft_states` list as before.
-# … (your existing folium map, prediction loops, notifications, etc.) …
+# … the rest of your map, prediction loops, alert logic, etc. …
