@@ -110,6 +110,22 @@ if sun_elevation > 0:
             dy = shadow_length * sin(radians(180))
             shadow_lat = lat + (dy / 111111)
             shadow_lon = lon + (dx / (111111 * cos(radians(lat))))
+            icon = folium.Icon(icon='plane', prefix='fa', color='blue')
+            folium.Marker(location=[lat, lon], icon=icon, tooltip=callsign).add_to(fmap)
+            folium.CircleMarker(location=[shadow_lat, shadow_lon], radius=3, color='gray',
+                                fill=True, fill_opacity=0.5, tooltip='Shadow').add_to(fmap)
+            if haversine(shadow_lat, shadow_lon, home_lat, home_lon) < alert_radius:
+                log_alert(callsign, shadow_lat, shadow_lon)
+                alert_log.append((callsign, shadow_lat, shadow_lon))
+                alert_triggered = True
+        except Exception as se:
+            continue
+        try:
+            shadow_length = alt / math.tan(theta)
+            dx = shadow_length * cos(radians(180))
+            dy = shadow_length * sin(radians(180))
+            shadow_lat = lat + (dy / 111111)
+            shadow_lon = lon + (dx / (111111 * cos(radians(lat))))
             folium.CircleMarker(location=[lat, lon], radius=4, color='blue', tooltip=callsign).add_to(fmap)
             folium.CircleMarker(location=[shadow_lat, shadow_lon], radius=3, color='gray', fill=True, fill_opacity=0.5, tooltip='Shadow').add_to(fmap)
             if haversine(shadow_lat, shadow_lon, home_lat, home_lon) < alert_radius:
@@ -121,7 +137,6 @@ if sun_elevation > 0:
 # ---- Example aircraft (you can replace this with real data feed later) ----
 folium.CircleMarker(location=DEFAULT_HOME, radius=8, color="red", fill=True, fill_opacity=0.6, tooltip="Home").add_to(fmap)
 folium.Marker(location=[home_lat + 0.01, home_lon + 0.01], tooltip="Aircraft A1").add_to(fmap)
-        icon = folium.Icon(icon='plane', prefix='fa', color='blue')
         folium.Marker(location=[lat, lon], icon=icon, tooltip=callsign).add_to(fmap)
 
 # ---- Render map and capture state ----
