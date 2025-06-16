@@ -89,7 +89,14 @@ except Exception as e:
     data = {}
 
 aircraft_states = data.get("states", [])
-fmap = folium.Map(location=[(north + south)/2, (east + west)/2], zoom_start=9)
+
+if "zoom" not in st.session_state:
+    st.session_state.zoom = 9
+if "center" not in st.session_state:
+    st.session_state.center = [(north + south)/2, (east + west)/2]
+
+fmap = folium.Map(location=st.session_state.center, zoom_start=st.session_state.zoom)
+
 marker_cluster = MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
@@ -191,4 +198,9 @@ if os.path.exists(log_path):
                          hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
         st.plotly_chart(fig, use_container_width=True)
 
-st_folium(fmap, width=1000, height=700)
+
+map_data = st_folium(fmap, width=1000, height=700)
+if map_data and "zoom" in map_data and "center" in map_data:
+    st.session_state.zoom = map_data["zoom"]
+    st.session_state.center = map_data["center"]
+
