@@ -33,6 +33,8 @@ def send_pushover(title, message, user_key, api_token):
 
 # Streamlit UI
 st.set_page_config(layout="wide")
+zoom_lock = st.sidebar.checkbox("🔒 Lock Zoom to 3-Mile Radius from Home", value=True)
+
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
@@ -90,8 +92,9 @@ except Exception as e:
 
 aircraft_states = data.get("states", [])
 
-st.session_state.zoom = 12
-st.session_state.center = [-33.7608864, 150.9709575]
+if zoom_lock:
+    st.session_state.zoom = 12
+    st.session_state.center = [-33.7608864, 150.9709575]
 
 
 try:
@@ -205,8 +208,9 @@ if os.path.exists(log_path):
         st.plotly_chart(fig, use_container_width=True)
 
 
+
 map_data = st_folium(fmap, width=1000, height=700)
-if map_data and "zoom" in map_data and "center" in map_data:
+if not zoom_lock and map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
 
