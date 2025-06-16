@@ -125,12 +125,8 @@ else:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
 # Filter current aircraft within 20 miles
-filtered_states = []
-for ac in aircraft_states:
-    lon = ac[5]; lat = ac[6]
-    if lat is None or lon is None: continue
-    if haversine(lat, lon, HOME_LAT, HOME_LON)/1000 <= RADIUS_KM:
-        filtered_states.append(ac)
+filtered_states = [ac for ac in aircraft_states if ac[6] is not None and ac[5] is not None \
+                   and haversine(ac[6], ac[5], HOME_LAT, HOME_LON)/1000 <= RADIUS_KM]
 
 # Display log of current aircraft
 st.markdown("### Aircraft within 20 miles of Home")
@@ -159,10 +155,15 @@ if os.path.exists(log_path):
 else:
     st.info("Alert log file not found.")
 
-# Map setup
-if "zoom" not in st.session_state: st.session_state.zoom = 12
-if "center" not in st.session_state: st.session_state.center = [HOME_LAT, HOME_LON]
+# Initialize map center and zoom with validation
+if "zoom" not in st.session_state:
+    st.session_state.zoom = 12
+center = st.session_state.get("center")
+if not (isinstance(center, (list, tuple)) and len(center) == 2 
+        and all(isinstance(x, (int, float)) for x in center)):
+    st.session_state.center = [HOME_LAT, HOME_LON]
 
+# Create map
 fmap = folium.Map(location=st.session_state.center, zoom_start=st.session_state.zoom)
 MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
@@ -170,7 +171,7 @@ folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Ta
 # Forecast and alerts
 alerts = []
 for ac in filtered_states:
-    callsign = ac[1]; lon = ac[5]; lat = ac[6]; velocity = ac[8]; heading = ac[9]; alt = ac[10] or 0
+    callsign, lon, lat, velocity, heading, alt = ac[1], ac[5], ac[6], ac[8], ac[9], ac[10] or 0
     trail = []
     alerted_flag = False
     for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
@@ -187,7 +188,8 @@ for ac in filtered_states:
             alerts.append((callsign, i))
             with open(log_path, "a", newline="") as f:
                 csv.writer(f).writerow([datetime.utcnow().isoformat(), callsign, i, slat, slon])
-            send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {i} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
+            send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {i} sec", 
+                         PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
             alerted_flag = True
     if trail:
         folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5").add_to(fmap)
@@ -197,11 +199,18 @@ for ac in filtered_states:
 if alerts:
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    for cs, t in alerts: st.write(f"✈️ {cs} in ~{t}s")
+    for cs, t in alerts:
+        st.write(f"✈️ {cs} in ~{t}s")
 else:
     st.success("✅ No shadows crossing target.")
 
-# Map rendering and state update
+# Download log button
+if os.path.exists(log_path):
+    st.sidebar.markdown("### 📥 Download Log")
+    with open(log_path, "rb") as file:
+        st.sidebar.download_button("Download log", file, "alert_log.csv", mime="text/csv")
+
+# Render map and update session state
 md = st_folium(fmap, width=700, height=500)
 if md and "center" in md and "zoom" in md:
     st.session_state.center = md["center"]
