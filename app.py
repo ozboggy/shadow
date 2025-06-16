@@ -103,22 +103,58 @@ if data_source == "OpenSky":
         st.error(f"Error fetching OpenSky data: {e}")
 else:
     if not FR24_API_KEY:
-        st.error("Please set FLIGHTRADAR_API_KEY in environment.")
+        st.error("Please set FLIGHTRADAR_API_KEY in your environment.")
     else:
         try:
+            # 1️⃣ Try PyFR24
             fr_api = FR24API(FR24_API_KEY)
             bounds = f"{south},{west},{north},{east}"
             resp = fr_api.get_flight_positions_light(bounds)
-            st.sidebar.write("⚙️ FR24API raw response:", resp)
-            data_list = resp.get("data", resp) if isinstance(resp, dict) else (resp if isinstance(resp, list) else [])
+            st.sidebar.write("⚙️ FR24API raw response:", resp)  # ← debug here
+            data_list = []
+            if isinstance(resp, dict):
+                data_list = resp.get("data", [])
+            elif isinstance(resp, list):
+                data_list = resp
+
+            # 2️⃣ If nothing, fall back to the public feed.js
+            if not data_list:
+                st.sidebar.warning("FR24API empty — falling back to feed.js")
+                fr_url = "https://data-live.flightradar24.com/zones/fcgi/feed.js"
+                params = {"bounds": bounds, "adsb": 1, "mlat": 1, "flarm": 1, "array": 1}
+                r2 = requests.get(fr_url, params=params)
+                r2.raise_for_status()
+                raw = r2.json()
+                # strip metadata keys
+                data_list = [
+                    v for k, v in raw.items()
+                    if k not in ("full_count", "version", "stats")
+                ]
+                st.sidebar.write("⚙️ feed.js raw items:", len(data_list), "records")  # ← debug here
+
+            # 3️⃣ Massage into your aircraft_states
             for p in data_list:
-                lat = p.get("lat"); lon = p.get("lon")
-                if lat is None or lon is None: continue
-                callsign = p.get("flight", p.get("callsign", "N/A")).strip()
-                velocity = p.get("speed", 0)
-                heading = p.get("track", p.get("heading", 0))
-                alt = p.get("altitude", 0)
-                aircraft_states.append([None, callsign, None, None, None, lon, lat, None, velocity, heading, alt, None, None, None, None])
+                # feed.js items are lists; p[1]=lat, p[2]=lon, p[4]=speed, p[3]=track, p[13]=alt, p[-1]=flight
+                if isinstance(p, list):
+                    lat, lon = p[1], p[2]
+                    callsign = (p[-1] or "").strip()
+                    velocity, heading, alt = p[4], p[3], p[13]
+                else:
+                    lat, lon = p.get("lat"), p.get("lon")
+                    callsign = p.get("flight", p.get("callsign", "N/A")).strip()
+                    velocity, heading, alt = p.get("speed", 0), p.get("track", 0), p.get("altitude", 0)
+
+                if lat is None or lon is None:
+                    continue
+
+                aircraft_states.append([
+                    None, callsign, None, None, None,
+                    lon, lat, None, velocity, heading,
+                    alt, None, None, None, None
+                ])
+
+            st.sidebar.write("⚙️ Normalized aircraft_states count:", len(aircraft_states))  # ← debug here
+
         except Exception as e:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
