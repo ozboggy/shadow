@@ -7,6 +7,10 @@ from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 from datetime import datetime
 from math import radians, cos, sin
+from datetime import timezone
+from pysolar.solar import get_altitude
+import math
+from time import time
 import os
 
 st.set_page_config(layout="wide")
@@ -54,6 +58,43 @@ start_zoom = map_config.get("zoom", DEFAULT_ZOOM if not zoom_lock else 15)
 
 # ---- Create map ----
 fmap = folium.Map(location=start_center, zoom_start=start_zoom, control_scale=True)
+
+# ---- Load aircraft from OpenSky ----
+bounds = fmap.get_bounds() if hasattr(fmap, 'get_bounds') else None
+home_latlon = [home_lat, home_lon]
+aircraft_data = []
+try:
+    resp = requests.get(
+        'https://opensky-network.org/api/states/all',
+        params={'lamin': home_lat - 0.3, 'lamax': home_lat + 0.3,
+                'lomin': home_lon - 0.3, 'lomax': home_lon + 0.3},
+        timeout=10
+    )
+    data = resp.json() if resp.ok else {}
+    states = data.get("states", [])
+    for state in states:
+        if not state or len(state) < 8: continue
+        lat, lon, alt = state[6], state[5], state[7]
+        if lat is None or lon is None or alt is None: continue
+        aircraft_data.append((state[1], lat, lon, alt))
+except Exception as e:
+    st.warning(f"Failed to load aircraft: {e}")
+# ---- Predict and display shadows ----
+now = datetime.utcnow().replace(tzinfo=timezone.utc)
+sun_elevation = get_altitude(home_lat, home_lon, now)
+if sun_elevation > 0:
+    for callsign, lat, lon, alt in aircraft_data:
+        try:
+            theta = radians(90 - sun_elevation)
+            shadow_length = alt / math.tan(theta)
+            dx = shadow_length * cos(radians(180))
+            dy = shadow_length * sin(radians(180))
+            shadow_lat = lat + (dy / 111111)
+            shadow_lon = lon + (dx / (111111 * cos(radians(lat))))
+            folium.CircleMarker(location=[lat, lon], radius=4, color='blue', tooltip=callsign).add_to(fmap)
+            folium.CircleMarker(location=[shadow_lat, shadow_lon], radius=3, color='gray', fill=True, fill_opacity=0.5, tooltip='Shadow').add_to(fmap)
+        except Exception as se:
+            continue
 
 # ---- Example aircraft (you can replace this with real data feed later) ----
 folium.CircleMarker(location=DEFAULT_HOME, radius=8, color="red", fill=True, fill_opacity=0.6, tooltip="Home").add_to(fmap)
