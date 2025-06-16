@@ -1,14 +1,3 @@
-import os
-from dotenv import load_dotenv
-load_dotenv()
-USERNAME = os.getenv('OPENSKY_USERNAME')
-PASSWORD = os.getenv('OPENSKY_PASSWORD')
-
-import requests
-url = "https://opensky-network.org/api/states/all"
-r = requests.get(url, auth=(USERNAME, PASSWORD))
-data = r.json()
-print(data)
 
 import streamlit as st
 import requests
@@ -92,7 +81,7 @@ if not os.path.exists(log_path):
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
 url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
 try:
-    r = requests.get(url, auth=(USERNAME, PASSWORD))
+    r = requests.get(url)
     r.raise_for_status()
     data = r.json()
 except Exception as e:
