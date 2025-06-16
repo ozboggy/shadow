@@ -1,10 +1,5 @@
 
 import streamlit as st
-import os
-from dotenv import load_dotenv
-load_dotenv(dotenv_path='opensky.env')
-USERNAME = os.getenv('OPENSKY_USERNAME')
-PASSWORD = os.getenv('OPENSKY_PASSWORD')
 import requests
 import folium
 from folium.plugins import MarkerCluster
@@ -38,13 +33,6 @@ def send_pushover(title, message, user_key, api_token):
 
 # Streamlit UI
 st.set_page_config(layout="wide")
-st.sidebar.markdown('---')
-DEBUG = st.sidebar.checkbox('🐞 Enable Debug Mode')
-SHOW_CREDS = st.sidebar.checkbox('🔐 Show Credentials')
-if SHOW_CREDS:
-    st.sidebar.write(f'Username: {USERNAME}')
-    masked_pw = PASSWORD[:2] + '*' * (len(PASSWORD)-2) if PASSWORD else 'Not Set'
-    st.sidebar.write(f'Password: {masked_pw}')
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
@@ -56,12 +44,12 @@ selected_time = datetime.combine(selected_date, selected_time_only).replace(tzin
 # Constants
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
-TARGET_LAT = -33.7575936
-TARGET_LON = 150.9687296
-ALERT_RADIUS_METERS = 300
-HOME_LAT = -33.7608864
-HOME_LON = 150.9709575
-RADIUS_KM = 24.14
+TARGET_LAT = -33.7603831919607
+TARGET_LON = 150.971709164045
+ALERT_RADIUS_METERS = 50
+HOME_LAT = -33.7603831919607
+HOME_LON = 150.971709164045
+RADIUS_KM = 20
 
 # Utils
 def haversine(lat1, lon1, lat2, lon2):
@@ -93,22 +81,7 @@ if not os.path.exists(log_path):
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
 url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
 try:
-    r = requests.get(url, auth=(USERNAME, PASSWORD))
-try:
-    r = requests.get(url, auth=(USERNAME, PASSWORD))
-    r.raise_for_status()
-    data = r.json()
-    if DEBUG:
-        st.sidebar.success('✅ Authenticated request succeeded.')
-except Exception as e:
-    st.sidebar.warning(f'🔓 Falling back to anonymous mode: {e}')
-    try:
-        r = requests.get(url)
-        r.raise_for_status()
-        data = r.json()
-    except Exception as fallback_e:
-        st.error(f'❌ Anonymous request failed too: {fallback_e}')
-        data = {}
+    r = requests.get(url)
     r.raise_for_status()
     data = r.json()
 except Exception as e:
@@ -118,7 +91,7 @@ except Exception as e:
 aircraft_states = data.get("states", [])
 
 if "zoom" not in st.session_state:
-    st.session_state.zoom = 9
+    st.session_state.zoom = 12
 if "center" not in st.session_state:
     st.session_state.center = [(north + south)/2, (east + west)/2]
 
@@ -234,7 +207,8 @@ if os.path.exists(log_path):
         st.plotly_chart(fig, use_container_width=True)
 
 
-map_data = st_folium(fmap, width=1000, height=700)
+map_data = st_folium(fmap, width=2000, height=1400)
 if map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
+
