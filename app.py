@@ -1,14 +1,3 @@
-import os
-from dotenv import load_dotenv
-load_dotenv()
-USERNAME = os.getenv('OPENSKY_USERNAME')
-PASSWORD = os.getenv('OPENSKY_PASSWORD')
-
-import requests
-url = "https://opensky-network.org/api/states/all"
-r = requests.get(url, auth=(USERNAME, PASSWORD))
-data = r.json()
-print(data)
 
 import streamlit as st
 import requests
@@ -55,12 +44,12 @@ selected_time = datetime.combine(selected_date, selected_time_only).replace(tzin
 # Constants
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
-TARGET_LAT = -33.7603831919607
-TARGET_LON = 150.971709164045
-ALERT_RADIUS_METERS = 50
-HOME_LAT = -33.7603831919607
-HOME_LON = 150.971709164045
-RADIUS_KM = 20
+TARGET_LAT = -33.7575936
+TARGET_LON = 150.9687296
+ALERT_RADIUS_METERS = 300
+HOME_LAT = -33.7608864
+HOME_LON = 150.9709575
+RADIUS_KM = 24.14
 
 # Utils
 def haversine(lat1, lon1, lat2, lon2):
@@ -102,7 +91,7 @@ except Exception as e:
 aircraft_states = data.get("states", [])
 
 if "zoom" not in st.session_state:
-    st.session_state.zoom = 12
+    st.session_state.zoom = 9
 if "center" not in st.session_state:
     st.session_state.center = [(north + south)/2, (east + west)/2]
 
@@ -218,7 +207,7 @@ if os.path.exists(log_path):
         st.plotly_chart(fig, use_container_width=True)
 
 
-map_data = st_folium(fmap, width=2000, height=1400)
+map_data = st_folium(fmap, width=1000, height=700)
 if map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
