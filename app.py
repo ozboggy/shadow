@@ -38,6 +38,13 @@ def send_pushover(title, message, user_key, api_token):
 
 # Streamlit UI
 st.set_page_config(layout="wide")
+st.sidebar.markdown('---')
+DEBUG = st.sidebar.checkbox('🐞 Enable Debug Mode')
+SHOW_CREDS = st.sidebar.checkbox('🔐 Show Credentials')
+if SHOW_CREDS:
+    st.sidebar.write(f'Username: {USERNAME}')
+    masked_pw = PASSWORD[:2] + '*' * (len(PASSWORD)-2) if PASSWORD else 'Not Set'
+    st.sidebar.write(f'Password: {masked_pw}')
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
@@ -87,6 +94,21 @@ north, south, west, east = -33.0, -34.5, 150.0, 151.5
 url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
 try:
     r = requests.get(url, auth=(USERNAME, PASSWORD))
+try:
+    r = requests.get(url, auth=(USERNAME, PASSWORD))
+    r.raise_for_status()
+    data = r.json()
+    if DEBUG:
+        st.sidebar.success('✅ Authenticated request succeeded.')
+except Exception as e:
+    st.sidebar.warning(f'🔓 Falling back to anonymous mode: {e}')
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as fallback_e:
+        st.error(f'❌ Anonymous request failed too: {fallback_e}')
+        data = {}
     r.raise_for_status()
     data = r.json()
 except Exception as e:
