@@ -91,7 +91,7 @@ except Exception as e:
 aircraft_states = data.get("states", [])
 
 if "zoom" not in st.session_state:
-    st.session_state.zoom = 8
+    st.session_state.zoom = 12
 if "center" not in st.session_state:
     st.session_state.center = [(north + south)/2, (east + west)/2]
 
