@@ -92,6 +92,13 @@ if not os.path.exists(log_path):
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
 url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
 try:
+import os
+from dotenv import load_dotenv
+load_dotenv()
+USERNAME = os.getenv('OPENSKY_USERNAME')
+PASSWORD = os.getenv('OPENSKY_PASSWORD')
+
+import requests
     r = requests.get(url, auth=(USERNAME, PASSWORD))
     r.raise_for_status()
     data = r.json()
