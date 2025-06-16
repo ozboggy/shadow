@@ -102,7 +102,7 @@ except Exception:
     location_center = [(north + south)/2, (east + west)/2]
     st.session_state.center = location_center
 
-fmap = folium.Map(location=start_center, zoom_start=start_zoom, control_scale=True)
+fmap = folium.Map(location=location_center, zoom_start=st.session_state.zoom)
 
 
 marker_cluster = MarkerCluster().add_to(fmap)
