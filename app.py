@@ -109,6 +109,7 @@ else:
             fr_api = FR24API(FR24_API_KEY)
             bounds = f"{south},{west},{north},{east}"
             resp = fr_api.get_flight_positions_light(bounds)
+            st.sidebar.write("⚙️ FR24API raw response:", resp)
             data_list = resp.get("data", resp) if isinstance(resp, dict) else (resp if isinstance(resp, list) else [])
             for p in data_list:
                 lat = p.get("lat"); lon = p.get("lon")
