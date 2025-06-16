@@ -6,7 +6,7 @@ from streamlit_folium import st_folium
 from datetime import datetime, time as dt_time, timezone, timedelta
 import math
 from pysolar.solar import get_altitude, get_azimuth
-from math import radians, cos, sin, asin, sqrt
+from math import radians, sin, cos, asin, sqrt
 import csv
 import os
 import pandas as pd
@@ -30,14 +30,10 @@ PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
 
 def send_pushover(title, message, user_key, api_token):
     try:
-        url = "https://api.pushover.net/1/messages.json"
-        payload = {
-            "token": api_token,
-            "user": user_key,
-            "title": title,
-            "message": message
-        }
-        requests.post(url, data=payload)
+        requests.post(
+            "https://api.pushover.net/1/messages.json",
+            data={"token": api_token, "user": user_key, "title": title, "message": message}
+        )
     except Exception as e:
         st.warning(f"Pushover notification failed: {e}")
 
@@ -46,8 +42,8 @@ st.set_page_config(layout="wide")
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
-# Time selector
-st.sidebar.header("Select Time (UTC)")
+# Time selector (UTC)
+st.sidebar.header("Select Time")
 selected_date = st.sidebar.date_input("Date", value=datetime.utcnow().date())
 selected_time = st.sidebar.time_input("Time", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
 selected_dt = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
@@ -78,8 +74,14 @@ def move_position(lat, lon, heading_deg, distance_m):
     heading_rad = math.radians(heading_deg)
     lat1 = math.radians(lat)
     lon1 = math.radians(lon)
-    lat2 = math.asin(math.sin(lat1)*math.cos(distance_m/R) + math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad))
-    lon2 = lon1 + math.atan2(math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1), math.cos(distance_m/R)-math.sin(lat1)*math.sin(lat2))
+    lat2 = math.asin(
+        math.sin(lat1)*math.cos(distance_m/R) +
+        math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad)
+    )
+    lon2 = lon1 + math.atan2(
+        math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1),
+        math.cos(distance_m/R)-math.sin(lat1)*math.sin(lat2)
+    )
     return math.degrees(lat2), math.degrees(lon2)
 
 # Logging setup
@@ -122,7 +124,7 @@ else:
         except Exception as e:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
-# Map centering on HOME
+# Initialize map center and zoom
 if "zoom" not in st.session_state:
     st.session_state.zoom = 12
 if "center" not in st.session_state:
@@ -133,49 +135,66 @@ fmap = folium.Map(location=st.session_state.center, zoom_start=st.session_state.
 MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
-alerts = []
 # Filter and forecast
+alerts = []
+filtered_states = []
 for ac in aircraft_states:
     try:
-        _, callsign, *_ , lon, lat, *_ , velocity, heading, alt, *_ = ac
-        if haversine(lat, lon, HOME_LAT, HOME_LON)/1000 > RADIUS_KM: continue
+        lon = ac[5]; lat = ac[6]
+        if lat is None or lon is None or haversine(lat, lon, HOME_LAT, HOME_LON)/1000 > RADIUS_KM:
+            continue
+        filtered_states.append(ac)
+    except Exception:
+        continue
+
+for ac in filtered_states:
+    try:
+        callsign = ac[1]
+        lon = ac[5]
+        lat = ac[6]
+        velocity = ac[8]
+        heading = ac[9]
+        alt = ac[10] or 0
+
         trail = []
-        alerted = False
+        alerted_flag = False
         for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
             future_time = selected_dt + timedelta(seconds=i)
             future_lat, future_lon = move_position(lat, lon, heading, velocity*i)
             sun_alt = get_altitude(future_lat, future_lon, future_time)
-            if sun_alt <= 0 or alt <= 0: continue
+            if sun_alt <= 0 or alt <= 0:
+                continue
             sun_az = get_azimuth(future_lat, future_lon, future_time)
             shadow_dist = alt / math.tan(math.radians(sun_alt))
             shadow_lat = future_lat + (shadow_dist/111111)*math.cos(math.radians(sun_az+180))
             shadow_lon = future_lon + (shadow_dist/(111111*math.cos(math.radians(future_lat))))*math.sin(math.radians(sun_az+180))
             trail.append((shadow_lat, shadow_lon))
-            if not alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
+            if not alerted_flag and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
                 alerts.append((callsign, i))
                 with open(log_path, "a", newline="") as f:
                     csv.writer(f).writerow([datetime.utcnow().isoformat(), callsign, i, shadow_lat, shadow_lon])
                 send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {i} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
-                alerted = True
+                alerted_flag = True
+
         if trail:
             folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5").add_to(fmap)
         folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=callsign).add_to(fmap)
     except Exception:
         continue
 
-# Display alerts
+# Display alerts and log download
 if alerts:
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    for cs, t in alerts: st.write(f"✈️ {cs} in ~{t}s")
+    for cs, t in alerts:
+        st.write(f"✈️ {cs} in ~{t}s")
 else:
     st.success("✅ No shadows crossing target.")
 
-# Log download
 if os.path.exists(log_path):
     st.sidebar.download_button("Download log", open(log_path, "rb"), "alert_log.csv")
 
-# Render map and update state
+# Render map and update session state
 md = st_folium(fmap, width=700, height=500)
 if md and "center" in md and "zoom" in md:
     st.session_state.center = md["center"]
