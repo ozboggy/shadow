@@ -121,8 +121,8 @@ if sun_elevation > 0:
 # ---- Example aircraft (you can replace this with real data feed later) ----
 folium.CircleMarker(location=DEFAULT_HOME, radius=8, color="red", fill=True, fill_opacity=0.6, tooltip="Home").add_to(fmap)
 folium.Marker(location=[home_lat + 0.01, home_lon + 0.01], tooltip="Aircraft A1").add_to(fmap)
-            icon = folium.Icon(icon='plane', prefix='fa', color='blue')
-            folium.Marker(location=[lat, lon], icon=icon, tooltip=callsign).add_to(fmap)
+        icon = folium.Icon(icon='plane', prefix='fa', color='blue')
+        folium.Marker(location=[lat, lon], icon=icon, tooltip=callsign).add_to(fmap)
 
 # ---- Render map and capture state ----
 map_output = st_folium(fmap, width=1400, height=800)
