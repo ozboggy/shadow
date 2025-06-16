@@ -33,6 +33,8 @@ def send_pushover(title, message, user_key, api_token):
 
 # Streamlit UI
 st.set_page_config(layout="wide")
+show_sidebar_controls = st.checkbox("🧭 Show Sidebar Controls", value=True)
+
 
 config_file = "map_config.json"
 default_center = [-33.7608864, 150.9709575]
@@ -66,7 +68,7 @@ st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
 
-with st.expander("🔧 Show Controls", expanded=False):
+if show_sidebar_controls:
     st.sidebar.header("Select Time")
 
 selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
