@@ -100,50 +100,89 @@ if data_source == "OpenSky":
         aircraft_states = r.json().get("states", [])
     except Exception as e:
         st.error(f"Error fetching OpenSky data: {e}")
-else:
+else:  # FlightRadar24
     if not FR24_API_KEY:
-        st.error("Please set FLIGHTRADAR_API_KEY in environment.")
+        st.error("Please set FLIGHTRADAR_API_KEY in your environment.")
     else:
         try:
             fr_api = FR24API(FR24_API_KEY)
             bounds = f"{south},{west},{north},{east}"
+
+            # 1️⃣ Try PyFR24 first
             resp = fr_api.get_flight_positions_light(bounds)
-            data_list = []
+            st.sidebar.write("⚙️ FR24API raw response type:", type(resp))
+            st.sidebar.write("⚙️ FR24API raw response sample:", resp if isinstance(resp, dict) else resp[:3])
+
+            # normalize into a list
             if isinstance(resp, dict):
                 data_list = resp.get("data", [])
             elif isinstance(resp, list):
                 data_list = resp
-            # Fallback to public feed.js if empty
+            else:
+                data_list = []
+
+            # 2️⃣ Fallback to feed.js if empty
             if not data_list:
+                st.sidebar.warning("FR24API empty — falling back to feed.js")
                 fr_url = "https://data-live.flightradar24.com/zones/fcgi/feed.js"
                 params = {"bounds": bounds, "adsb": 1, "mlat": 1, "flarm": 1, "array": 1}
                 r2 = requests.get(fr_url, params=params)
                 r2.raise_for_status()
                 raw = r2.json()
+                # strip metadata keys
                 data_list = [v for k, v in raw.items() if k not in ("full_count", "version", "stats")]
-            # Normalize entries
+                st.sidebar.write("⚙️ feed.js items count:", len(data_list))
+                st.sidebar.write("⚙️ feed.js sample item:", data_list[:2])
+
+            # 3️⃣ Build aircraft_states safely
             for p in data_list:
+                # default values
+                lat = lon = velocity = heading = alt = None
+                callsign = "N/A"
+
                 if isinstance(p, list):
-                    lat = p[1] if len(p) > 1 else None
-                    lon = p[2] if len(p) > 2 else None
-                    heading = p[3] if len(p) > 3 else 0
-                    velocity = p[4] if len(p) > 4 else 0
-                    alt = p[6] if len(p) > 6 else 0
-                    callsign = p[8] if len(p) > 8 and p[8] else "N/A"
-                else:
-                    lat = p.get("lat"); lon = p.get("lon")
-                    heading = p.get("track", 0); velocity = p.get("speed", 0)
-                    alt = p.get("altitude", 0)
-                    callsign = p.get("flight", p.get("callsign", "N/A")).strip()
+                    # ensure we have enough entries
+                    if len(p) > 2:
+                        lat = p[1]
+                        lon = p[2]
+                    if len(p) > 4:
+                        velocity = p[4]
+                    if len(p) > 3:
+                        heading = p[3]
+                    # try alt from index 13, then 11, else 0
+                    if len(p) > 13:
+                        alt = p[13]
+                    elif len(p) > 11:
+                        alt = p[11]
+                    else:
+                        alt = 0
+                    # callsign is last element if it’s a string
+                    last = p[-1]
+                    if isinstance(last, str) and last.strip():
+                        callsign = last.strip()
+                elif isinstance(p, dict):
+                    lat     = p.get("lat")
+                    lon     = p.get("lon")
+                    velocity= p.get("speed", 0)
+                    heading = p.get("track", 0)
+                    alt     = p.get("altitude", 0)
+                    callsign= p.get("flight", p.get("callsign", "N/A")).strip()
+
+                # skip if no coords
                 if lat is None or lon is None:
                     continue
+
                 aircraft_states.append([
                     None, callsign, None, None, None,
-                    lon, lat, None, velocity, heading,
-                    alt, None, None, None, None
+                    lon, lat, None, velocity or 0, heading or 0,
+                    alt or 0, None, None, None, None
                 ])
+
+            st.sidebar.write("⚙️ Normalized aircraft_states count:", len(aircraft_states))
+
         except Exception as e:
             st.error(f"Error fetching FlightRadar24 data: {e}")
+
 
 # Show current aircraft within range
 filtered_states = [ac for ac in aircraft_states if ac[6] and ac[5] and 
