@@ -95,7 +95,15 @@ if "zoom" not in st.session_state:
 if "center" not in st.session_state:
     st.session_state.center = [(north + south)/2, (east + west)/2]
 
-fmap = folium.Map(location=st.session_state.center, zoom_start=st.session_state.zoom)
+
+try:
+    location_center = [float(x) for x in st.session_state.center]
+except Exception:
+    location_center = [(north + south)/2, (east + west)/2]
+    st.session_state.center = location_center
+
+fmap = folium.Map(location=location_center, zoom_start=st.session_state.zoom)
+
 
 marker_cluster = MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
