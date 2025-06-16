@@ -123,12 +123,15 @@ for ac in filtered_states:
                             writer = csv.writer(f)
                             writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
                             shadow_alerted = True
-    send_pushover(
-        title="✈️ Shadow Alert",
-        message=f"{callsign} will pass over target in {int(i)} seconds!",
-        user_key=usasa4y2iuvz75krztrma829s21nvy,
-        api_token=adxez5u3zqqxyta3pdvdi5sdvwovxv
-    )
+    try:
+        send_pushover(
+            title="✈️ Shadow Alert",
+            message=f"{callsign} will pass over target in {int(i)} seconds!",
+            user_key=usasa4y2iuvz75krztrma829s21nvy,
+            api_token=adxez5u3zqqxyta3pdvdi5sdvwovxv
+        )
+    except Exception as e:
+        st.warning(f"Pushover failed: {e}")
 
             if trail:
                 folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5",
