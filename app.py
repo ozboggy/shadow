@@ -54,8 +54,10 @@ selected_time_only = st.sidebar.time_input(
 )
 selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
 
-# Data source selector
-data_source = st.sidebar.selectbox("Data Source", ("OpenSky", "FlightRadar24"))
+# Data source selector (default to FlightRadar24)
+data_source = st.sidebar.selectbox(
+    "Data Source", ("OpenSky", "FlightRadar24"), index=1
+)
 
 # Constants
 FORECAST_INTERVAL_SECONDS = 30
@@ -139,7 +141,6 @@ else:
                 velocity = p.get("speed", 0)
                 heading  = p.get("track", p.get("heading", 0))
                 alt      = p.get("altitude", 0)
-                # Normalize into the same 15-element tuple OpenSky provides
                 aircraft_states.append([
                     None, callsign, None, None, None,
                     lon, lat, None, velocity, heading,
@@ -148,29 +149,29 @@ else:
         except Exception as e:
             st.error(f"Error fetching FlightRadar24 data: {e}")
 
-# restore original session-state, map, clustering, filtering, prediction, alerts, logging and UI
+# Initialize map center and zoom
+default_center():
+    return [HOME_LAT, HOME_LON]
+
 if "zoom" not in st.session_state:
     st.session_state.zoom = 12
 if "center" not in st.session_state:
-    st.session_state.center = [(north + south)/2, (east + west)/2]
+    st.session_state.center = default_center()
 
-try:
-    location_center = [float(x) for x in st.session_state.center]
-except Exception:
-    location_center = [(north + south)/2, (east + west)/2]
-    st.session_state.center = location_center
+location_center = st.session_state.center
 
+# Create map
 fmap = folium.Map(location=location_center, zoom_start=st.session_state.zoom)
 marker_cluster = MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
 alerts_triggered = []
 
-# Filter and forecast same as before…
+# Filter and forecast…
 filtered_states = []
 for ac in aircraft_states:
     try:
-        _, _, _, _, _, lon, lat, *_ = ac
+        _, callsign, _, _, _, lon, lat, *_ = ac
         if lat and lon and haversine(lat, lon, HOME_LAT, HOME_LON)/1000 <= RADIUS_KM:
             filtered_states.append(ac)
     except:
@@ -178,10 +179,10 @@ for ac in aircraft_states:
 
 for ac in filtered_states:
     try:
-        icao24, callsign, _, _, _, lon, lat, baro_altitude, _, velocity, heading, _, _, geo_altitude, *_ = ac
+        _, callsign, _, _, _, lon, lat, baro_alt, _, velocity, heading, _, _, geo_alt, *_ = ac
         if None in (lat, lon, velocity, heading):
             continue
-        alt = geo_altitude or 0
+        alt = geo_alt or 0
         callsign = callsign.strip() if callsign else "N/A"
         trail = []
         shadow_alerted = False
@@ -203,15 +204,12 @@ for ac in filtered_states:
                     with open(log_path, "a", newline="") as f:
                         writer = csv.writer(f)
                         writer.writerow([datetime.utcnow().isoformat(), callsign, i, shadow_lat, shadow_lon])
-                    try:
-                        send_pushover(
-                            title="✈️ Shadow Alert",
-                            message=f"{callsign} will pass over target in {i} sec",
-                            user_key=PUSHOVER_USER_KEY,
-                            api_token=PUSHOVER_API_TOKEN
-                        )
-                    except Exception:
-                        pass
+                    send_pushover(
+                        title="✈️ Shadow Alert",
+                        message=f"{callsign} will pass over target in {i} sec",
+                        user_key=PUSHOVER_USER_KEY,
+                        api_token=PUSHOVER_API_TOKEN
+                    )
                     shadow_alerted = True
 
         if trail:
@@ -222,16 +220,16 @@ for ac in filtered_states:
     except Exception as e:
         st.warning(f"⚠️ Error processing aircraft: {e}")
 
-# Alert UI and log download UI (unchanged)…
+# Display alert info
 if alerts_triggered:
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    # Browser notification script…
     for cs, t, _, _ in alerts_triggered:
         st.write(f"✈️ {cs} — in approx. {t} seconds")
 else:
     st.success("✅ No forecast shadow paths intersect target area.")
 
+# Sidebar log download
 if os.path.exists(log_path):
     st.sidebar.markdown("### 📥 Download Log")
     with open(log_path, "rb") as f:
@@ -247,7 +245,9 @@ if os.path.exists(log_path):
                          title="Shadow Alerts Over Time")
         st.plotly_chart(fig, use_container_width=True)
 
+# Map rendering and session state update
 map_data = st_folium(fmap, width=2000, height=1400)
-if map_data and "zoom" in map_data and "center" in map_data:
-    st.session_state.zoom = map_data["zoom"]
-    st.session_state.center = map_data["center"]
+if map_data:
+    if "zoom" in map_data and "center" in map_data:
+        st.session_state.zoom = map_data["zoom"]
+        st.session_state.center = map_data["center"]
