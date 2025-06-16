@@ -59,7 +59,7 @@ TARGET_LON = 150.971709164045
 ALERT_RADIUS_METERS = 50  # meters
 HOME_LAT = -33.7603831919607
 HOME_LON = 150.971709164045
-RADIUS_KM = 20  # kilometers
+RADIUS_KM = 50  # kilometers
 
 # Utility functions
 def haversine(lat1, lon1, lat2, lon2):
