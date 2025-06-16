@@ -124,6 +124,9 @@ except Exception as e:
     st.error(f"Error fetching OpenSky data: {e}")
     data = {}
 
+if not isinstance(data, dict):
+    data = {}
+
 aircraft_states = data.get("states", [])
 
 if zoom_lock:
