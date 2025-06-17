@@ -4,75 +4,7 @@ import os
 from dotenv import load_dotenv
 import requests
 import folium
-from folium.vector_layers import Rectangle
-from folium import Rectangle
-from streamlit_folium import st_folium
-from math import radians, sin, cos, asin, sqrt, tan, atan2, degrees
-from pysolar.solar import get_altitude as solar_altitude, get_azimuth as solar_azimuth
-from pyfr24 import FR24API, FR24AuthenticationError
-try:
-    import ephem
-    MOON_AVAILABLE = True
-except ImportError:
-    MOON_AVAILABLE = False
-import csv
-import pandas as pd
-import pathlib
 
-# Load environment
-dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(dotenv_path)
-
-# Credentials
-FR24_API_KEY = os.getenv("FLIGHTRADAR_API_KEY")
-PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
-PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
-
-# Validate FR24 API key
-if not FR24_API_KEY:
-    st.error("FLIGHTRADAR_API_KEY missing in .env. Please set and restart.")
-    st.stop()
-
-# Home coordinates
-HOME_LAT, HOME_LON = -33.7608288, 150.9713948
-
-# Sidebar UI
-st.sidebar.title("☀️🌙 Shadow Forecast Settings")
-selected_date = st.sidebar.date_input("Date (UTC)", datetime.utcnow().date())
-selected_time = st.sidebar.time_input("Time (UTC)", datetime.utcnow().time().replace(second=0, microsecond=0))
-t0 = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
-show_sun = st.sidebar.checkbox("Show Sun Shadows", True)
-show_moon = False
-if MOON_AVAILABLE:
-    show_moon = st.sidebar.checkbox("Show Moon Shadows", False)
-else:
-    st.sidebar.markdown("*Install `pip install ephem` for moon shadows*")
-alert_radius = st.sidebar.slider("Alert Radius (m)", 10, 200, 50, 5)
-radius_km = st.sidebar.slider("Search Radius (km)", 10, 200, 50, 10)
-zoom = st.sidebar.slider("Map Zoom Level", 6, 15, 12)
-debug = st.sidebar.checkbox("Debug Mode", False)
-
-# Data source choices
-tab = st.sidebar.radio("Data Source:", ["FR24 API", "JS Feed Fallback", "Local ADS-B Feed"] )
-# For local ADS-B feed, let user configure host, port, and path
-def build_local_url():
-    host = st.sidebar.text_input("Local ADS-B Host (IP or hostname)", "localhost")
-    port = st.sidebar.text_input("Local ADS-B Port", "8080")
-    path = st.sidebar.text_input("Local ADS-B Path", "/data/aircraft.json")
-    url = f"http://{host}:{port}{path}"
-    st.sidebar.write("Using Local feed URL:", url)
-    return url
-
-local_feed_url = None
-if tab == "Local ADS-B Feed":
-    local_feed_url = build_local_url()
-
-# Compute bounding box
-delta_lat = radius_km / 110.574
-
-m = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom)
-folium.Marker([HOME_LAT, HOME_LON], popup="Home", icon=folium.Icon(color="red", icon="home", prefix="fa")).add_to(m)
-Rectangle([[lat_min, lon_min], [lat_max, lon_max]], color="blue", fill=False).add_to(m)
 
 # Fetch flight positions
 positions = []
