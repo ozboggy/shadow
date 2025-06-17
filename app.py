@@ -149,6 +149,9 @@ else:  # FlightRadar24
                 r2.raise_for_status()
                 raw = r2.json()
                 flights = [v for k, v in raw.items() if k not in ("full_count", "version", "stats")]
+            st.sidebar.write("⚙️ feed.js item count:", len(flights))
+            st.sidebar.write("⚙️ feed.js sample item:", flights[:3])
+
 
             def safe_get(lst, idx, default=None):
                 return lst[idx] if isinstance(lst, list) and idx < len(lst) else default
