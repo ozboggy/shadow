@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import requests
 import folium
+from folium import Rectangle
 from streamlit_folium import st_folium
 from math import radians, sin, cos, asin, sqrt, tan, atan2, degrees
 from pysolar.solar import get_altitude as solar_altitude, get_azimuth as solar_azimuth
@@ -70,7 +71,7 @@ delta_lat = radius_km / 110.574
 
 m = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom)
 folium.Marker([HOME_LAT, HOME_LON], popup="Home", icon=folium.Icon(color="red", icon="home", prefix="fa")).add_to(m)
-folium.Rectangle([[lat_min, lon_min], [lat_max, lon_max]], color="blue", fill=False).add_to(m)
+Rectangle([[lat_min, lon_min], [lat_max, lon_max]], color="blue", fill=False).add_to(m)
 
 # Fetch flight positions
 positions = []
