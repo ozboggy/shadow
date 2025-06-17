@@ -138,31 +138,44 @@ else:
     positions = list(raw)
     st.sidebar.markdown(f"**FR24API count:** {len(positions)}")
 
-# Warn if empty or fallback to OpenSky
+# Warn if no FR24/JS feed data: try OpenSky fallback
 if not positions:
-    st.warning("No FR24 data; falling back to OpenSky network (if configured).")
+    st.warning("No FR24 data; falling back to OpenSky network.")
+    # Determine auth for OpenSky
     if OSKY_USER and OSKY_PASS:
-        opensky_url = (
-            f"https://opensky-network.org/api/states/all"
-            f"?lamin={lat_min}&lomin={lon_min}&lamax={lat_max}&lomax={lon_max}"
-        )
-        try:
-            resp = requests.get(opensky_url, auth=(OSKY_USER, OSKY_PASS))
-            data_os = resp.json()
-            states = data_os.get("states", [])
-        except Exception as e:
-            st.error(f"OpenSky fallback error: {e}")
-            states = []
-        for stt in states:
-            lat = stt[6]; lon = stt[5]
-            if lat is None or lon is None:
-                continue
-            alt = stt[7] or 0
-            speed = stt[9] or 0
-            track = stt[10] or 0
-            cs = (stt[1] or '').strip()
-            positions.append({"lat": lat, "lon": lon, "alt": alt, "speed": speed, "track": track, "callsign": cs})
-        st.sidebar.markdown(f"**OpenSky fallback count:** {len(positions)}")
+        auth = (OSKY_USER, OSKY_PASS)
+        st.sidebar.write("Using OpenSky with credentials")
+    else:
+        auth = None
+        st.sidebar.write("OpenSky anonymous access (may be limited)")
+    # Fetch from OpenSky
+    opensky_url = (
+        f"https://opensky-network.org/api/states/all?"
+        f"lamin={lat_min}&lomin={lon_min}&lamax={lat_max}&lomax={lon_max}"
+    )
+    try:
+        if auth:
+            resp = requests.get(opensky_url, auth=auth, timeout=10)
+        else:
+            resp = requests.get(opensky_url, timeout=10)
+        resp.raise_for_status()
+        data_os = resp.json()
+        states = data_os.get("states", []) or []
+    except Exception as e:
+        st.error(f"OpenSky fallback error: {e}")
+        states = []
+    # Parse states: [icao24, callsign, ..., longitude index 5, latitude index 6, altitude 7, speed 9, track 10]
+    for stt in states:
+        lon = stt[5]
+        lat = stt[6]
+        if lat is None or lon is None:
+            continue
+        alt = stt[7] or 0
+        speed = stt[9] or 0
+        track = stt[10] or 0
+        cs = (stt[1] or '').strip()
+        positions.append({"lat": lat, "lon": lon, "callsign": cs, "alt": alt, "speed": speed, "track": track})
+    st.sidebar.markdown(f"**OpenSky fallback count:** {len(positions)}")
 
 # Utility functions
 def haversine(lat1, lon1, lat2, lon2):
