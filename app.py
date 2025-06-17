@@ -50,14 +50,21 @@ st.sidebar.title("☀️🌙 Aircraft Shadow Forecast Settings")
 selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
 selected_time = st.sidebar.time_input("Time (UTC)", value=datetime.utcnow().time().replace(second=0, microsecond=0))
 t0 = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
+# Shadow toggles
 show_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 if MOON_AVAILABLE:
     show_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
 else:
     show_moon = False
     st.sidebar.markdown("**Moon shadows unavailable:** install `pip install ephem` to enable")
+# Alert and search settings
 alert_radius = st.sidebar.slider("Alert Radius (m)", min_value=10, max_value=200, value=50, step=5)
+radius_km = st.sidebar.slider("Flight Search Radius (km)", min_value=10, max_value=200, value=50, step=10)
 zoom = st.sidebar.slider("Map Zoom Level", min_value=6, max_value=15, value=12)
+
+# Compute bounding box (degrees) from radius
+delta = radius_km / 111.0  # approx degrees per km
+bounds = f"{HOME_LAT-delta},{HOME_LON-delta},{HOME_LAT+delta},{HOME_LON+delta}"
 
 # Initialize Folium Map
 m = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom)
@@ -84,9 +91,6 @@ def move_position(lat, lon, bearing_deg, distance_m):
 
 # Fetch live flights via FlightRadar24 API
 api = FR24API(FR24_API_KEY)
-# bounding box ~0.5° ~50km around home
-delta = 0.5
-bounds = f"{HOME_LAT-delta},{HOME_LON-delta},{HOME_LAT+delta},{HOME_LON+delta}"
 try:
     positions = api.get_flight_positions_light(bounds)
 except FR24AuthenticationError as e:
@@ -95,6 +99,11 @@ except FR24AuthenticationError as e:
 except Exception as e:
     st.error(f"Error fetching FlightRadar24 data: {e}")
     st.stop()
+
+# Show number of flights found
+st.sidebar.markdown(f"**Flights found:** {len(positions)} within {radius_km} km")
+if not positions:
+    st.warning(f"No flights found within {radius_km} km of home. Try increasing the search radius.")
 
 alerts = []
 
@@ -117,18 +126,18 @@ for pos in positions:
     for t in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
         dist = speed_mps * t
         f_lat, f_lon = move_position(lat, lon, track, dist)
-        # Sun
+        # Sun shadow
         if show_sun:
             sun_alt = solar_altitude(f_lat, f_lon, t0 + timedelta(seconds=t))
             if sun_alt > 0:
                 sun_az = solar_azimuth(f_lat, f_lon, t0 + timedelta(seconds=t))
                 shadow_dist = alt_m / tan(radians(sun_alt))
                 sh_lat, sh_lon = move_position(f_lat, f_lon, sun_az+180, shadow_dist)
-                trail.append(((sh_lat, s_lon), 'sun'))
+                trail.append(((sh_lat, sh_lon), 'sun'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((callsign.strip(), t, sh_lat, sh_lon))
                     alerted = True
-        # Moon
+        # Moon shadow
         if show_moon and MOON_AVAILABLE:
             obs = ephem.Observer()
             obs.lat, obs.lon = str(f_lat), str(f_lon)
