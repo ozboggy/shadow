@@ -211,7 +211,7 @@ if os.path.exists(log_path):
         st.plotly_chart(fig, use_container_width=True)
 
 
-map_data = st_folium(fmap, width=2000, height=1400)
+map_data = st_folium(fmap, width=1500, height=1000)
 if map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
