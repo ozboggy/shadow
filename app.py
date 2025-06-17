@@ -93,17 +93,33 @@ if use_fallback:
         st.error(f"JS feed error: {e}")
         st.stop()
     if debug:
-        st.write("Feed.js keys:", list(data.keys())[:10])
-    # Parse feed entries
-    meta_keys = {"version","full_count","stats"}
+        st.write("Feed.js raw keys:", list(data.keys())[:10])
+    # Parse feed entries: expect lists of at least 3 elements [hex, lat, lon, ...]
+    meta_keys = {"version", "full_count", "stats"}
     for key, val in data.items():
-        if key in meta_keys or not isinstance(val, list):
+        if not isinstance(val, list):
             continue
-        lat = val[1]; lon = val[2]
-        callsign = val[9] if len(val) > 9 else key
-        positions.append({"lat":lat, "lon":lon, "callsign":callsign})
+        # Safely extract lat/lon
+        try:
+            lat = val[1]
+            lon = val[2]
+        except (IndexError, TypeError):
+            if debug:
+                st.write(f"Skipping feed entry {key}: invalid format {val}")
+            continue
+        # Skip missing coordinates
+        if lat is None or lon is None:
+            continue
+        # Determine callsign
+        callsign = None
+        if len(val) > 9 and isinstance(val[9], str) and val[9].strip():
+            callsign = val[9].strip()
+        else:
+            callsign = key
+        positions.append({"lat": lat, "lon": lon, "callsign": callsign})
     st.sidebar.markdown(f"**Feed.js count:** {len(positions)}")
 else:
+
     api = FR24API(FR24_API_KEY)
     try:
         raw = api.get_flight_positions_light(bounds)
