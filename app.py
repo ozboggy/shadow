@@ -31,7 +31,7 @@ if not FR24_API_KEY:
     st.stop()
 
 # Home coordinates
-default_home = (-33.7554186, 150.9656457)
+default_home = (-33.7608288, 150.9713948)
 HOME_LAT, HOME_LON = default_home
 
 # Forecast settings
@@ -101,9 +101,9 @@ except Exception as e:
     st.stop()
 
 # Show number of flights found
-st.sidebar.markdown(f"**Flights found:** {len(positions)} within {radius_km} km")
+st.sidebar.markdown(f"**Flights found:** {len(positions)} within {radius_km} km")
 if not positions:
-    st.warning(f"No flights found within {radius_km} km of home. Try increasing the search radius.")
+    st.warning(f"No flights found within {radius_km} km of home. Try increasing the search radius.")
 
 alerts = []
 
@@ -150,45 +150,3 @@ for pos in positions:
                 sh_lat, sh_lon = move_position(f_lat, f_lon, moon_az+180, shadow_dist)
                 trail.append(((sh_lat, sh_lon), 'moon'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((callsign.strip(), t, sh_lat, sh_lon))
-                    alerted = True
-    # Draw flight and shadows
-    folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
-                  popup=f"{callsign}\nAlt: {int(alt_m)}m").add_to(m)
-    for (s_lat, s_lon), typ in trail:
-        color = '#FFA500' if typ=='sun' else '#AAAAAA'
-        folium.CircleMarker((s_lat, s_lon), radius=2, color=color, fill=True, fill_opacity=0.7).add_to(m)
-
-# Alerts UI and logging
-if alerts:
-    st.error("🚨 Shadow Alert!")
-    for cs, tsec, _, _ in alerts:
-        st.write(f"✈️ {cs} passes home shadow in ~{tsec}s")
-        with open(LOG_FILE, "a", newline="") as f:
-            csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec, HOME_LAT, HOME_LON])
-        try:
-            requests.post(
-                "https://api.pushover.net/1/messages.json",
-                data={
-                    "token": PUSHOVER_API_TOKEN,
-                    "user": PUSHOVER_USER_KEY,
-                    "title": "✈️ Shadow Alert",
-                    "message": f"{cs} shadow over home in {tsec}s"
-                }
-            )
-        except Exception as e:
-            st.warning(f"Pushover failed: {e}")
-else:
-    st.success("✅ No shadow passes predicted within alert radius.")
-
-# Display map
-st_folium(m, width=800, height=600)
-
-# Show log download
-if pathlib.Path(LOG_FILE).exists():
-    st.sidebar.markdown("### 📥 Download Alert Log")
-    with open(LOG_FILE, 'rb') as f:
-        st.sidebar.download_button("Download CSV", f, file_name="shadow_alerts.csv")
-    df = pd.read_csv(LOG_FILE)
-    if not df.empty:
-        st.sidebar.dataframe(df.tail(10))
