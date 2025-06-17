@@ -29,15 +29,27 @@ HOME_LAT, HOME_LON = -33.7608288, 150.9713948
 
 # Sidebar UI
 st.sidebar.title("☀️🌙 Shadow Forecast Settings")
+# Date and time in UTC
 selected_date = st.sidebar.date_input("Date (UTC)", datetime.utcnow().date())
 selected_time = st.sidebar.time_input("Time (UTC)", datetime.utcnow().time().replace(second=0, microsecond=0))
 t0 = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
+
+# Show sun and moon altitudes at home
+sun_alt_home = solar_altitude(HOME_LAT, HOME_LON, t0)
+st.sidebar.write(f"Sun altitude at home: {sun_alt_home:.1f}°")
+if MOON_AVAILABLE:
+    obs = ephem.Observer(); obs.lat, obs.lon = str(HOME_LAT), str(HOME_LON)
+    obs.date = t0.strftime('%Y/%m/%d %H:%M:%S')
+    moon_alt_home = degrees(ephem.Moon(obs).alt)
+    st.sidebar.write(f"Moon altitude at home: {moon_alt_home:.1f}°")
+# Warn if sun is below horizon
+if sun_alt_home <= 0 and not (MOON_AVAILABLE and moon_alt_home > 0):
+    st.sidebar.warning("Both sun and moon are below the horizon at the selected time; no shadows will appear.")
+
 show_sun = st.sidebar.checkbox("Show Sun Shadows", True)
 show_moon = False
 if MOON_AVAILABLE:
     show_moon = st.sidebar.checkbox("Show Moon Shadows", False)
-else:
-    st.sidebar.markdown("*Install `pip install ephem` for moon shadows*")
 alert_radius = st.sidebar.slider("Alert Radius (m)", 10, 200, 50, 5)
 radius_km = st.sidebar.slider("Search Radius (km)", 10, 200, 50, 10)
 zoom = st.sidebar.slider("Map Zoom Level", 6, 15, 12)
@@ -148,9 +160,9 @@ for p in positions:
                 az = solar_azimuth(fx, fy, t0 + timedelta(seconds=t))
                 sd = alt_m / tan(radians(sa))
                 sx, sy = move_position(fx, fy, az + 180, sd)
-                trail.append((sx, sy, 'sun', fx, fy))
+                trail.append((fx, fy, sx, sy, 'sun'))
                 if not alerted and haversine(sx, sy, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((cs, t, sx, sy, fx, fy))
+                    alerts.append((cs, t, fx, fy, sx, sy))
                     alerted = True
         if show_moon and MOON_AVAILABLE:
             obs = ephem.Observer(); obs.lat, obs.lon = str(fx), str(fy)
@@ -160,18 +172,19 @@ for p in positions:
                 maz = degrees(mobj.az)
                 sd = alt_m / tan(radians(ma))
                 sx, sy = move_position(fx, fy, maz + 180, sd)
-                trail.append((sx, sy, 'moon', fx, fy))
+                trail.append((fx, fy, sx, sy, 'moon'))
                 if not alerted and haversine(sx, sy, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((cs, t, sx, sy, fx, fy))
+                    alerts.append((cs, t, fx, fy, sx, sy))
                     alerted = True
-    for sx, sy, typ, fx, fy in trail:
+    # Draw lines for shadow predictions
+    for fx, fy, sx, sy, typ in trail:
         color = '#FFA500' if typ == 'sun' else '#AAAAAA'
         folium.PolyLine([(fx, fy), (sx, sy)], color=color, weight=2).add_to(m)
 
 if alerts:
     st.error("🚨 Shadow Alert!")
-    for cs, t, sx, sy, fx, fy in alerts:
-        st.write(f"✈️ {cs} shadow in ~{t}s at {sx:.5f},{sy:.5f} (from {fx:.5f},{fy:.5f})")
+    for cs, t, fx, fy, sx, sy in alerts:
+        st.write(f"✈️ {cs} shadow in ~{t}s from {fx:.5f},{fy:.5f} to {sx:.5f},{sy:.5f}")
         with open(LOG_FILE, 'a', newline='') as f:
             csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, t, sx, sy])
         try:
