@@ -50,14 +50,12 @@ st.sidebar.title("☀️🌙 Aircraft Shadow Forecast Settings")
 selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
 selected_time = st.sidebar.time_input("Time (UTC)", value=datetime.utcnow().time().replace(second=0, microsecond=0))
 t0 = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
-# Shadow toggles
 show_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 if MOON_AVAILABLE:
     show_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
 else:
     show_moon = False
     st.sidebar.markdown("**Moon shadows unavailable:** install `pip install ephem` to enable")
-# Alert and search settings
 alert_radius = st.sidebar.slider("Alert Radius (m)", min_value=10, max_value=200, value=50, step=5)
 radius_km = st.sidebar.slider("Flight Search Radius (km)", min_value=10, max_value=200, value=50, step=10)
 zoom = st.sidebar.slider("Map Zoom Level", min_value=6, max_value=15, value=12)
@@ -114,10 +112,9 @@ for pos in positions:
     alt = getattr(pos, 'altitude', None)  # in feet
     speed = getattr(pos, 'speed', None)   # in knots
     track = getattr(pos, 'track', None) or getattr(pos, 'heading', None)
-    callsign = getattr(pos, 'callsign', '')
+    callsign = getattr(pos, 'callsign', '').strip()
     if None in (lat, lon, alt, speed, track):
         continue
-    # Convert units
     alt_m = alt * 0.3048
     speed_mps = speed * 0.514444
     trail = []
@@ -132,10 +129,10 @@ for pos in positions:
             if sun_alt > 0:
                 sun_az = solar_azimuth(f_lat, f_lon, t0 + timedelta(seconds=t))
                 shadow_dist = alt_m / tan(radians(sun_alt))
-                sh_lat, sh_lon = move_position(f_lat, f_lon, sun_az+180, shadow_dist)
+                sh_lat, sh_lon = move_position(f_lat, f_lon, sun_az + 180, shadow_dist)
                 trail.append(((sh_lat, sh_lon), 'sun'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((callsign.strip(), t, sh_lat, sh_lon))
+                    alerts.append((callsign, t, sh_lat, sh_lon))
                     alerted = True
         # Moon shadow
         if show_moon and MOON_AVAILABLE:
@@ -147,6 +144,43 @@ for pos in positions:
             if moon_alt > 0:
                 moon_az = degrees(mobj.az)
                 shadow_dist = alt_m / tan(radians(moon_alt))
-                sh_lat, sh_lon = move_position(f_lat, f_lon, moon_az+180, shadow_dist)
+                sh_lat, sh_lon = move_position(f_lat, f_lon, moon_az + 180, shadow_dist)
                 trail.append(((sh_lat, sh_lon), 'moon'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
+                    alerts.append((callsign, t, sh_lat, sh_lon))
+                    alerted = True
+    # Draw flight marker
+    folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{callsign}\nAlt: {int(alt_m)}m").add_to(m)
+    # Draw shadows
+    for (s_lat, s_lon), typ in trail:
+        color = '#FFA500' if typ == 'sun' else '#AAAAAA'
+        folium.CircleMarker((s_lat, s_lon), radius=2, color=color, fill=True, fill_opacity=0.7).add_to(m)
+
+# Alerts UI and logging
+if alerts:
+    st.error("🚨 Shadow Alert!")
+    for cs, tsec, _, _ in alerts:
+        st.write(f"✈️ {cs} passes home shadow in ~{tsec}s")
+        with open(LOG_FILE, "a", newline="") as f:
+            csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec, HOME_LAT, HOME_LON])
+        try:
+            requests.post(
+                "https://api.pushover.net/1/messages.json",
+                data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "title": "✈️ Shadow Alert", "message": f"{cs} shadow over home in {tsec}s"}
+            )
+        except Exception as e:
+            st.warning(f"Pushover failed: {e}")
+else:
+    st.success("✅ No shadow passes predicted within alert radius.")
+
+# Display map
+st_folium(m, width=800, height=600)
+
+# Show log download
+if pathlib.Path(LOG_FILE).exists():
+    st.sidebar.markdown("### 📥 Download Alert Log")
+    with open(LOG_FILE, 'rb') as f:
+        st.sidebar.download_button("Download CSV", f, file_name="shadow_alerts.csv")
+    df = pd.read_csv(LOG_FILE)
+    if not df.empty:
+        st.sidebar.dataframe(df.tail(10))
