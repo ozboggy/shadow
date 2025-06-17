@@ -6,9 +6,13 @@ from pyfr24 import FR24API, FR24AuthenticationError
 import requests
 import folium
 from streamlit_folium import st_folium
-from math import radians, sin, cos, asin, sqrt, tan
+from math import radians, sin, cos, asin, sqrt, tan, atan2, degrees
 from pysolar.solar import get_altitude as solar_altitude, get_azimuth as solar_azimuth
-import ephem
+try:
+    import ephem
+    MOON_AVAILABLE = True
+except ImportError:
+    MOON_AVAILABLE = False
 import csv
 import pandas as pd
 import pathlib
@@ -47,7 +51,11 @@ selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date
 selected_time = st.sidebar.time_input("Time (UTC)", value=datetime.utcnow().time().replace(second=0, microsecond=0))
 t0 = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
 show_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
-show_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
+if MOON_AVAILABLE:
+    show_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
+else:
+    show_moon = False
+    st.sidebar.markdown("**Moon shadows unavailable:** install `pip install ephem` to enable")
 alert_radius = st.sidebar.slider("Alert Radius (m)", min_value=10, max_value=200, value=50, step=5)
 zoom = st.sidebar.slider("Map Zoom Level", min_value=6, max_value=15, value=12)
 
@@ -62,7 +70,6 @@ def haversine(lat1, lon1, lat2, lon2):
     dlon = radians(lon2 - lon1)
     a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
     return R * 2 * asin(sqrt(a))
-
 
 def move_position(lat, lon, bearing_deg, distance_m):
     R = 6371000
@@ -108,25 +115,24 @@ for pos in positions:
     alerted = False
 
     for t in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
-        ft = t
-        dist = speed_mps * ft
+        dist = speed_mps * t
         f_lat, f_lon = move_position(lat, lon, track, dist)
         # Sun
         if show_sun:
-            sun_alt = solar_altitude(f_lat, f_lon, t0 + timedelta(seconds=ft))
+            sun_alt = solar_altitude(f_lat, f_lon, t0 + timedelta(seconds=t))
             if sun_alt > 0:
-                sun_az = solar_azimuth(f_lat, f_lon, t0 + timedelta(seconds=ft))
+                sun_az = solar_azimuth(f_lat, f_lon, t0 + timedelta(seconds=t))
                 shadow_dist = alt_m / tan(radians(sun_alt))
                 sh_lat, sh_lon = move_position(f_lat, f_lon, sun_az+180, shadow_dist)
-                trail.append(((sh_lat, sh_lon), 'sun'))
+                trail.append(((sh_lat, s_lon), 'sun'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((callsign.strip(), ft, sh_lat, sh_lon))
+                    alerts.append((callsign.strip(), t, sh_lat, sh_lon))
                     alerted = True
         # Moon
-        if show_moon:
+        if show_moon and MOON_AVAILABLE:
             obs = ephem.Observer()
             obs.lat, obs.lon = str(f_lat), str(f_lon)
-            obs.date = (t0 + timedelta(seconds=ft)).strftime('%Y/%m/%d %H:%M:%S')
+            obs.date = (t0 + timedelta(seconds=t)).strftime('%Y/%m/%d %H:%M:%S')
             mobj = ephem.Moon(obs)
             moon_alt = degrees(mobj.alt)
             if moon_alt > 0:
@@ -135,24 +141,22 @@ for pos in positions:
                 sh_lat, sh_lon = move_position(f_lat, f_lon, moon_az+180, shadow_dist)
                 trail.append(((sh_lat, sh_lon), 'moon'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((callsign.strip(), ft, sh_lat, sh_lon))
+                    alerts.append((callsign.strip(), t, sh_lat, sh_lon))
                     alerted = True
-    # Draw flight position
+    # Draw flight and shadows
     folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
                   popup=f"{callsign}\nAlt: {int(alt_m)}m").add_to(m)
-    # Draw shadow trails
     for (s_lat, s_lon), typ in trail:
         color = '#FFA500' if typ=='sun' else '#AAAAAA'
         folium.CircleMarker((s_lat, s_lon), radius=2, color=color, fill=True, fill_opacity=0.7).add_to(m)
 
-# Alerts UI and logging\if alerts:
+# Alerts UI and logging
+if alerts:
     st.error("🚨 Shadow Alert!")
     for cs, tsec, _, _ in alerts:
         st.write(f"✈️ {cs} passes home shadow in ~{tsec}s")
-        # Log
         with open(LOG_FILE, "a", newline="") as f:
             csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec, HOME_LAT, HOME_LON])
-        # Pushover
         try:
             requests.post(
                 "https://api.pushover.net/1/messages.json",
