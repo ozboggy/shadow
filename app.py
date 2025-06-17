@@ -26,18 +26,21 @@ FR24_API_KEY = os.getenv("FLIGHTRADAR_API_KEY")
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 
-# Verify API key present
-def check_api():
-    if not FR24_API_KEY:
-        st.error("FLIGHTRADAR_API_KEY not found in .env. Please set it and restart.")
-        st.stop()
+# Log file\LOG_FILE = os.path.join(os.path.dirname(__file__), "shadow_alerts.csv")
+if not pathlib.Path(LOG_FILE).exists():
+    with open(LOG_FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
 
-check_api()
+# Verify API key
+if not FR24_API_KEY:
+    st.error("FLIGHTRADAR_API_KEY not found in .env. Please set it and restart.")
+    st.stop()
 
 # Home coordinates
 HOME_LAT, HOME_LON = -33.7608288, 150.9713948
 
-# App settings
+# Sidebar settings
 st.sidebar.title("Aircraft Shadow Forecast Settings")
 selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
 selected_time = st.sidebar.time_input("Time (UTC)", value=datetime.utcnow().time().replace(second=0, microsecond=0))
@@ -53,14 +56,13 @@ radius_km = st.sidebar.slider("Flight Search Radius (km)", 10, 200, 50, 10)
 zoom = st.sidebar.slider("Map Zoom Level", 6, 15, 12)
 debug = st.sidebar.checkbox("Debug Mode", value=False)
 
-# Compute bounding box
-delta = radius_km / 111.0  # approx deg per km
+# Bounding box
+delta = radius_km / 111.0
 bounds = f"{HOME_LAT-delta},{HOME_LON-delta},{HOME_LAT+delta},{HOME_LON+delta}"
 
 # Debug info
 if debug:
     st.sidebar.markdown("### Debug Info")
-    # Masked API key
     st.sidebar.write("FR24 API Key:", FR24_API_KEY[:4] + "****")
     st.sidebar.write("Bounds:", bounds)
 
@@ -126,7 +128,6 @@ for pos in positions:
     alerted = False
     for t in range(0, 5*60+1, 30):
         f_lat, f_lon = move_position(lat, lon, track, speed_mps * t)
-        # Sun shadow
         if show_sun:
             sa = solar_altitude(f_lat, f_lon, t0 + timedelta(seconds=t))
             if sa > 0:
@@ -137,7 +138,6 @@ for pos in positions:
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((callsign, t))
                     alerted = True
-        # Moon shadow
         if show_moon and MOON_AVAILABLE:
             obs = ephem.Observer()
             obs.lat, obs.lon = str(f_lat), str(f_lon)
@@ -163,13 +163,13 @@ if alerts:
     for cs, tsec in alerts:
         st.write(f"✈️ {cs} in ~{tsec}s")
         with open(LOG_FILE, 'a', newline='') as f:
-            csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec])
+            csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec, HOME_LAT, HOME_LON])
         try:
             requests.post(
                 "https://api.pushover.net/1/messages.json",
                 data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "message": f"{cs} shadow over home in {tsec}s"}
             )
-        except Exception:
+        except:
             pass
 else:
     st.success("✅ No shadow passes predicted.")
