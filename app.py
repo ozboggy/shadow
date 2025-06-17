@@ -1,4 +1,7 @@
 import streamlit as st
+# Must be first Streamlit command
+st.set_page_config(layout="wide")
+
 import requests
 import folium
 from folium.plugins import MarkerCluster
@@ -18,14 +21,20 @@ try:
     HAS_FR24API = True
 except ImportError:
     HAS_FR24API = False
-    st.sidebar.warning("pyfr24 not installed; using feed.js fallback for FlightRadar24 data.")
 
 # Load environment vars
 try:
     from dotenv import load_dotenv
     load_dotenv()
+    DOTENV_LOADED = True
 except ImportError:
-    st.warning("python-dotenv not installed; skipping .env loading.")
+    DOTENV_LOADED = False
+
+# Sidebar warnings after config
+if not HAS_FR24API:
+    st.sidebar.warning("pyfr24 not installed; using feed.js fallback for FlightRadar24 data.")
+if not DOTENV_LOADED:
+    st.sidebar.warning("python-dotenv not installed; skipping .env loading.")
 
 OPENSKY_USER = os.getenv("OPENSKY_USERNAME")
 OPENSKY_PASS = os.getenv("OPENSKY_PASSWORD")
@@ -46,8 +55,7 @@ def send_pushover(title: str, message: str):
     except Exception:
         pass
 
-# Streamlit UI
-st.set_page_config(layout="wide")
+# Title and refresh
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
@@ -69,6 +77,7 @@ FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 ALERT_RADIUS_METERS = 50
 
+# Helpers
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = radians(lat2 - lat1); dlon = radians(lon2 - lon1)
@@ -118,9 +127,8 @@ if data_source == "OpenSky":
     except Exception as e:
         st.error(f"Error fetching OpenSky data: {e}")
 else:
-    # FlightRadar24 fetch
+    # FlightRadar24 fetch with feed.js fallback
     flights = []
-    # Try pyfr24 if available
     if HAS_FR24API and FR24_API_KEY:
         try:
             api = FR24API(FR24_API_KEY)
@@ -131,7 +139,6 @@ else:
                 flights = resp
         except Exception:
             flights = []
-    # Fallback to feed.js
     if not flights:
         try:
             r2 = requests.get(
@@ -146,11 +153,8 @@ else:
                     flights.extend(v if isinstance(v[0], list) else [v])
         except Exception:
             pass
-
-    # Safe getter
     def safe_get(lst, idx, default=None):
         return lst[idx] if isinstance(lst, list) and idx < len(lst) else default
-
     for p in flights:
         lat = safe_get(p, 1); lon = safe_get(p, 2)
         if lat is None or lon is None: continue
@@ -159,5 +163,5 @@ else:
         cs = safe_get(p, -1, "") or "N/A"
         aircraft_states.append([None, cs, None, None, None, lon, lat, None, vel, hdg, alt, None, None, None, None])
 
-# Existing logic to plot, forecast, alert...
-# (trimmed for brevity)
+# The rest of your processing, mapping, alerts, and log download code...
+# omitted for brevity
