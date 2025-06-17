@@ -125,19 +125,24 @@ def move_position(lat, lon, bearing_deg, distance_m):
 # Process each flight and project shadows
 alerts = []
 for pos in positions:
-    # Dynamically pick attributes from the Position object
-    attrs = getattr(pos, '__dict__', {})
-    lat = attrs.get('lat') or attrs.get('latitude')
-    lon = attrs.get('lon') or attrs.get('longitude')
-    alt = attrs.get('alt') or attrs.get('altitude')
-    speed = attrs.get('spd') or attrs.get('speed')
-    # Heading or track
-    track = attrs.get('track') or attrs.get('hdg') or attrs.get('heading')
-    # Callsign can be 'flight' or 'callsign'
-    callsign = (attrs.get('flight') or attrs.get('callsign') or attrs.get('reg') or '').strip()
+    # Debug: inspect object
+    if debug:
+        st.write("Position object type:", type(pos))
+        st.write("Available attributes:", [a for a in dir(pos) if not a.startswith('_')])
+    # Extract fields with getattr fallbacks
+    lat = getattr(pos, 'lat', None) or getattr(pos, 'latitude', None)
+    lon = getattr(pos, 'lon', None) or getattr(pos, 'longitude', None)
+    alt = getattr(pos, 'alt', None) or getattr(pos, 'altitude', None)
+    speed = getattr(pos, 'spd', None) or getattr(pos, 'speed', None)
+    track = getattr(pos, 'track', None) or getattr(pos, 'hdg', None) or getattr(pos, 'heading', None)
+    callsign = getattr(pos, 'flight', None) or getattr(pos, 'callsign', None) or getattr(pos, 'reg', None) or ''
+    callsign = str(callsign).strip()
+    # Skip incomplete records
     if None in (lat, lon, alt, speed, track):
+        if debug:
+            st.write(f"Skipping position - lat: {lat}, lon: {lon}, alt: {alt}, speed: {speed}, track: {track}")
         continue
-    # Convert units
+    # Unit conversions
     alt_m = alt * 0.3048
     speed_mps = speed * 0.514444
     trail = []
