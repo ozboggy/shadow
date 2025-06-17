@@ -43,13 +43,7 @@ radius_km = st.sidebar.slider("Search Radius (km)", 10, 200, 50, 10)
 zoom = st.sidebar.slider("Map Zoom Level", 6, 15, 12)
 debug = st.sidebar.checkbox("Debug Mode", False)
 
-# Data source selector
-tab = st.sidebar.radio(
-    "Data Source:",
-    ["Local ADS-B Feed"]
-)
-
-# Build local feed URL
+# Only Local ADS-B Feed
 def get_local_url():
     host = st.sidebar.text_input("Local ADS-B Host", "localhost")
     port = st.sidebar.text_input("Local ADS-B Port", "8080")
@@ -69,7 +63,7 @@ bounds = f"{lat_min:.6f},{lon_min:.6f},{lat_max:.6f},{lon_max:.6f}"
 m = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom)
 folium.Marker([HOME_LAT, HOME_LON], popup="Home", icon=folium.Icon(color="red", icon="home", prefix="fa")).add_to(m)
 
-# Fetch flight positions
+# Fetch local ADS-B feed
 positions = []
 url = get_local_url()
 try:
@@ -170,7 +164,6 @@ for p in positions:
                 if not alerted and haversine(sx, sy, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((cs, t, sx, sy, fx, fy))
                     alerted = True
-    # Draw lines for shadow predictions
     for sx, sy, typ, fx, fy in trail:
         color = '#FFA500' if typ == 'sun' else '#AAAAAA'
         folium.PolyLine([(fx, fy), (sx, sy)], color=color, weight=2).add_to(m)
@@ -178,7 +171,7 @@ for p in positions:
 if alerts:
     st.error("🚨 Shadow Alert!")
     for cs, t, sx, sy, fx, fy in alerts:
-        st.write(f"✈️ {cs} shadow in ~{t}s at {sx:.5f},{sy:.5f} (line from {fx:.5f},{fy:.5f})")
+        st.write(f"✈️ {cs} shadow in ~{t}s at {sx:.5f},{sy:.5f} (from {fx:.5f},{fy:.5f})")
         with open(LOG_FILE, 'a', newline='') as f:
             csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, t, sx, sy])
         try:
@@ -196,7 +189,7 @@ st_folium(m, width=800, height=600)
 
 # Download alert log
 if pathlib.Path(LOG_FILE).exists():
-    st.sidebar.md("### Alert Log")
+    st.sidebar.markdown("### Alert Log")
     with open(LOG_FILE, 'rb') as f:
         st.sidebar.download_button("Download CSV", f, file_name="shadow_alerts.csv")
     df = pd.read_csv(LOG_FILE)
