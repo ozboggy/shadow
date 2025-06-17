@@ -38,6 +38,10 @@ if not FR24_API_KEY:
     st.error("FLIGHTRADAR_API_KEY not found in .env. Please set it and restart.")
     st.stop()
 
+# OpenSky credentials for fallback
+OSKY_USER = os.getenv("OPENSKY_USERNAME")
+OSKY_PASS = os.getenv("OPENSKY_PASSWORD")
+
 # Home coordinates
 HOME_LAT, HOME_LON = -33.7608288, 150.9713948
 
