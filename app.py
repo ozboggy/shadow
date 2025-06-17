@@ -26,7 +26,9 @@ FR24_API_KEY = os.getenv("FLIGHTRADAR_API_KEY")
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 
-# Log file\LOG_FILE = os.path.join(os.path.dirname(__file__), "shadow_alerts.csv")
+# Log file
+LOG_FILE = os.path.join(os.path.dirname(__file__), "shadow_alerts.csv")
+# Initialize log file if it doesn't exist
 if not pathlib.Path(LOG_FILE).exists():
     with open(LOG_FILE, "w", newline="") as f:
         writer = csv.writer(f)
@@ -54,23 +56,25 @@ else:
 alert_radius = st.sidebar.slider("Alert Radius (m)", 10, 200, 50, 5)
 radius_km = st.sidebar.slider("Flight Search Radius (km)", 10, 200, 50, 10)
 zoom = st.sidebar.slider("Map Zoom Level", 6, 15, 12)
+# Optional debug toggle
 debug = st.sidebar.checkbox("Debug Mode", value=False)
 
-# Bounding box
-delta = radius_km / 111.0
+# Compute bounding box in degrees
+delta = radius_km / 111.0  # approx degrees per km
 bounds = f"{HOME_LAT-delta},{HOME_LON-delta},{HOME_LAT+delta},{HOME_LON+delta}"
 
-# Debug info
+# Debug info in sidebar
 if debug:
     st.sidebar.markdown("### Debug Info")
     st.sidebar.write("FR24 API Key:", FR24_API_KEY[:4] + "****")
     st.sidebar.write("Bounds:", bounds)
 
-# Initialize map
-m = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom)
-folium.Marker([HOME_LAT, HOME_LON], icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(m)
+# Initialize Folium map
+time_marker = [HOME_LAT, HOME_LON]
+m = folium.Map(location=time_marker, zoom_start=zoom)
+folium.Marker(time_marker, icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(m)
 
-# Fetch flights
+# Fetch live flights
 api = FR24API(FR24_API_KEY)
 try:
     positions = api.get_flight_positions_light(bounds)
@@ -81,13 +85,13 @@ except Exception as e:
     st.error(f"Error fetching flights: {e}")
     st.stop()
 
-# Debug raw data
+# Debug raw FR24 data
 if debug:
     st.write(f"Raw positions count: {len(positions)}")
     sample = [p.__dict__ for p in positions[:5]]
     st.write("Sample positions:", sample)
 
-# Sidebar flight count
+# Sidebar flight count and warning
 st.sidebar.markdown(f"**Flights found:** {len(positions)} within {radius_km} km")
 if not positions:
     st.warning("No flights found. Try increasing the search radius or check your API key.")
@@ -111,13 +115,13 @@ def move_position(lat, lon, bearing_deg, distance_m):
     lon2 = lon1 + atan2(sin(bearing)*sin(d)*cos(lat1), cos(d) - sin(lat1)*sin(lat2))
     return degrees(lat2), degrees(lon2)
 
-# Process flights
+# Process each flight and project shadows
 alerts = []
 for pos in positions:
     lat = getattr(pos, 'latitude', None)
     lon = getattr(pos, 'longitude', None)
-    alt = getattr(pos, 'altitude', None)
-    speed = getattr(pos, 'speed', None)
+    alt = getattr(pos, 'altitude', None)  # feet
+    speed = getattr(pos, 'speed', None)   # knots
     track = getattr(pos, 'track', None) or getattr(pos, 'heading', None)
     callsign = getattr(pos, 'callsign', '').strip()
     if None in (lat, lon, alt, speed, track):
@@ -126,8 +130,10 @@ for pos in positions:
     speed_mps = speed * 0.514444
     trail = []
     alerted = False
+    # Forecast over next 5 minutes in 30s steps
     for t in range(0, 5*60+1, 30):
         f_lat, f_lon = move_position(lat, lon, track, speed_mps * t)
+        # Sun shadow
         if show_sun:
             sa = solar_altitude(f_lat, f_lon, t0 + timedelta(seconds=t))
             if sa > 0:
@@ -136,8 +142,9 @@ for pos in positions:
                 sh_lat, sh_lon = move_position(f_lat, f_lon, az + 180, sd)
                 trail.append((sh_lat, sh_lon, 'sun'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((callsign, t))
+                    alerts.append((callsign, t, sh_lat, sh_lon))
                     alerted = True
+        # Moon shadow
         if show_moon and MOON_AVAILABLE:
             obs = ephem.Observer()
             obs.lat, obs.lon = str(f_lat), str(f_lon)
@@ -150,20 +157,22 @@ for pos in positions:
                 sh_lat, sh_lon = move_position(f_lat, f_lon, maz + 180, sd)
                 trail.append((sh_lat, sh_lon, 'moon'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((callsign, t))
+                    alerts.append((callsign, t, sh_lat, sh_lon))
                     alerted = True
+    # Draw aircraft
     folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=callsign).add_to(m)
+    # Draw shadow points
     for s_lat, s_lon, typ in trail:
-        color = '#FFA500' if typ == 'sun' else '#AAAAAA'
+        color = '#FFA500' if typ=='sun' else '#AAAAAA'
         folium.CircleMarker((s_lat, s_lon), radius=2, color=color, fill=True, fill_opacity=0.7).add_to(m)
 
-# Alerts
+# Display alerts and send notifications
 if alerts:
     st.error("🚨 Shadow Alert!")
-    for cs, tsec in alerts:
-        st.write(f"✈️ {cs} in ~{tsec}s")
+    for cs, tsec, lat_s, lon_s in alerts:
+        st.write(f"✈️ {cs} shadow in ~{tsec}s at {lat_s:.5f},{lon_s:.5f}")
         with open(LOG_FILE, 'a', newline='') as f:
-            csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec, HOME_LAT, HOME_LON])
+            csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec, lat_s, lon_s])
         try:
             requests.post(
                 "https://api.pushover.net/1/messages.json",
@@ -174,10 +183,10 @@ if alerts:
 else:
     st.success("✅ No shadow passes predicted.")
 
-# Display map
+# Render map
 st_folium(m, width=800, height=600)
 
-# Log download
+# Log download section
 if pathlib.Path(LOG_FILE).exists():
     st.sidebar.markdown("## Alert Log")
     with open(LOG_FILE, 'rb') as f:
