@@ -52,18 +52,22 @@ debug = st.sidebar.checkbox("Debug Mode", False)
 
 # Data source choices
 tab = st.sidebar.radio("Data Source:", ["FR24 API", "JS Feed Fallback", "Local ADS-B Feed"] )
+# For local ADS-B feed, let user configure host, port, and path
+def build_local_url():
+    host = st.sidebar.text_input("Local ADS-B Host (IP or hostname)", "localhost")
+    port = st.sidebar.text_input("Local ADS-B Port", "8080")
+    path = st.sidebar.text_input("Local ADS-B Path", "/data/aircraft.json")
+    url = f"http://{host}:{port}{path}"
+    st.sidebar.write("Using Local feed URL:", url)
+    return url
+
 local_feed_url = None
 if tab == "Local ADS-B Feed":
-    local_feed_url = st.sidebar.text_input("Local ADS-B JSON URL", "http://localhost:8080/data.json")
+    local_feed_url = build_local_url()
 
 # Compute bounding box
 delta_lat = radius_km / 110.574
-delta_lon = radius_km / (111.320 * cos(radians(HOME_LAT)))
-lat_min, lat_max = HOME_LAT - delta_lat, HOME_LAT + delta_lat
-lon_min, lon_max = HOME_LON - delta_lon, HOME_LON + delta_lon
-bounds = f"{lat_min:.6f},{lon_min:.6f},{lat_max:.6f},{lon_max:.6f}"
 
-# Initialize map
 m = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom)
 folium.Marker([HOME_LAT, HOME_LON], popup="Home", icon=folium.Icon(color="red", icon="home", prefix="fa")).add_to(m)
 folium.Rectangle([[lat_min, lon_min], [lat_max, lon_max]], color="blue", fill=False).add_to(m)
