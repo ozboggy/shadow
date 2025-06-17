@@ -102,12 +102,28 @@ if use_fallback:
         for entry in aircraft_list:
             if not isinstance(entry, list) or len(entry) < 3:
                 continue
-            lat, lon = entry[1], entry[2]
+            lat = entry[1]
+            lon = entry[2]
             if lat is None or lon is None:
                 continue
             callsign = str(entry[0])
             positions.append({"lat": lat, "lon": lon, "callsign": callsign})
     else:
+        # Fallback to old dict mapping
+        meta_keys = {"version", "full_count", "stats"}
+        for key, val in data.items():
+            if key in meta_keys or not isinstance(val, list):
+                continue
+            try:
+                lat = val[1]
+                lon = val[2]
+            except Exception:
+                continue
+            if lat is None or lon is None:
+                continue
+            positions.append({"lat": lat, "lon": lon, "callsign": key})
+    st.sidebar.markdown(f"**Feed.js count:** {len(positions)}")
+else:
         # Fallback to old dict mapping
         meta_keys = {"version", "full_count", "stats"}
         for key, val in data.items():
