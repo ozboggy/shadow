@@ -148,19 +148,21 @@ if not positions:
     else:
         auth = None
         st.sidebar.write("OpenSky anonymous access (may be limited)")
-    # Fetch from OpenSky
-    opensky_url = (
-        f"https://opensky-network.org/api/states/all?"
-        f"lamin={lat_min}&lomin={lon_min}&lamax={lat_max}&lomax={lon_max}"
-    )
-    try:
+        try:
+        # Attempt with credentials if provided
         if auth:
             resp = requests.get(opensky_url, auth=auth, timeout=10)
+            if resp.status_code == 401:
+                st.warning("OpenSky credentials invalid; retrying anonymously.")
+                resp = requests.get(opensky_url, timeout=10)
         else:
             resp = requests.get(opensky_url, timeout=10)
         resp.raise_for_status()
         data_os = resp.json()
         states = data_os.get("states", []) or []
+    except requests.HTTPError as e:
+        st.error(f"OpenSky fallback HTTP error: {e}")
+        states = []
     except Exception as e:
         st.error(f"OpenSky fallback error: {e}")
         states = []
@@ -175,7 +177,7 @@ if not positions:
         track = stt[10] or 0
         cs = (stt[1] or '').strip()
         positions.append({"lat": lat, "lon": lon, "callsign": cs, "alt": alt, "speed": speed, "track": track})
-    st.sidebar.markdown(f"**OpenSky fallback count:** {len(positions)}")
+    st.sidebar.markdown(f"**OpenSky fallback count:** {len(positions)}")(f"**OpenSky fallback count:** {len(positions)}")
 
 # Utility functions
 def haversine(lat1, lon1, lat2, lon2):
