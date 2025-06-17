@@ -1,7 +1,0 @@
-streamlit
-requests
-folium
-streamlit-folium
-pysolar
-pandas
-plotly
