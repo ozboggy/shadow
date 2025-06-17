@@ -55,24 +55,31 @@ else:
 alert_radius = st.sidebar.slider("Alert Radius (m)", 10, 200, 50, 5)
 radius_km = st.sidebar.slider("Flight Search Radius (km)", 10, 200, 50, 10)
 zoom = st.sidebar.slider("Map Zoom Level", 6, 15, 12)
-# Optional debug toggle
 debug = st.sidebar.checkbox("Debug Mode", value=False)
 
-# Compute bounding box in degrees based on correct scaling
+# Compute bounding box with proper scaling
 # 1° latitude ≈ 110.574 km; 1° longitude ≈ 111.320 km × cos(lat)
 delta_lat = radius_km / 110.574
 delta_lon = radius_km / (111.320 * cos(radians(HOME_LAT)))
-bounds = f"{HOME_LAT - delta_lat:.6f},{HOME_LON - delta_lon:.6f},{HOME_LAT + delta_lat:.6f},{HOME_LON + delta_lon:.6f}"
+lat_min = HOME_LAT - delta_lat
+lat_max = HOME_LAT + delta_lat
+lon_min = HOME_LON - delta_lon
+lon_max = HOME_LON + delta_lon
+bounds = f"{lat_min:.6f},{lon_min:.6f},{lat_max:.6f},{lon_max:.6f}"
 
 # Debug info in sidebar
 if debug:
     st.sidebar.markdown("### Debug Info")
     st.sidebar.write("FR24 API Key:", FR24_API_KEY[:4] + "****")
-    st.sidebar.write("Bounds:", bounds)
+    st.sidebar.write("Bounds string:", bounds)
+    st.sidebar.write("lat_min, lon_min:", lat_min, lon_min)
+    st.sidebar.write("lat_max, lon_max:", lat_max, lon_max)
 
 # Initialize Folium map
 m = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom)
 folium.Marker([HOME_LAT, HOME_LON], icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(m)
+# Draw bounding rectangle for visual
+folium.Rectangle([[lat_min, lon_min], [lat_max, lon_max]], color="blue", fill=False, weight=2).add_to(m)
 
 # Fetch live flights
 api = FR24API(FR24_API_KEY)
@@ -85,7 +92,7 @@ except Exception as e:
     st.error(f"Error fetching flights: {e}")
     st.stop()
 
-# Debug raw data
+# Debug raw FR24 data
 if debug:
     st.write(f"Raw positions count: {len(positions)}")
     sample = [p.__dict__ for p in positions[:5]]
@@ -120,8 +127,8 @@ alerts = []
 for pos in positions:
     lat = getattr(pos, 'latitude', None)
     lon = getattr(pos, 'longitude', None)
-    alt = getattr(pos, 'altitude', None)  # feet
-    speed = getattr(pos, 'speed', None)   # knots
+    alt = getattr(pos, 'altitude', None)
+    speed = getattr(pos, 'speed', None)
     track = getattr(pos, 'track', None) or getattr(pos, 'heading', None)
     callsign = getattr(pos, 'callsign', '').strip()
     if None in (lat, lon, alt, speed, track):
@@ -132,7 +139,6 @@ for pos in positions:
     alerted = False
     for t in range(0, 5*60+1, 30):
         f_lat, f_lon = move_position(lat, lon, track, speed_mps * t)
-        # Sun shadow
         if show_sun:
             sa = solar_altitude(f_lat, f_lon, t0 + timedelta(seconds=t))
             if sa > 0:
@@ -143,7 +149,6 @@ for pos in positions:
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((callsign, t, sh_lat, sh_lon))
                     alerted = True
-        # Moon shadow
         if show_moon and MOON_AVAILABLE:
             obs = ephem.Observer()
             obs.lat, obs.lon = str(f_lat), str(f_lon)
