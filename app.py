@@ -125,20 +125,27 @@ def move_position(lat, lon, bearing_deg, distance_m):
 # Process each flight and project shadows
 alerts = []
 for pos in positions:
-    lat = getattr(pos, 'latitude', None)
-    lon = getattr(pos, 'longitude', None)
-    alt = getattr(pos, 'altitude', None)
-    speed = getattr(pos, 'speed', None)
-    track = getattr(pos, 'track', None) or getattr(pos, 'heading', None)
-    callsign = getattr(pos, 'callsign', '').strip()
+    # Dynamically pick attributes from the Position object
+    attrs = getattr(pos, '__dict__', {})
+    lat = attrs.get('lat') or attrs.get('latitude')
+    lon = attrs.get('lon') or attrs.get('longitude')
+    alt = attrs.get('alt') or attrs.get('altitude')
+    speed = attrs.get('spd') or attrs.get('speed')
+    # Heading or track
+    track = attrs.get('track') or attrs.get('hdg') or attrs.get('heading')
+    # Callsign can be 'flight' or 'callsign'
+    callsign = (attrs.get('flight') or attrs.get('callsign') or attrs.get('reg') or '').strip()
     if None in (lat, lon, alt, speed, track):
         continue
+    # Convert units
     alt_m = alt * 0.3048
     speed_mps = speed * 0.514444
     trail = []
     alerted = False
+    # Forecast over next 5 minutes in 30s steps
     for t in range(0, 5*60+1, 30):
         f_lat, f_lon = move_position(lat, lon, track, speed_mps * t)
+        # Sun shadow
         if show_sun:
             sa = solar_altitude(f_lat, f_lon, t0 + timedelta(seconds=t))
             if sa > 0:
@@ -149,6 +156,7 @@ for pos in positions:
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((callsign, t, sh_lat, sh_lon))
                     alerted = True
+        # Moon shadow
         if show_moon and MOON_AVAILABLE:
             obs = ephem.Observer()
             obs.lat, obs.lon = str(f_lat), str(f_lon)
@@ -163,12 +171,29 @@ for pos in positions:
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((callsign, t, sh_lat, sh_lon))
                     alerted = True
+    # Draw aircraft marker
     folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=callsign).add_to(m)
+    # Draw shadow points
     for s_lat, s_lon, typ in trail:
         color = '#FFA500' if typ=='sun' else '#AAAAAA'
         folium.CircleMarker((s_lat, s_lon), radius=2, color=color, fill=True, fill_opacity=0.7).add_to(m)
 
 # Display alerts and send notifications
+if alerts:
+    st.error("🚨 Shadow Alert!")
+    for cs, tsec, lat_s, lon_s in alerts:
+        st.write(f"✈️ {cs} shadow in ~{tsec}s at {lat_s:.5f},{lon_s:.5f}")
+        with open(LOG_FILE, 'a', newline='') as f:
+            csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec, lat_s, lon_s])
+        try:
+            requests.post(
+                "https://api.pushover.net/1/messages.json",
+                data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "message": f"{cs} shadow over home in {tsec}s"}
+            )
+        except:
+            pass
+else:
+    st.success("✅ No shadow passes predicted.")
 if alerts:
     st.error("🚨 Shadow Alert!")
     for cs, tsec, lat_s, lon_s in alerts:
