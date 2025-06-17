@@ -7,7 +7,6 @@ import folium
 from streamlit_folium import st_folium
 from math import radians, sin, cos, asin, sqrt, tan, atan2, degrees
 from pysolar.solar import get_altitude as solar_altitude, get_azimuth as solar_azimuth
-from pyfr24 import FR24API, FR24AuthenticationError
 try:
     import ephem
     MOON_AVAILABLE = True
@@ -22,14 +21,8 @@ dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path)
 
 # Credentials
-FR24_API_KEY = os.getenv("FLIGHTRADAR_API_KEY")
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
-
-# Validate FR24 API key
-if not FR24_API_KEY:
-    st.error("FLIGHTRADAR_API_KEY missing in .env. Please set and restart.")
-    st.stop()
 
 # Home coordinates
 HOME_LAT, HOME_LON = -33.7608288, 150.9713948
@@ -53,7 +46,7 @@ debug = st.sidebar.checkbox("Debug Mode", False)
 # Data source selector
 tab = st.sidebar.radio(
     "Data Source:",
-    ["FR24 API", "JS Feed Fallback", "Local ADS-B Feed"]
+    ["Local ADS-B Feed"]
 )
 
 # Build local feed URL
@@ -78,76 +71,29 @@ folium.Marker([HOME_LAT, HOME_LON], popup="Home", icon=folium.Icon(color="red", 
 
 # Fetch flight positions
 positions = []
-if tab == "Local ADS-B Feed":
-    url = get_local_url()
-    try:
-        data = requests.get(url, timeout=5).json()
-    except Exception as e:
-        st.error(f"Local ADS-B feed error: {e}")
-        st.stop()
-    aircraft = data.get("aircraft") if isinstance(data, dict) else data
-    for ent in aircraft or []:
-        if not isinstance(ent, dict):
-            continue
-        lat = ent.get('lat') or ent.get('latitude')
-        lon = ent.get('lon') or ent.get('longitude')
-        if lat is None or lon is None:
-            continue
-        positions.append({
-            'lat': lat,
-            'lon': lon,
-            'callsign': (ent.get('flight') or ent.get('callsign') or ent.get('hex') or "").strip(),
-            'alt': ent.get('altitude', 0),
-            'speed': ent.get('speed', 0),
-            'track': ent.get('track') or ent.get('heading', 0)
-        })
-    st.sidebar.markdown(f"**Local feed count:** {len(positions)}")
-elif tab == "JS Feed Fallback":
-    url = f"https://data-live.flightradar24.com/zones/fcgi/feed.js?bounds={bounds}&array=1"
-    try:
-        data = requests.get(url, timeout=5).json()
-    except Exception as e:
-        st.error(f"JS feed error: {e}")
-        st.stop()
-    for entry in data.get('aircraft', []):
-        if not isinstance(entry, list) or len(entry) < 3:
-            continue
-        lat, lon = entry[1], entry[2]
-        if lat is None or lon is None:
-            continue
-        positions.append({
-            'lat': lat,
-            'lon': lon,
-            'callsign': str(entry[0]).strip(),
-            'alt': 0,
-            'speed': 0,
-            'track': 0
-        })
-    st.sidebar.markdown(f"**JS feed count:** {len(positions)}")
-else:
-    api = FR24API(FR24_API_KEY)
-    try:
-        raw = api.get_flight_positions_light(bounds)
-    except FR24AuthenticationError as e:
-        st.error(f"FR24 error: {e}")
-        st.stop()
-    except Exception as e:
-        st.error(f"FR24 error: {e}")
-        st.stop()
-    for obj in raw:
-        lat = getattr(obj, 'latitude', None)
-        lon = getattr(obj, 'longitude', None)
-        if lat is None or lon is None:
-            continue
-        positions.append({
-            'lat': lat,
-            'lon': lon,
-            'callsign': (getattr(obj, 'callsign', '') or getattr(obj, 'flight', '')).strip(),
-            'alt': getattr(obj, 'altitude', 0),
-            'speed': getattr(obj, 'speed', 0),
-            'track': getattr(obj, 'track', getattr(obj, 'heading', 0))
-        })
-    st.sidebar.markdown(f"**FR24 API count:** {len(positions)}")
+url = get_local_url()
+try:
+    data = requests.get(url, timeout=5).json()
+except Exception as e:
+    st.error(f"Local ADS-B feed error: {e}")
+    st.stop()
+aircraft = data.get("aircraft") if isinstance(data, dict) else data
+for ent in aircraft or []:
+    if not isinstance(ent, dict):
+        continue
+    lat = ent.get('lat') or ent.get('latitude')
+    lon = ent.get('lon') or ent.get('longitude')
+    if lat is None or lon is None:
+        continue
+    positions.append({
+        'lat': lat,
+        'lon': lon,
+        'callsign': (ent.get('flight') or ent.get('callsign') or ent.get('hex') or "").strip(),
+        'alt': ent.get('altitude', 0),
+        'speed': ent.get('speed', 0),
+        'track': ent.get('track') or ent.get('heading', 0)
+    })
+st.sidebar.markdown(f"**Local feed count:** {len(positions)}")
 
 # Debug info
 if debug:
@@ -208,9 +154,9 @@ for p in positions:
                 az = solar_azimuth(fx, fy, t0 + timedelta(seconds=t))
                 sd = alt_m / tan(radians(sa))
                 sx, sy = move_position(fx, fy, az + 180, sd)
-                trail.append((sx, sy, 'sun'))
+                trail.append((sx, sy, 'sun', fx, fy))
                 if not alerted and haversine(sx, sy, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((cs, t, sx, sy))
+                    alerts.append((cs, t, sx, sy, fx, fy))
                     alerted = True
         if show_moon and MOON_AVAILABLE:
             obs = ephem.Observer(); obs.lat, obs.lon = str(fx), str(fy)
@@ -220,24 +166,25 @@ for p in positions:
                 maz = degrees(mobj.az)
                 sd = alt_m / tan(radians(ma))
                 sx, sy = move_position(fx, fy, maz + 180, sd)
-                trail.append((sx, sy, 'moon'))
+                trail.append((sx, sy, 'moon', fx, fy))
                 if not alerted and haversine(sx, sy, HOME_LAT, HOME_LON) <= alert_radius:
-                    alerts.append((cs, t, sx, sy))
+                    alerts.append((cs, t, sx, sy, fx, fy))
                     alerted = True
-    for sx, sy, typ in trail:
+    # Draw lines for shadow predictions
+    for sx, sy, typ, fx, fy in trail:
         color = '#FFA500' if typ == 'sun' else '#AAAAAA'
-        folium.CircleMarker((sx, sy), radius=2, color=color, fill=True, fill_opacity=0.7).add_to(m)
+        folium.PolyLine([(fx, fy), (sx, sy)], color=color, weight=2).add_to(m)
 
 if alerts:
     st.error("🚨 Shadow Alert!")
-    for cs, t, sx, sy in alerts:
-        st.write(f"✈️ {cs} shadow in ~{t}s at {sx:.5f},{sy:.5f}")
+    for cs, t, sx, sy, fx, fy in alerts:
+        st.write(f"✈️ {cs} shadow in ~{t}s at {sx:.5f},{sy:.5f} (line from {fx:.5f},{fy:.5f})")
         with open(LOG_FILE, 'a', newline='') as f:
             csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, t, sx, sy])
         try:
             requests.post(
                 "https://api.pushover.net/1/messages.json",
-                data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "message": f"{cs} shadow over home in {t}s"}
+                data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "message": f"{cs} shadow in {t}s"}
             )
         except:
             pass
@@ -249,7 +196,7 @@ st_folium(m, width=800, height=600)
 
 # Download alert log
 if pathlib.Path(LOG_FILE).exists():
-    st.sidebar.markdown("### Alert Log")
+    st.sidebar.md("### Alert Log")
     with open(LOG_FILE, 'rb') as f:
         st.sidebar.download_button("Download CSV", f, file_name="shadow_alerts.csv")
     df = pd.read_csv(LOG_FILE)
