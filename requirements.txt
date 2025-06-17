@@ -1,6 +1,7 @@
 streamlit
+requests
 folium
 streamlit-folium
-geopy
-astral
-requests
+pysolar
+pandas
+plotly
