@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import requests
 import folium
+from folium.vector_layers import Rectangle
 from folium import Rectangle
 from streamlit_folium import st_folium
 from math import radians, sin, cos, asin, sqrt, tan, atan2, degrees
