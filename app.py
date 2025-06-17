@@ -53,12 +53,14 @@ radius_km = st.sidebar.slider("Flight Search Radius (km)", 10, 200, 50, 10)
 zoom = st.sidebar.slider("Map Zoom Level", 6, 15, 12)
 debug = st.sidebar.checkbox("Debug Mode", value=False)
 
-# Compute bounds
-delta = radius_km / 111.0
+# Compute bounding box
+delta = radius_km / 111.0  # approx deg per km
 bounds = f"{HOME_LAT-delta},{HOME_LON-delta},{HOME_LAT+delta},{HOME_LON+delta}"
 
-# Debug info\if debug:
+# Debug info
+if debug:
     st.sidebar.markdown("### Debug Info")
+    # Masked API key
     st.sidebar.write("FR24 API Key:", FR24_API_KEY[:4] + "****")
     st.sidebar.write("Bounds:", bounds)
 
@@ -77,7 +79,7 @@ except Exception as e:
     st.error(f"Error fetching flights: {e}")
     st.stop()
 
-# Debug display of raw data
+# Debug raw data
 if debug:
     st.write(f"Raw positions count: {len(positions)}")
     sample = [p.__dict__ for p in positions[:5]]
@@ -124,33 +126,35 @@ for pos in positions:
     alerted = False
     for t in range(0, 5*60+1, 30):
         f_lat, f_lon = move_position(lat, lon, track, speed_mps * t)
-        # Sun
+        # Sun shadow
         if show_sun:
             sa = solar_altitude(f_lat, f_lon, t0 + timedelta(seconds=t))
             if sa > 0:
                 az = solar_azimuth(f_lat, f_lon, t0 + timedelta(seconds=t))
                 sd = alt_m / tan(radians(sa))
-                sh_lat, sh_lon = move_position(f_lat, f_lon, az+180, sd)
+                sh_lat, sh_lon = move_position(f_lat, f_lon, az + 180, sd)
                 trail.append((sh_lat, sh_lon, 'sun'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((callsign, t))
                     alerted = True
-        # Moon
+        # Moon shadow
         if show_moon and MOON_AVAILABLE:
-            obs = ephem.Observer(); obs.lat, obs.lon = str(f_lat), str(f_lon)
+            obs = ephem.Observer()
+            obs.lat, obs.lon = str(f_lat), str(f_lon)
             obs.date = (t0 + timedelta(seconds=t)).strftime('%Y/%m/%d %H:%M:%S')
-            mobj = ephem.Moon(obs); ma = degrees(mobj.alt)
+            mobj = ephem.Moon(obs)
+            ma = degrees(mobj.alt)
             if ma > 0:
                 maz = degrees(mobj.az)
                 sd = alt_m / tan(radians(ma))
-                sh_lat, sh_lon = move_position(f_lat, f_lon, maz+180, sd)
+                sh_lat, sh_lon = move_position(f_lat, f_lon, maz + 180, sd)
                 trail.append((sh_lat, sh_lon, 'moon'))
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((callsign, t))
                     alerted = True
     folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=callsign).add_to(m)
     for s_lat, s_lon, typ in trail:
-        color = '#FFA500' if typ=='sun' else '#AAAAAA'
+        color = '#FFA500' if typ == 'sun' else '#AAAAAA'
         folium.CircleMarker((s_lat, s_lon), radius=2, color=color, fill=True, fill_opacity=0.7).add_to(m)
 
 # Alerts
@@ -158,10 +162,14 @@ if alerts:
     st.error("🚨 Shadow Alert!")
     for cs, tsec in alerts:
         st.write(f"✈️ {cs} in ~{tsec}s")
-        csv.writer(open(LOG_FILE, 'a')).writerow([datetime.utcnow().isoformat(), cs, tsec])
+        with open(LOG_FILE, 'a', newline='') as f:
+            csv.writer(f).writerow([datetime.utcnow().isoformat(), cs, tsec])
         try:
-            requests.post("https://api.pushover.net/1/messages.json", data={"token":PUSHOVER_API_TOKEN, "user":PUSHOVER_USER_KEY, "message": f"{cs} shadow over home in {tsec}s"})
-        except:
+            requests.post(
+                "https://api.pushover.net/1/messages.json",
+                data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "message": f"{cs} shadow over home in {tsec}s"}
+            )
+        except Exception:
             pass
 else:
     st.success("✅ No shadow passes predicted.")
