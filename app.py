@@ -141,18 +141,16 @@ else:  # FlightRadar24
                 flights = []
 
             # fallback to feed.js if empty
-            if not flights:
-                st.sidebar.warning("FR24API empty — falling back to feed.js")
-                fr_url = "https://data-live.flightradar24.com/zones/fcgi/feed.js"
-                params = {"bounds": bounds, "adsb": 1, "mlat": 1, "flarm": 1, "array": 1}
-                r2 = requests.get(fr_url, params=params)
-                r2.raise_for_status()
+                # Fallback to feed.js with proper flattening
                 raw = r2.json()
-                flights = [v for k, v in raw.items() if k not in ("full_count", "version", "stats")]
-                st.sidebar.write("⚙️ feed.js item count:", len(flights))
-                st.sidebar.write("⚙️ feed.js sample item:", flights[:3])
-
-
+                st.sidebar.write("⚙️ feed.js raw keys:", list(raw.keys())[:20], "... total keys", len(raw.keys()))
+                flights = []
+                for k, v in raw.items():
+                    if k in ("full_count", "version", "stats"):
+                        continue
+                    if isinstance(v, list) and v and isinstance(v[0], list):
+                        st.sidebar.write(f"⚙️ feed.js using key '{k}' with {len(v)} flights")
+                        flights.extend(v)
             def safe_get(lst, idx, default=None):
                 return lst[idx] if isinstance(lst, list) and idx < len(lst) else default
 
