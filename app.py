@@ -83,9 +83,10 @@ if debug:
 # Fetch positions
 positions = []
 if use_fallback:
+    # Fetch via FlightRadar24 JS feed for website
     feed_url = (
-        f"https://data-live.flightradar24.com/zones/fcgi/feed.js?bounds={bounds}"
-        "&faa=1&mlat=1&flarm=1&adsb=1&air=1&vehicle=0&estimated=1&stats=0"
+        f"https://data-live.flightradar24.com/zones/fcgi/feed.js"
+        f"?bounds={bounds}&faa=1&mlat=1&flarm=1&adsb=1&air=1&array=1"
     )
     try:
         data = requests.get(feed_url).json()
@@ -94,27 +95,33 @@ if use_fallback:
         st.stop()
     if debug:
         st.write("Feed.js raw keys:", list(data.keys())[:10])
-    # Parse feed entries: expect lists of at least 3 elements [hex, lat, lon, ...]
-    meta_keys = {"version", "full_count", "stats"}
-    for key, val in data.items():
-        if not isinstance(val, list):
-            continue
-        # Safely extract lat/lon
-        try:
-            lat = val[1]
-            lon = val[2]
-        except (IndexError, TypeError):
-            if debug:
-                st.write(f"Skipping feed entry {key}: invalid format {val}")
-            continue
-        # Skip missing coordinates
-        if lat is None or lon is None:
-            continue
-        # Determine callsign
-        callsign = None
-        if len(val) > 9 and isinstance(val[9], str) and val[9].strip():
-            callsign = val[9].strip()
-        else:
+    positions = []
+    # If API returns 'aircraft' list-of-lists
+    aircraft_list = data.get('aircraft')
+    if isinstance(aircraft_list, list):
+        for entry in aircraft_list:
+            if not isinstance(entry, list) or len(entry) < 3:
+                continue
+            lat, lon = entry[1], entry[2]
+            if lat is None or lon is None:
+                continue
+            callsign = str(entry[0])
+            positions.append({"lat": lat, "lon": lon, "callsign": callsign})
+    else:
+        # Fallback to old dict mapping
+        meta_keys = {"version", "full_count", "stats"}
+        for key, val in data.items():
+            if key in meta_keys or not isinstance(val, list):
+                continue
+            try:
+                lat, lon = val[1], val[2]
+            except Exception:
+                continue
+            if lat is None or lon is None:
+                continue
+            positions.append({"lat": lat, "lon": lon, "callsign": key})
+    st.sidebar.markdown(f"**Feed.js count:** {len(positions)}")
+else:
             callsign = key
         positions.append({"lat": lat, "lon": lon, "callsign": callsign})
     st.sidebar.markdown(f"**Feed.js count:** {len(positions)}")
