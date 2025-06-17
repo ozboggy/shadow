@@ -99,7 +99,7 @@ if "center" not in st.session_state:
 try:
     location_center = [float(x) for x in st.session_state.center]
 except Exception:
-    location_center = [(north + south)/2, (east + west)/2]
+    location_center = [HOME_LAT, HOME_LON]
     st.session_state.center = location_center
 
 fmap = folium.Map(location=location_center, zoom_start=st.session_state.zoom)
