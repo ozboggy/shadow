@@ -92,17 +92,21 @@ aircraft_states = data.get("states", [])
 
 if "zoom" not in st.session_state:
     st.session_state.zoom = 12
-if "center" not in st.session_state:
-    st.session_state.center = [(north + south)/2, (east + west)/2]
 
+# Default centre on Home
+if "center" not in st.session_state:
+    st.session_state.center = [HOME_LAT, HOME_LON]
 
 try:
     location_center = [float(x) for x in st.session_state.center]
 except Exception:
+    # Fallback to Home if something unexpected is in session_state
     location_center = [HOME_LAT, HOME_LON]
     st.session_state.center = location_center
 
+# Create map centred on Home
 fmap = folium.Map(location=location_center, zoom_start=st.session_state.zoom)
+
 
 
 marker_cluster = MarkerCluster().add_to(fmap)
