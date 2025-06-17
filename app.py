@@ -28,7 +28,6 @@ PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 
 # Log file
 LOG_FILE = os.path.join(os.path.dirname(__file__), "shadow_alerts.csv")
-# Initialize log file if it doesn't exist
 if not pathlib.Path(LOG_FILE).exists():
     with open(LOG_FILE, "w", newline="") as f:
         writer = csv.writer(f)
@@ -59,9 +58,11 @@ zoom = st.sidebar.slider("Map Zoom Level", 6, 15, 12)
 # Optional debug toggle
 debug = st.sidebar.checkbox("Debug Mode", value=False)
 
-# Compute bounding box in degrees
-delta = radius_km / 111.0  # approx degrees per km
-bounds = f"{HOME_LAT-delta},{HOME_LON-delta},{HOME_LAT+delta},{HOME_LON+delta}"
+# Compute bounding box in degrees based on correct scaling
+# 1° latitude ≈ 110.574 km; 1° longitude ≈ 111.320 km × cos(lat)
+delta_lat = radius_km / 110.574
+delta_lon = radius_km / (111.320 * cos(radians(HOME_LAT)))
+bounds = f"{HOME_LAT - delta_lat:.6f},{HOME_LON - delta_lon:.6f},{HOME_LAT + delta_lat:.6f},{HOME_LON + delta_lon:.6f}"
 
 # Debug info in sidebar
 if debug:
@@ -70,9 +71,8 @@ if debug:
     st.sidebar.write("Bounds:", bounds)
 
 # Initialize Folium map
-time_marker = [HOME_LAT, HOME_LON]
-m = folium.Map(location=time_marker, zoom_start=zoom)
-folium.Marker(time_marker, icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(m)
+m = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom)
+folium.Marker([HOME_LAT, HOME_LON], icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(m)
 
 # Fetch live flights
 api = FR24API(FR24_API_KEY)
@@ -85,7 +85,7 @@ except Exception as e:
     st.error(f"Error fetching flights: {e}")
     st.stop()
 
-# Debug raw FR24 data
+# Debug raw data
 if debug:
     st.write(f"Raw positions count: {len(positions)}")
     sample = [p.__dict__ for p in positions[:5]]
@@ -130,7 +130,6 @@ for pos in positions:
     speed_mps = speed * 0.514444
     trail = []
     alerted = False
-    # Forecast over next 5 minutes in 30s steps
     for t in range(0, 5*60+1, 30):
         f_lat, f_lon = move_position(lat, lon, track, speed_mps * t)
         # Sun shadow
@@ -159,9 +158,7 @@ for pos in positions:
                 if not alerted and haversine(sh_lat, sh_lon, HOME_LAT, HOME_LON) <= alert_radius:
                     alerts.append((callsign, t, sh_lat, sh_lon))
                     alerted = True
-    # Draw aircraft
     folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=callsign).add_to(m)
-    # Draw shadow points
     for s_lat, s_lon, typ in trail:
         color = '#FFA500' if typ=='sun' else '#AAAAAA'
         folium.CircleMarker((s_lat, s_lon), radius=2, color=color, fill=True, fill_opacity=0.7).add_to(m)
