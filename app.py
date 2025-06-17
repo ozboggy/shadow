@@ -95,8 +95,7 @@ if use_fallback:
         st.stop()
     if debug:
         st.write("Feed.js raw keys:", list(data.keys())[:10])
-    positions = []
-    # If API returns 'aircraft' list-of-lists
+    # Try aircraft list
     aircraft_list = data.get('aircraft')
     if isinstance(aircraft_list, list):
         for entry in aircraft_list:
@@ -109,40 +108,20 @@ if use_fallback:
             callsign = str(entry[0])
             positions.append({"lat": lat, "lon": lon, "callsign": callsign})
     else:
-        # Fallback to old dict mapping
+        # Fallback: dict mapping of hex -> list
         meta_keys = {"version", "full_count", "stats"}
         for key, val in data.items():
             if key in meta_keys or not isinstance(val, list):
                 continue
-            try:
-                lat = val[1]
-                lon = val[2]
-            except Exception:
+            if len(val) < 3:
                 continue
+            lat = val[1]
+            lon = val[2]
             if lat is None or lon is None:
                 continue
             positions.append({"lat": lat, "lon": lon, "callsign": key})
     st.sidebar.markdown(f"**Feed.js count:** {len(positions)}")
 else:
-        # Fallback to old dict mapping
-        meta_keys = {"version", "full_count", "stats"}
-        for key, val in data.items():
-            if key in meta_keys or not isinstance(val, list):
-                continue
-            try:
-                lat, lon = val[1], val[2]
-            except Exception:
-                continue
-            if lat is None or lon is None:
-                continue
-            positions.append({"lat": lat, "lon": lon, "callsign": key})
-    st.sidebar.markdown(f"**Feed.js count:** {len(positions)}")
-else:
-            callsign = key
-        positions.append({"lat": lat, "lon": lon, "callsign": callsign})
-    st.sidebar.markdown(f"**Feed.js count:** {len(positions)}")
-else:
-
     api = FR24API(FR24_API_KEY)
     try:
         raw = api.get_flight_positions_light(bounds)
