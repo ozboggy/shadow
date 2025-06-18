@@ -25,7 +25,11 @@ def send_pushover(title, message, user_key, api_token):
 
 # -------------- Streamlit Page Config -------------
 st.set_page_config(layout="wide")
-# Removed auto-refresh to prevent map flashing
+# Auto-refresh controls
+auto_refresh = st.sidebar.checkbox("Auto Refresh Map", value=True)
+refresh_interval = st.sidebar.number_input("Refresh Interval (s)", min_value=1, value=10)
+if auto_refresh:
+    st.markdown(f"<meta http-equiv='refresh' content='{refresh_interval}'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
 # ---------------- Sidebar Inputs ------------------
@@ -39,12 +43,13 @@ st.sidebar.header("Map & Alert Settings")
 zoom_level = st.sidebar.slider("Map Zoom Level", min_value=1, max_value=18, value=st.session_state.get("zoom", 12))
 search_radius_km = st.sidebar.slider("Search Radius (km)", min_value=1, max_value=100, value=20)
 shadow_width = st.sidebar.slider("Shadow Path Width", min_value=1, max_value=10, value=2)
+# New alert radius in meters
+target_radius_m = st.sidebar.number_input("Alert Radius (m)", min_value=1, value=50)
 enable_onscreen_alert = st.sidebar.checkbox("Enable Onscreen Alert", value=True)
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 if st.sidebar.button("Send Pushover Test"):
     send_pushover("✈️ Test Alert", "This is a Pushover test notification.", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
     st.sidebar.success("Pushover test sent!")
-# Button to test the onscreen alert directly
 if st.sidebar.button("Test Onscreen Alert"):
     if enable_onscreen_alert:
         st.error("🚨 TEST Shadow ALERT!")
@@ -75,17 +80,12 @@ tile_style = st.sidebar.selectbox(
     ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
     index=1
 )
-data_source = st.sidebar.selectbox(
-    "Data Source",
-    ["OpenSky", "ADS-B Exchange"],
-    index=0
-)
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
 override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
 
 # ---------------- Constants ----------------
-FORECAST_INTERVAL_SECONDS = 30
+FORECAST_INTERVAL_SECONDS = 10
 FORECAST_DURATION_MINUTES = 5
 HOME_LAT = -33.7597655
 HOME_LON = 150.9723678
@@ -112,15 +112,14 @@ def move_position(lat, lon, heading_deg, distance_m):
     return math.degrees(lat2), math.degrees(lon2)
 
 # ---------------- Logging setup ----------------
-log_file = "alert_log.csv"
-log_path = os.path.join(os.path.dirname(__file__), log_file)
+log_path = os.path.join(os.path.dirname(__file__), "alert_log.csv")
 if not os.path.exists(log_path):
     with open(log_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
 
 # ---------------- Fetch Aircraft Data ------------
-north, south, west, east = -33.0, -34.5, 150.0, 151.5
+north, south, west, east = HOME_LAT+0.5, HOME_LAT-1.0, HOME_LON-1.0, HOME_LON+1.0
 url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
 try:
     r = requests.get(url)
@@ -135,80 +134,58 @@ aircraft_states = data.get("states", [])
 st.session_state.zoom = zoom_level
 fmap = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom_level, tiles=tile_style)
 marker_cluster = MarkerCluster().add_to(fmap)
-# Home marker as house icon
-folium.Marker(
-    (TARGET_LAT, TARGET_LON),
-    icon=folium.Icon(color="red", icon="home", prefix="fa"),
-    popup="Home"
-).add_to(fmap)
+folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
 
 # ---------------- Process each aircraft -------------
 alerts_triggered = []
-filtered_states = []
 for ac in aircraft_states:
     try:
-        _, callsign, _, _, _, lon, lat, *_ = ac
-        if lat and lon and haversine(lat, lon, HOME_LAT, HOME_LON)/1000 <= RADIUS_KM:
-            filtered_states.append(ac)
+        _, callsign, _, _, _, lon, lat, baro_alt, _, velocity, heading, *_ = ac
+        if None in (lat, lon, velocity, heading):
+            continue
+        if haversine(lat, lon, HOME_LAT, HOME_LON)/1000 > RADIUS_KM:
+            continue
+        alt = baro_alt or 0
+        callsign = callsign.strip() or "N/A"
+        trail = []
+        shadow_alerted = False
+        for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
+            future_time = selected_time + timedelta(seconds=i)
+            dist = velocity * i
+            fut_lat, fut_lon = move_position(lat, lon, heading, dist)
+            sun_alt = get_altitude(fut_lat, fut_lon, future_time)
+            sun_az = get_azimuth(fut_lat, fut_lon, future_time)
+            if debug_mode and track_sun:
+                st.sidebar.write(f"Debug: {callsign} t+{i}s pos=({fut_lat:.4f},{fut_lon:.4f}) sun_alt={sun_alt:.2f}")
+                st.sidebar.write(ac)
+            if sun_alt>0 and alt>0 and track_sun:
+                dsh = alt/math.tan(math.radians(sun_alt))
+                s_lat = fut_lat + (dsh/111111)*math.cos(math.radians(sun_az+180))
+                s_lon = fut_lon + (dsh/(111111*math.cos(math.radians(fut_lat))))*math.sin(math.radians(sun_az+180))
+                trail.append((s_lat, s_lon))
+                if not shadow_alerted and haversine(s_lat, s_lon, TARGET_LAT, TARGET_LON) <= target_radius_m:
+                    alerts_triggered.append((callsign, i, s_lat, s_lon))
+                    with open(log_path,"a",newline="") as f:
+                        csv.writer(f).writerow([datetime.utcnow().isoformat(),callsign,i,s_lat,s_lon])
+        if trail and (track_sun or override_trails):
+            folium.PolyLine(trail, weight=shadow_width, dash_array="5,5", tooltip=callsign).add_to(fmap)
+        folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{callsign} Alt:{round(alt)}m").add_to(marker_cluster)
     except:
         continue
 
-for ac in filtered_states:
-    try:
-        icao24, callsign, _, _, _, lon, lat, baro_alt, _, velocity, heading, *_ = ac
-        if None in (lat, lon, velocity, heading):
-            continue
-        alt = baro_alt or 0
-        callsign = callsign.strip() if callsign else "N/A"
-        trail = []
-        shadow_alerted = False
-        for i in range(0, FORECAST_DURATION_MINUTES * 60 + 1, FORECAST_INTERVAL_SECONDS):
-            future_time = selected_time + timedelta(seconds=i)
-            dist_moved = velocity * i
-            future_lat, future_lon = move_position(lat, lon, heading, dist_moved)
-            sun_alt = get_altitude(future_lat, future_lon, future_time)
-            sun_az = get_azimuth(future_lat, future_lon, future_time)
-            if debug_mode and track_sun:
-                st.sidebar.write(f"Debug: {callsign} @ t+{i}s -> pos=({future_lat:.4f},{future_lon:.4f}), sun_alt={sun_alt:.2f}")
-                st.sidebar.write(ac)  # Raw state data
-            if sun_alt > 0 and alt > 0 and track_sun:
-                shadow_dist = alt / math.tan(math.radians(sun_alt))
-                shadow_lat = future_lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
-                shadow_lon = future_lon + (shadow_dist / (111111 * math.cos(math.radians(future_lat)))) * math.sin(math.radians(sun_az + 180))
-                trail.append((shadow_lat, shadow_lon))
-                if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= 50:
-                    alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
-                    with open(log_path, "a", newline="") as f:
-                        writer = csv.writer(f)
-                        writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
-                    send_pushover("✈️ Shadow Alert", f"{callsign} will pass over home in {int(i)} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
-                    shadow_alerted = True
-        if trail and (track_sun or override_trails):
-            folium.PolyLine(trail, color="black", weight=shadow_width, opacity=0.7, dash_array="5,5", tooltip=f"{callsign} (shadow)").add_to(fmap)
-        folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
-    except Exception as e:
-        st.warning(f"⚠️ Error processing aircraft: {e}")
-
 # ---------------- Onscreen Alerts ----------------
 if alerts_triggered and enable_onscreen_alert:
+    for cs, t, lat_a, lon_a in alerts_triggered:
+        send_pushover(f"✈️ Shadow Alert", f"{cs} in {t}s @({lat_a:.4f},{lon_a:.4f})", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    st.markdown(
-        """
-        <script>
-        if (Notification.permission === 'granted') {
-            new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
-        } else {
-            Notification.requestPermission().then(p => {
-                if (p ==="granted") {
-                    new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
-                }
-            });
-        }
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
+    st.markdown("""
+    <script>
+    if(Notification.permission==='granted'){
+        new Notification("✈️ Shadow Alert",{body:"Aircraft shadow over home!"});
+    }else{Notification.requestPermission().then(p=>{if(p==='granted'){new Notification("✈️ Shadow Alert",{body:"Aircraft shadow over home!"});}})}
+    </script>
+    """,unsafe_allow_html=True)
     for cs, t, _, _ in alerts_triggered:
         st.write(f"✈️ {cs} — in approx. {t} seconds")
 else:
@@ -217,18 +194,18 @@ else:
 # ---------------- Logs & Charts ----------------
 if os.path.exists(log_path):
     st.sidebar.markdown("### 📥 Download Log")
-    with open(log_path, "rb") as f:
-        st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
-    df_log = pd.read_csv(log_path)
-    if not df_log.empty:
-        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+    with open(log_path,'rb') as f:
+        st.sidebar.download_button("Download alert_log.csv",f,file_name="alert_log.csv",mime="text/csv")
+    df=pd.read_csv(log_path)
+    if not df.empty:
+        df['Time UTC']=pd.to_datetime(df['Time UTC'])
         st.markdown("### 📊 Recent Alerts")
-        st.dataframe(df_log.tail(10))
-        fig = px.scatter(df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)", hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
-        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(df.tail(10))
+        fig=px.scatter(df,x="Time UTC",y="Callsign",size="Time Until Alert (sec)",hover_data=["Lat","Lon"],title="Shadow Alerts Over Time")
+        st.plotly_chart(fig,use_container_width=True)
 
 # ---------------- Render Map ----------------
-map_data = st_folium(fmap, width=1000, height=700)
+map_data=st_folium(fmap,width=1000,height=700)
 if map_data and "zoom" in map_data and "center" in map_data:
-    st.session_state.zoom = map_data["zoom"]
-    st.session_state.center = map_data["center"]
+    st.session_state.zoom=map_data["zoom"]
+    st.session_state.center=map_data["center"]
