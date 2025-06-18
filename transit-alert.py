@@ -79,7 +79,7 @@ tile_style = st.sidebar.selectbox(
 # Data source selection
 data_source = st.sidebar.selectbox(
     "Data Source",
-    ["ADS-B Exchange", "OpenSky"],
+    ["OpenSky", "ADS-B Exchange" ],
     index=0
 )
 track_sun = st.sidebar.checkbox("Show Sun Shadows", True)
