@@ -1,4 +1,3 @@
-# Filename: transit-alert.py
 import streamlit as st
 import requests
 import folium
@@ -55,7 +54,7 @@ tile_style = st.sidebar.selectbox(
 data_source = st.sidebar.selectbox(
     "Data Source",
     ["OpenSky", "ADS-B Exchange"],
-    index=1  # Default to ADS-B Exchange
+    index=0
 )
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
@@ -98,19 +97,15 @@ if not os.path.exists(log_path):
 
 # ---------------- Fetch Aircraft Data ------------
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
-# Choose data source endpoint
-if data_source == "ADS-B Exchange":
-    url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={HOME_LAT}&lng={HOME_LON}&fDstL=0&fDstU={RADIUS_KM}"
-else:
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
 try:
     r = requests.get(url)
     r.raise_for_status()
     data = r.json()
-    aircraft_states = data.get("states", data.get("acList", []))
 except Exception as e:
-    st.error(f"Error fetching {data_source} data: {e}")
-    aircraft_states = []
+    st.error(f"Error fetching OpenSky data: {e}")
+    data = {}
+aircraft_states = data.get("states", [])
 
 # ---------------- Initialize Map ----------------
 st.session_state.zoom = zoom_level
@@ -122,9 +117,7 @@ alerts_triggered = []
 filtered_states = []
 for ac in aircraft_states:
     try:
-        callsign = ac[1] if data_source == "OpenSky" else ac.get("Callsign", "N/A")
-        lon = ac[5] if data_source == "OpenSky" else ac.get("Long")
-        lat = ac[6] if data_source == "OpenSky" else ac.get("Lat")
+        _, callsign, _, _, _, lon, lat, *_ = ac
         if lat and lon and haversine(lat, lon, HOME_LAT, HOME_LON)/1000 <= RADIUS_KM:
             filtered_states.append(ac)
     except:
@@ -133,16 +126,10 @@ for ac in aircraft_states:
 # ---------------- Process each aircraft -------------
 for ac in filtered_states:
     try:
-        if data_source == "OpenSky":
-            _, callsign, _, _, _, lon, lat, baro_alt, _, velocity, heading, *_ = ac
-        else:
-            callsign = ac.get("Callsign", "N/A").strip()
-            lat = ac.get("Lat")
-            lon = ac.get("Long")
-            velocity = ac.get("Spd")
-            heading = ac.get("Trak")
-            geo_alt = ac.get("Alt"); alt = geo_alt or 0
+        icao24, callsign, _, _, _, lon, lat, baro_alt, _, velocity, heading, *_ = ac
         if None in (lat, lon, velocity, heading): continue
+        alt = baro_alt or 0
+        callsign = callsign.strip() if callsign else "N/A"
         trail = []
         shadow_alerted = False
         for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
@@ -153,17 +140,22 @@ for ac in filtered_states:
             sun_az = get_azimuth(future_lat, future_lon, future_time)
             if debug_mode and track_sun:
                 st.sidebar.write(f"Debug: {callsign} @ t+{i}s -> pos=({future_lat:.4f},{future_lon:.4f}), sun_alt={sun_alt:.2f}")
-            if sun_alt>0 and alt>0 and track_sun:
+            if sun_alt > 0 and alt > 0 and track_sun:
                 shadow_dist = alt/math.tan(math.radians(sun_alt))
                 shadow_lat = future_lat + (shadow_dist/111111)*math.cos(math.radians(sun_az+180))
                 shadow_lon = future_lon + (shadow_dist/(111111*math.cos(math.radians(future_lat))))*math.sin(math.radians(sun_az+180))
                 trail.append((shadow_lat, shadow_lon))
-                if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON)<=50:
+                if not shadow_alerted and haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON) <= 50:
                     alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
                     with open(log_path, "a", newline="") as f:
                         writer = csv.writer(f)
                         writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
-                    send_pushover("✈️ Shadow Alert", f"{callsign} will pass over home in {int(i)} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
+                    send_pushover(
+                        title="✈️ Shadow Alert",
+                        message=f"{callsign} will pass over home in {int(i)} sec",
+                        user_key=PUSHOVER_USER_KEY,
+                        api_token=PUSHOVER_API_TOKEN
+                    )
                     shadow_alerted = True
         if trail and (track_sun or override_trails):
             folium.PolyLine(trail, color="black", weight=shadow_width, opacity=0.7, dash_array="5,5", tooltip=f"{callsign} (shadow)").add_to(fmap)
@@ -175,19 +167,22 @@ for ac in filtered_states:
 if alerts_triggered and enable_onscreen_alert:
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    st.markdown("""
-    <script>
-    if (Notification.permission === 'granted') {
-        new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
-    } else {
-        Notification.requestPermission().then(p => {
-            if (p === 'granted') {
-                new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
-            }
-        });
-    }
-    </script>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <script>
+        if (Notification.permission === 'granted') {
+            new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
+        } else {
+            Notification.requestPermission().then(p => {
+                if (p === 'granted') {
+                    new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
+                }
+            });
+        }
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
     for cs, t, _, _ in alerts_triggered:
         st.write(f"✈️ {cs} — in approx. {t} seconds")
 elif not alerts_triggered:
