@@ -111,6 +111,11 @@ if source_choice == "ADS-B Exchange":
         data = response.json()
         # st.write("ADS-B Exchange raw response:", data)
         aircraft = data.get("ac", [])
+        if show_debug:
+            st.subheader("Raw ADS-B Exchange Aircraft")
+            for i, ac in enumerate(aircraft):
+                st.markdown(f"**Raw Aircraft {i+1}:**")
+                st.json(ac)
 
         class RapidAPIAircraft:
             def __init__(self, ac):
