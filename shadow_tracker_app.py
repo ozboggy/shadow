@@ -6,100 +6,112 @@ from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 from datetime import datetime, time as dt_time, timezone, timedelta
 import math
-import csv
+import requests
 import os
 from dotenv import load_dotenv
 load_dotenv()
-import pandas as pd
-import plotly.express as px
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
-from skyfield.api import load, Topos
-from pyfr24 import FR24API
-import base64
-import requests
-
-# Load ephemeris for moon calculations
-eph = load('de421.bsp')
-moon = eph['moon']
-earth = eph['earth']
-ts = load.timescale()
-
-# Pushover setup
-PUSHOVER_USER_KEY = "usasa4y2iuvz75krztrma829s21nvy"
-PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
-
-def send_pushover(title, message):
-    try:
-        url = "https://api.pushover.net/1/messages.json"
-        payload = {
-            "token": PUSHOVER_API_TOKEN,
-            "user": PUSHOVER_USER_KEY,
-            "title": title,
-            "message": message
-        }
-        requests.post(url, data=payload)
-    except Exception as e:
-        st.warning(f"Pushover notification failed: {e}")
 
 # Constants
 DEFAULT_TARGET_LAT = -33.7602563
 DEFAULT_TARGET_LON = 150.9717434
-DEFAULT_ALERT_RADIUS_METERS = 50
 DEFAULT_RADIUS_KM = 20
+DEFAULT_ALERT_RADIUS_METERS = 50
 DEFAULT_FORECAST_INTERVAL_SECONDS = 30
 DEFAULT_FORECAST_DURATION_MINUTES = 5
-DEFAULT_HOME_CENTER = [-33.76025, 150.9711666]
-DEFAULT_SHADOW_WIDTH = 5
-DEFAULT_ZOOM = 10
+DEFAULT_SHADOW_WIDTH = 3
 
-# Sidebar settings
-map_theme = st.sidebar.selectbox("Map Theme", ["CartoDB Positron", "CartoDB Dark_Matter", "OpenStreetMap", "Stamen Toner", "Stamen Terrain", "Stamen Watercolor", "Esri WorldImagery", "CartoDB Voyager"], index=0)
-override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
-show_debug = st.sidebar.checkbox("Show Aircraft Debug", value=False)
-source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
-track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
-track_moon = st.sidebar.checkbox("Show Moon Shadows", value=True)
+# Sidebar controls
+map_theme = st.sidebar.selectbox("Map Theme", ["CartoDB Positron", "CartoDB Dark_Matter", "OpenStreetMap"], index=0)
 RADIUS_KM = st.sidebar.slider("Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM)
-ALERT_RADIUS_METERS = st.sidebar.slider("Alert Radius (meters)", 10, 500, DEFAULT_ALERT_RADIUS_METERS)
-zoom = st.sidebar.slider("Map Zoom Level", 5, 18, DEFAULT_ZOOM)
-shadow_width = st.sidebar.slider("Shadow Line Width", 1, 10, DEFAULT_SHADOW_WIDTH)
+alert_rad = st.sidebar.slider("Alert Radius (m)", 10, 500, DEFAULT_ALERT_RADIUS_METERS)
+ofs = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
+track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
+track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
 
-# Static time setup (prevents re-runs on refresh)
-if "selected_time" not in st.session_state:
-    selected_date = datetime.utcnow().date()
-    selected_time_only = dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
-    st.session_state.selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
-selected_time = st.session_state.selected_time
+# Time selection
+sel_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
+sel_time = st.sidebar.time_input("Time (UTC)", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
+selected_time = datetime.combine(sel_date, sel_time).replace(tzinfo=timezone.utc)
 
-# Logging
-log_file = "alert_log.csv"
-log_path = os.path.join(os.path.dirname(__file__), log_file)
-if not os.path.exists(log_path):
-    with open(log_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon", "Source"])
+st.title("✈️ Aircraft Shadow Tracker (OpenSky)")
 
-st.title("✈️ Aircraft Shadow Tracker")
+# Map init
+center = (DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON)
+fmap = folium.Map(location=center, zoom_start=8, tiles=None, control_scale=True, prefer_canvas=True)
+folium.TileLayer(map_theme, name=map_theme).add_to(fmap)
+folium.TileLayer("CartoDB Positron", name="Positron").add_to(fmap)
+folium.TileLayer("CartoDB Dark_Matter", name="Dark Matter").add_to(fmap)
+folium.TileLayer("OpenStreetMap", name="OSM").add_to(fmap)
+folium.LayerControl(collapsed=False).add_to(fmap)
 
-if st.sidebar.button("🔔 Test Pushover Alert"):
-    send_pushover("✅ Test Alert", "This is a test notification from the Shadow Tracker App")
-    st.sidebar.success("Test notification sent!")
+# Home marker
+folium.Marker(center, icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
 
-# Setup map
-center = DEFAULT_HOME_CENTER
-fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True, tiles=None, prefer_canvas=True)
+# Fetch OpenSky data
+delta = RADIUS_KM / 111.0
+south, north = DEFAULT_TARGET_LAT - delta, DEFAULT_TARGET_LAT + delta
+delta_lon = delta / math.cos(math.radians(DEFAULT_TARGET_LAT))
+west, east = DEFAULT_TARGET_LON - delta_lon, DEFAULT_TARGET_LON + delta_lon
+url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+try:
+    resp = requests.get(url)
+    resp.raise_for_status()
+    data = resp.json()
+    states = data.get("states", [])
+except:
+    st.error("Failed to fetch OpenSky data.")
+    states = []
 
-# Add selectable tile layers
-folium.TileLayer("CartoDB Positron", name="CartoDB Positron").add_to(fmap)
-folium.TileLayer("CartoDB Dark_Matter", name="CartoDB Dark_Matter").add_to(fmap)
-folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(fmap)
-folium.TileLayer("Stamen Toner", name="Stamen Toner", attr="Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.").add_to(fmap)
-folium.TileLayer("Stamen Terrain", name="Stamen Terrain", attr="Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.").add_to(fmap)
-folium.TileLayer("Stamen Watercolor", name="Stamen Watercolor", attr="Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.").add_to(fmap)
-folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/World_Imagery/MapServer/tile/{z}/{y}/{x}", name="Esri WorldImagery", attr="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community").add_to(fmap)
-folium.TileLayer("CartoDB Voyager", name="CartoDB Voyager").add_to(fmap)
+# Rendering layers
+ac_layer = folium.FeatureGroup(name="Airplanes", show=True)
+trail_layer = folium.FeatureGroup(name="Shadows", show=True)
+fmap.add_child(ac_layer)
+fmap.add_child(trail_layer)
 
-folium.LayerControl(position='topright', collapsed=False).add_to(fmap)
+# Utils
+def move_position(lat, lon, heading, dist):
+    R=6371000; hdr=math.radians(heading)
+    lat1, lon1 = math.radians(lat), math.radians(lon)
+    lat2 = math.asin(math.sin(lat1)*math.cos(dist/R)+math.cos(lat1)*math.sin(dist/R)*math.cos(hdr))
+    lon2 = lon1+math.atan2(math.sin(hdr)*math.sin(dist/R)*math.cos(lat1), math.cos(dist/R)-math.sin(lat1)*math.sin(lat2))
+    return math.degrees(lat2), math.degrees(lon2)
 
-# Render the map
-st_folium(fmap, width=1200, height=800)
+def hav(lat1, lon1, lat2, lon2):
+    R=6371000
+    dlat, dlon = math.radians(lat2-lat1), math.radians(lon2-lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
+    return R*2*math.asin(math.sqrt(a))
+
+# Loop
+for st_data in states:
+    icao, callsign, _, _, _, lon, lat, baro, _, vel, hdg, *_ = st_data
+    if None in (lat, lon, vel, hdg): continue
+    callsign = callsign.strip() or icao
+    # Draw marker
+    folium.Marker(location=(lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{callsign}\nAlt: {baro}m\nSpd: {vel} m/s").add_to(ac_layer)
+    # Trail
+    if (track_sun or track_moon or ofs):
+        trail=[]
+        for i in range(0, DEFAULT_FORECAST_DURATION_MINUTES*60+1, DEFAULT_FORECAST_INTERVAL_SECONDS):
+            ft = selected_time + timedelta(seconds=i)
+            dist = vel*i
+            fl_lat, fl_lon = move_position(lat, lon, hdg, dist)
+            sun_alt = get_sun_altitude(fl_lat, fl_lon, ft)
+            if track_sun and sun_alt>0:
+                az = get_sun_azimuth(fl_lat, fl_lon, ft)
+            elif track_moon and sun_alt<=0:
+                az = get_sun_azimuth(fl_lat, fl_lon, ft)
+            elif ofs:
+                az = get_sun_azimuth(fl_lat, fl_lon, ft)
+            else:
+                continue
+            sd = baro/math.tan(math.radians(sun_alt if sun_alt>0 else 1))
+            sh_lat = fl_lat + (sd/111111)*math.cos(math.radians(az+180))
+            sh_lon = fl_lon + (sd/(111111*math.cos(math.radians(fl_lat))))*math.sin(math.radians(az+180))
+            trail.append((sh_lat, sh_lon))
+        if trail:
+            folium.PolyLine(trail, color="black", weight=DEFAULT_SHADOW_WIDTH, opacity=0.6).add_to(trail_layer)
+
+# Display map
+st_map = st_folium(fmap, width=1200, height=800)
