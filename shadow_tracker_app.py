@@ -128,7 +128,7 @@ if source_choice == "ADS-B Exchange":
                 self.identification = ac.get("hex")
                 self.airline = None
 
-        flights = [RapidAPIAircraft(ac) for ac in aircraft if ac.get("lat") is not None and ac.get("lon") is not None and ac.get("spd") is not None and ac.get("trak") is not None]
+        flights = [RapidAPIAircraft(ac) for ac in aircraft if ac.get("lat") is not None and ac.get("lon") is not None and ac.get("spd") is not None and ac.get("trak") is not None and ac.get("alt_baro") != "ground"]
 
     except Exception as e:
         st.warning(f"ADS-B Exchange via RapidAPI failed: {e} — falling back to OpenSky")
