@@ -36,13 +36,29 @@ def send_pushover(title, message):
         st.warning(f"Pushover notification failed: {e}")
 
 # Constants
-TARGET_LAT = -33.7602563
-TARGET_LON = 150.9717434
-ALERT_RADIUS_METERS = 50
-RADIUS_KM = 20
-FORECAST_INTERVAL_SECONDS = 30
-FORECAST_DURATION_MINUTES = 5
-HOME_CENTER = [-33.7602563, 150.9717434]
+DEFAULT_TARGET_LAT = -33.7602563
+DEFAULT_TARGET_LON = 150.9717434
+DEFAULT_ALERT_RADIUS_METERS = 50
+DEFAULT_RADIUS_KM = 20
+DEFAULT_FORECAST_INTERVAL_SECONDS = 30
+DEFAULT_FORECAST_DURATION_MINUTES = 5
+DEFAULT_HOME_CENTER = [-33.7602563, 150.9717434]
+DEFAULT_SHADOW_WIDTH = 5
+DEFAULT_ZOOM = 10
+
+# Sidebar settings
+shadow_source = st.sidebar.radio("Shadow Source", ["Sun", "Moon"], horizontal=True)
+RADIUS_KM = st.sidebar.slider("Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM)
+ALERT_RADIUS_METERS = st.sidebar.slider("Alert Radius (meters)", 10, 500, DEFAULT_ALERT_RADIUS_METERS)
+zoom = st.sidebar.slider("Map Zoom Level", 5, 18, DEFAULT_ZOOM)
+shadow_width = st.sidebar.slider("Shadow Line Width", 1, 10, DEFAULT_SHADOW_WIDTH)
+
+# Static time setup (prevents re-runs on refresh)
+if "selected_time" not in st.session_state:
+    selected_date = datetime.utcnow().date()
+    selected_time_only = dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
+    st.session_state.selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
+selected_time = st.session_state.selected_time
 
 # Logging
 log_file = "alert_log.csv"
@@ -56,11 +72,6 @@ if not os.path.exists(log_path):
 st.set_page_config(layout="wide")
 st.title("✈️ Aircraft Shadow Tracker")
 
-selected_date = datetime.utcnow().date()
-selected_time_only = dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
-selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
-shadow_source = st.sidebar.radio("Shadow Source", ["Sun", "Moon"], horizontal=True)
-
 # Fetch aircraft (OpenSky fallback)
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
 url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
@@ -73,11 +84,11 @@ except Exception as e:
     data = {}
 
 # Setup map
-center = HOME_CENTER
-zoom = 10
+center = DEFAULT_HOME_CENTER
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
-folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
+folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
+
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -127,14 +138,14 @@ for ac in aircraft_states:
         shadow_alerted = False
         trail = []
 
-        for i in range(0, FORECAST_DURATION_MINUTES * 60 + 1, FORECAST_INTERVAL_SECONDS):
+        for i in range(0, DEFAULT_FORECAST_DURATION_MINUTES * 60 + 1, DEFAULT_FORECAST_INTERVAL_SECONDS):
             future_time = selected_time + timedelta(seconds=i)
             dist_moved = velocity * i
             future_lat, future_lon = move_position(lat, lon, heading, dist_moved)
             s_lat, s_lon = get_shadow(future_lat, future_lon, alt, future_time)
             if s_lat and s_lon:
                 trail.append((s_lat, s_lon))
-                if not shadow_alerted and haversine(s_lat, s_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
+                if not shadow_alerted and haversine(s_lat, s_lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= ALERT_RADIUS_METERS:
                     alerts_triggered.append((callsign, int(i), s_lat, s_lon))
                     with open(log_path, "a", newline="") as f:
                         writer = csv.writer(f)
@@ -143,7 +154,7 @@ for ac in aircraft_states:
                     shadow_alerted = True
 
         if trail:
-            folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5",
+            folium.PolyLine(trail, color="black", weight=shadow_width, opacity=0.7, dash_array="5,5",
                             tooltip=f"{callsign} ({shadow_source})").add_to(fmap)
         folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
                       popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
