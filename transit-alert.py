@@ -181,17 +181,7 @@ if alerts_triggered and enable_onscreen_alert:
         }
         </script>
         """,
-        unsafe_allow_html=True
+        Unsafe_allow_html=True
     )
     for cs, t, _, _ in alerts_triggered:
-        st.write(f"✈️ {cs} — in approx. {t} seconds")
-elif not alerts_triggered:
-    st.success("✅ No forecast shadow paths intersect home area.")
-
-# ---------------- Logs & Charts ----------------
-if os.path.exists(log_path):
-    st.sidebar.markdown("### 📥 Download Log")
-    with open(log_path, "rb") as f:
-        st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
-    df_log = pd.read_csv(log_path)
-    if not df_log.empty:
+        st.write(f"✈️ {cs} — in approx. {
