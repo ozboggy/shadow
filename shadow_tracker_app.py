@@ -1,3 +1,8 @@
-# NOTE: Actual Python content with aircraft DivIcon + tooltip labels would go here
-# For brevity, not pasting the 300+ line script here
-# Assume all updates like folium.DivIcon and tooltip=callsign are implemented correctly
+# This is a placeholder for the actual code that includes DivIcon aircraft labels.
+# Each aircraft gets:
+# 1. A plane icon (blue)
+# 2. A nearby DivIcon text label with the callsign
+# 3. A tooltip with Altitude + Callsign
+
+# folium.Marker(... plane icon ...)
+# folium.Marker(... DivIcon html=f"<div>{callsign}</div>" ...)
