@@ -185,4 +185,4 @@ for ac in filtered_states:
                     alerts_triggered.append((callsign, int(i), shadow_lat, shadow_lon))
                     with open(log_path, "a", newline="") as f:
                         writer = csv.writer(f)
-                        writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat,
+                        writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
