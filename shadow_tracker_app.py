@@ -44,7 +44,7 @@ DEFAULT_ALERT_RADIUS_METERS = 50
 DEFAULT_RADIUS_KM = 20
 DEFAULT_FORECAST_INTERVAL_SECONDS = 30
 DEFAULT_FORECAST_DURATION_MINUTES = 5
-DEFAULT_HOME_CENTER = [-33.7602563, 150.9717434]
+DEFAULT_HOME_CENTER = [-33.76025, 150.9711666]
 DEFAULT_SHADOW_WIDTH = 5
 DEFAULT_ZOOM = 10
 
@@ -92,7 +92,7 @@ except Exception as e:
 center = DEFAULT_HOME_CENTER
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
-folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
+folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
