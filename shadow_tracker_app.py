@@ -35,7 +35,9 @@ def send_pushover(message: str, title: str = "Shadow Alert") -> bool:
     )
     return resp.status_code == 200
 
+
 def haversine(lat1, lon1, lat2, lon2):
+    """Return distance between two (lat,lon) points in meters."""
     R = 6371000  # Earth radius in meters
     φ1, φ2 = radians(lat1), radians(lat2)
     dφ = radians(lat2 - lat1)
@@ -126,6 +128,7 @@ if DEBUG_MODE:
     st.sidebar.json(data)
 
 # ─── BUILD FOLIUM MAP ────────────────────────────────────────────────────────────
+```python
 m = folium.Map(
     location=[HOME_LAT, HOME_LON],
     zoom_start=MAP_ZOOM,
@@ -139,24 +142,27 @@ folium.Marker(
 ).add_to(m)
 
 for ac in acs:
-    lat = ac.get("lat")
-    lon = ac.get("lon")
+    # support both ADS-B Exchange (lat/Lon) and OpenSky (lat/lon) keys
+    lat = ac.get("lat") or ac.get("Lat")
+    lon = ac.get("lon") or ac.get("Long")
     if lat is None or lon is None:
         continue
+
     callsign = ac.get("flight") or ac.get("callsign") or ac.get("hex") or "?"
     folium.Marker(
         [lat, lon],
         tooltip=callsign,
         icon=folium.Icon(icon="plane", prefix="fa")
     ).add_to(m)
+
     dist_m = haversine(HOME_LAT, HOME_LON, lat, lon)
     if dist_m <= ALERT_RADIUS_M:
         msg = f"🚨 {callsign} is {int(dist_m)} m from home!"
         st.sidebar.warning(msg)
         send_pushover(msg)
 
-# ─── RENDER & AUTO-REFRESH ───────────────────────────────────────────────────────
 st_data = st_folium(m, width=1200, height=700)
+
 if AUTO_REFRESH:
     time.sleep(REFRESH_INTERVAL)
     st.experimental_rerun()
