@@ -39,7 +39,7 @@ selected_time = datetime.combine(selected_date, selected_time_only).replace(tzin
 
 # ---------------- Map & Alert Settings ----------------
 st.sidebar.header("Map & Alert Settings")
-zoom_level = st.sidebar.slider("Map Zoom Level", 1, 18, st.session_state.get("zoom", 12))
+zoom_level = st.sidebar.slider("Map Zoom Level", 1, 18, st.session_state.get("zoom", 11))
 search_radius_km = st.sidebar.slider("Search Radius (km)", 1, 100, 20)
 shadow_width = st.sidebar.slider("Shadow Path Width", 1, 10, 2)
 target_radius_m = st.sidebar.slider("Alert Radius (m)", 1, 1000, 50)
