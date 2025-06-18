@@ -52,47 +52,40 @@ DEFAULT_HOME_CENTER = [-33.76025, 150.9711666]
 DEFAULT_SHADOW_WIDTH = 5
 DEFAULT_ZOOM = 10
 
-# Sidebar settings
-override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
-show_debug = st.sidebar.checkbox("Show Aircraft Debug", value=False)
-data_source = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
-track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
-track_moon = st.sidebar.checkbox("Show Moon Shadows", value=True)
-RADIUS_KM = st.sidebar.slider("Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM)
-ALERT_RADIUS_METERS = st.sidebar.slider("Alert Radius (meters)", 10, 500, DEFAULT_ALERT_RADIUS_METERS)
-zoom = st.sidebar.slider("Map Zoom Level", 5, 18, DEFAULT_ZOOM)
-shadow_width = st.sidebar.slider("Shadow Line Width", 1, 10, DEFAULT_SHADOW_WIDTH)
+--- shadow_tracker_app.py
++++ shadow_tracker_app.py
+@@ Sidebar inputs (around line 50)
+- source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
++ data_source = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
 
-# Static time setup (prevents re-runs on refresh)
-if "selected_time" not in st.session_state:
-    selected_date = datetime.utcnow().date()
-    selected_time_only = dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
-    st.session_state.selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
-selected_time = st.session_state.selected_time
+- RADIUS_KM = None  # (or however you’d originally set this)
++ RADIUS_KM = st.sidebar.slider(
++     "Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM
++ )
 
-# Logging
-log_file = "alert_log.csv"
-log_path = os.path.join(os.path.dirname(__file__), log_file)
-if not os.path.exists(log_path):
-    with open(log_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon", "Source"])
+@@ Fetch logic (around line 100)
+- if source_choice == "ADS-B Exchange":
+-     adsb_url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={HOME_LAT}&lng={HOME_LON}&fDstL=0&fDstU={RADIUS_KM}"
++ if data_source == "ADS-B Exchange":
++     adsb_url = (
++         "https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
++         f"?lat={HOME_LAT}&lng={HOME_LON}"
++         f"&fDstL=0&fDstU={RADIUS_KM}"
++     )
+      response = requests.get(adsb_url, headers=ADSB_HEADERS)
+      data = response.json()
+      acs = data.get("acList", [])
+@@
+- elif source_choice == "OpenSky":
++ elif data_source == "OpenSky":
+      opensky_url = f"https://{OPENSKY_HOST}/api/states/all"
+      response = requests.get(
+          opensky_url,
+          auth=(OPENSKY_USERNAME, OPENSKY_PASSWORD),
+      )
+      data = response.json()
+      acs = data.get("states", [])
 
-st.title("✈️ Aircraft Shadow Tracker")
-
-if st.sidebar.button("🔔 Test Pushover Alert"):
-    send_pushover("✅ Test Alert", "This is a test notification from the Shadow Tracker App")
-    st.sidebar.success("Test notification sent!")
-
-# Setup map base (static)
-center = DEFAULT_HOME_CENTER
-if "fmap_base" not in st.session_state:
-    base_map = folium.Map(location=center, zoom_start=zoom, control_scale=True)
-    folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(base_map)
-    st.session_state.fmap_base = base_map
-
-fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
-marker_cluster = MarkerCluster().add_to(fmap)
 
 # Fetch aircraft based on user choice
 # ---------------- Fetch Aircraft Data ------------
