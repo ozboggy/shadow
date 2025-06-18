@@ -16,6 +16,8 @@ FORECAST_DURATION_MINUTES = 5
 DEFAULT_SHADOW_WIDTH = 3
 
 # Sidebar controls
+target_lat = st.sidebar.number_input("Target Latitude", value=-33.7554186, format="%.6f")
+target_lon = st.sidebar.number_input("Target Longitude", value=150.9656457, format="%.6f")
 tile_style = st.sidebar.selectbox(
     "Map Tile Style",
     ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
@@ -39,7 +41,7 @@ st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 # Initialize map
 center = (-33.7554186, 150.9656457)
-fmap = folium.Map(location=center, zoom_start=10, tiles=tile_style, control_scale=True)
+fmap = folium.Map(location=center, zoom_start=12, tiles=tile_style, control_scale=True)
 # Home marker
 folium.Marker(
     location=center,
