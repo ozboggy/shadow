@@ -101,8 +101,8 @@ elif data_source == "ADS-B Exchange":
         st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
         j = []
     else:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{DEFAULT_RADIUS_KM}/"
-        headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
+        url = f"https://adsbexchange.com/api/aircraft/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{DEFAULT_RADIUS_KM}/"
+        headers = {"api-auth": api_key}
         try:
             r2 = requests.get(url, headers=headers)
             r2.raise_for_status()
