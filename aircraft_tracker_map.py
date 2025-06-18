@@ -88,11 +88,16 @@ except Exception as e:
     st.error(f"Error fetching OpenSky data: {e}")
     data = {}
 
-# Setup map
+# Setup map base (static)
 center = DEFAULT_HOME_CENTER
+if "fmap_base" not in st.session_state:
+    base_map = folium.Map(location=center, zoom_start=zoom, control_scale=True)
+    folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(base_map)
+    st.session_state.fmap_base = base_map
+
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
-folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
+
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -145,7 +150,7 @@ for ac in valid_aircraft:
 
 # Show sidebar aircraft indicators
 st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(valid_aircraft))
-st.sidebar.metric(label="🟢 Nearby (\u22645 mi)", value=nearby_count)
+st.sidebar.metric(label="🟢 Nearby (≤5 mi)", value=nearby_count)
 
 # Aircraft rendering
 alerts_triggered = []
