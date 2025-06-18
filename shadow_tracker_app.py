@@ -124,7 +124,7 @@ if source_choice == "ADS-B Exchange":
         flights = [ADSBFlight(ac) for ac in adsb_flights if ac.get("lat") and ac.get("lon") and ac.get("spd") and ac.get("trak")]
 
     except Exception as e:
-    st.warning(f"ADS-B Exchange failed: {e} — falling back to OpenSky")
+        st.warning(f"ADS-B Exchange failed: {e} — falling back to OpenSky")
     try:
         north, south, west, east = DEFAULT_TARGET_LAT + 1, DEFAULT_TARGET_LAT - 1, DEFAULT_TARGET_LON - 1, DEFAULT_TARGET_LON + 1
         url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
