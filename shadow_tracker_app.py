@@ -248,6 +248,12 @@ if show_debug:
             st.markdown(f"**Aircraft {i+1}:**")
             st.json(vars(f))
 
+# Quick map test without Folium
+if show_debug and flights:
+    st.subheader("🗺️ Plain Streamlit Map of Aircraft Positions")
+    df_map = pd.DataFrame([{'lat': f.latitude, 'lon': f.longitude} for f in flights])
+    st.map(df_map)
+
 # Aircraft rendering
 alerts_triggered = []
 for f in flights:
