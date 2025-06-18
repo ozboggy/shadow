@@ -73,6 +73,10 @@ if not os.path.exists(log_path):
 
 st.title("✈️ Aircraft Shadow Tracker")
 
+if st.sidebar.button("🔔 Test Pushover Alert"):
+    send_pushover("✅ Test Alert", "This is a test notification from the Shadow Tracker App")
+    st.sidebar.success("Test notification sent!")
+
 # Fetch aircraft (OpenSky fallback)
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
 url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
