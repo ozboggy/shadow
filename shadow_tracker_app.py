@@ -223,8 +223,9 @@ st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(flights))
 st.sidebar.metric(label="🟢 Nearby (≤5 mi)", value=nearby_count)
 
 st.subheader("✈️ Debug: Listing all aircraft")
-for f in flights:
-    st.write(vars(f))
+for i, f in enumerate(flights):
+    st.markdown(f"**Aircraft {i+1}:**")
+    st.json(vars(f))
 
 # Aircraft rendering
 alerts_triggered = []
