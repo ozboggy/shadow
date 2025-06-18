@@ -25,7 +25,7 @@ def send_pushover(title, message, user_key, api_token):
 
 # -------------- Streamlit Page Config -------------
 st.set_page_config(layout="wide")
-st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
+# Removed auto-refresh to prevent map flashing
 st.title("✈️ Aircraft Shadow Forecast")
 
 # ---------------- Sidebar Inputs ------------------
@@ -195,14 +195,3 @@ if os.path.exists(log_path):
         st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
     df_log = pd.read_csv(log_path)
     if not df_log.empty:
-        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-        st.markdown("### 📊 Recent Alerts")
-        st.dataframe(df_log.tail(10))
-        fig = px.scatter(df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)", hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
-        st.plotly_chart(fig, use_container_width=True)
-
-# ---------------- Render Map ----------------
-map_data = st_folium(fmap, width=1000, height=700)
-if map_data and "zoom" in map_data and "center" in map_data:
-    st.session_state.zoom = map_data["zoom"]
-    st.session_state.center = map_data["center"]
