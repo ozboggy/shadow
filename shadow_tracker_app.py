@@ -127,8 +127,7 @@ for ac in aircraft_states:
 
         # Only render live aircraft
         folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
-                      popup=f"{callsign}
-Alt: {round(alt)}m").add_to(marker_cluster)
+                      popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
     except Exception as e:
         st.warning(f"Error processing aircraft: {e}")
 
