@@ -40,7 +40,7 @@ selected_time = datetime.combine(sel_date, sel_time).replace(tzinfo=timezone.utc
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 # Initialize map
-center = (target_lat, target_lon)
+center = (-33.7554186, 150.9656457)
 fmap = folium.Map(location=center, zoom_start=11, tiles=tile_style, control_scale=True)
 # Home marker
 folium.Marker(
