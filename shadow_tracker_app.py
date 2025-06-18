@@ -89,21 +89,40 @@ if "fmap_base" not in st.session_state:
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
 
-# Fetch aircraft from FlightRadar24 (mocked fallback)
-fr = FR24API("01977ba5-1cef-726d-8f2f-8e6511f67088|PcIHECldlGp0bHEvVR47NsPzvKNoXwhthfKrVj7E71e0405e")
+# Fetch aircraft from ADS-B Exchange
 try:
-    flights_dict = fr.get_flights()
-    flights = list(flights_dict.values())
+    ADSBEX_API_KEY = os.getenv("ADSBX_API_KEY")
+    if not ADSBEX_API_KEY:
+        raise ValueError("ADSBX_API_KEY not set in environment variables.")
 
-    def is_within_bounds(flight, center_lat, center_lon, radius_km):
-        if not flight.latitude or not flight.longitude:
-            return False
-        dist = haversine(flight.latitude, flight.longitude, center_lat, center_lon)
-        return dist <= (radius_km * 1000)
+    headers = {"Authorization": f"Bearer {ADSBEX_API_KEY}"}
+    bounds = {
+        "lamin": DEFAULT_TARGET_LAT - 1,
+        "lomin": DEFAULT_TARGET_LON - 1,
+        "lamax": DEFAULT_TARGET_LAT + 1,
+        "lomax": DEFAULT_TARGET_LON + 1
+    }
+    url = f"https://api.adsbexchange.com/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{RADIUS_KM}/"
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    adsb_data = response.json()
+    flights = adsb_data.get("ac", [])
 
-    flights = [f for f in flights if is_within_bounds(f, *DEFAULT_HOME_CENTER, RADIUS_KM)]
+    class ADSBFlight:
+        def __init__(self, ac):
+            self.latitude = ac.get("lat")
+            self.longitude = ac.get("lon")
+            self.heading = ac.get("trak")
+            self.ground_speed = ac.get("spd")
+            self.baro_altitude = ac.get("alt_baro")
+            self.callsign = ac.get("flight")
+            self.identification = ac.get("hex")
+            self.airline = None
+
+    flights = [ADSBFlight(ac) for ac in flights if ac.get("lat") and ac.get("lon") and ac.get("spd") and ac.get("trak")]
+
 except Exception as e:
-    st.error(f"Error fetching FlightRadar24 data: {e}")
+    st.error(f"Error fetching ADS-B Exchange data: {e}")
     flights = []
 
 # Utility functions
