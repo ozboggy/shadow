@@ -53,6 +53,7 @@ DEFAULT_SHADOW_WIDTH = 5
 DEFAULT_ZOOM = 10
 
 # Sidebar settings
+override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
 show_debug = st.sidebar.checkbox("Show Aircraft Debug", value=False)
 source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
@@ -250,7 +251,7 @@ for f in flights:
 
         color = "green" if haversine(lat, lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= NEARBY_RADIUS_METERS else "blue"
 
-        for source in [s for s in ("Sun", "Moon") if ((s == "Sun" and track_sun) or (s == "Moon" and track_moon)) or (not track_sun and not track_moon)]:
+        for source in [s for s in ("Sun", "Moon") if ((s == "Sun" and track_sun) or (s == "Moon" and track_moon)) or override_trails]:
             trail = []
             for i in range(0, DEFAULT_FORECAST_DURATION_MINUTES * 60 + 1, DEFAULT_FORECAST_INTERVAL_SECONDS):
                 future_time = selected_time + timedelta(seconds=i)
