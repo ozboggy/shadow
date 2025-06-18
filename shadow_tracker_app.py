@@ -97,14 +97,17 @@ try:
     if not ADSBEX_API_KEY:
         raise ValueError("ADSBX_API_KEY not set in environment variables.")
 
-    headers = {"Authorization": f"Bearer {ADSBEX_API_KEY}"}
+    headers = {
+    "Authorization": f"Bearer {ADSBEX_API_KEY}",
+    "Accept": "application/json"
+}
     bounds = {
         "lamin": DEFAULT_TARGET_LAT - 1,
         "lomin": DEFAULT_TARGET_LON - 1,
         "lamax": DEFAULT_TARGET_LAT + 1,
         "lomax": DEFAULT_TARGET_LON + 1
     }
-    url = f"https://api.adsbexchange.com/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{RADIUS_KM}/"
+    url = f"https://api.adsbexchange.com/api/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{RADIUS_KM}/"
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     adsb_data = response.json()
