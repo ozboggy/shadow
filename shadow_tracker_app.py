@@ -113,7 +113,7 @@ if data_source == "OpenSky":
         # Skip invalid coordinates or movement data
         if None in (lat, lon, vel, hdg):
             continue
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
+        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 elif data_source == "ADS-B Exchange":
     # Fetch from ADS-B Exchange via API
     api_key = os.getenv("RAPIDAPI_KEY")
