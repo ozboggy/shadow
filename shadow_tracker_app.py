@@ -111,7 +111,7 @@ if data_source == "OpenSky":
             continue
         aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 elif data_source == "ADS-B Exchange":
-    # Fetch from ADS-B Exchange via RapidAPI
+    # Fetch from ADS-B Exchange via API
     api_key = os.getenv("RAPIDAPI_KEY")
     if not api_key:
         st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
@@ -126,6 +126,7 @@ elif data_source == "ADS-B Exchange":
         except Exception as e:
             st.error(f"ADS-B Exchange error: {e}")
             j = []
+    # Parse ADS-B Exchange records
     for ac in j:
         lat = ac.get("lat")
         lon = ac.get("lon")
@@ -137,7 +138,6 @@ elif data_source == "ADS-B Exchange":
             continue
         callsign = cs.strip() if isinstance(cs, str) else cs
         aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
-
 # Plot
 for ac in aircraft_list:
     lat, lon, baro, vel, hdg, cs = ac["lat"], ac["lon"], ac["baro"], ac["vel"], ac["hdg"], ac["callsign"]
