@@ -128,7 +128,7 @@ if source_choice == "ADS-B Exchange":
                 self.identification = ac.get("hex")
                 self.airline = None
 
-        flights = [RapidAPIAircraft(ac) for ac in aircraft if ac.get("lat") and ac.get("lon") and ac.get("spd") and ac.get("trak")]
+        flights = [RapidAPIAircraft(ac) for ac in aircraft if ac.get("lat") is not None and ac.get("lon") is not None and ac.get("spd") is not None and ac.get("trak") is not None]
 
     except Exception as e:
         st.warning(f"ADS-B Exchange via RapidAPI failed: {e} — falling back to OpenSky")
@@ -273,7 +273,7 @@ for f in flights:
                                 tooltip=f"{callsign} ({source})").add_to(fmap)
 
         logo_html = f'<img src="{airline_logo_url}" width="50"><br>' if airline_logo_url else ""
-        popup_content = f"{logo_html}{callsign}<br>Alt: {round(alt)}m"
+        popup_content = f"{logo_html}{callsign}<br>Alt: {round(alt)}m<br>Spd: {velocity} kt<br>Hdg: {heading}°"
 
         folium.Marker((lat, lon), icon=folium.Icon(color=color, icon="plane", prefix="fa"),
                       popup=popup_content).add_to(marker_cluster)
