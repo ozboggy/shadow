@@ -101,7 +101,34 @@ except Exception as e:
     st.error(f"Error fetching OpenSky data: {e}")
     data = {}
 
-aircraft_states = data.get("states", [])
+
+# Fetch aircraft based on selected data source
+aircraft_states = []
+if source_choice == "OpenSky":
+    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+        aircraft_states = data.get("states", [])
+    except Exception as e:
+        st.error(f"Error fetching OpenSky data: {e}")
+else:
+    try:
+        adsb_url = "https://adsbexchange.com/api/aircraft/json"  # Example placeholder URL
+        r = requests.get(adsb_url)
+        r.raise_for_status()
+        data = r.json()
+        for ac in data.get("aircraft", []):
+            aircraft_states.append([
+                ac.get("hex"), ac.get("flight", "N/A"), None, None, None,
+                ac.get("lon"), ac.get("lat"), None, None,
+                ac.get("gs"), ac.get("track"), None, None,
+                ac.get("alt_geom", 0)
+            ])
+    except Exception as e:
+        st.error(f"Error fetching ADS-B Exchange data: {e}")
+
 
 if "zoom" not in st.session_state:
     st.session_state.zoom = 12
@@ -178,7 +205,17 @@ for ac in filtered_states:
                     shadow_alerted = True
 
         if trail:
-            folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5",
+            
+            if track_moon:
+                # Approximate moon shadow path using same distance formula
+                moon_shadow_lat = future_lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az))
+                moon_shadow_lon = future_lon + (shadow_dist / (111111 * math.cos(math.radians(future_lat)))) * math.sin(math.radians(sun_az))
+                if override_trails:
+                    folium.PolyLine([(future_lat, future_lon), (moon_shadow_lat, moon_shadow_lon)],
+                                    color="gray", weight=1, opacity=0.5,
+                                    tooltip=f"{callsign} (moon)").add_to(fmap)
+
+        folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5",
                             tooltip=f"{callsign} (shadow)").add_to(fmap)
         folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
                       popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
