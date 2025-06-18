@@ -1,261 +1,186 @@
-import streamlit as st
-st.set_page_config(layout="wide")  # MUST be first Streamlit command
-
-import folium
-from folium.plugins import MarkerCluster
-from streamlit_folium import st_folium
-from datetime import datetime, time as dt_time, timezone, timedelta
-import math
-import csv
 import os
-from dotenv import load_dotenv
-load_dotenv()
-import pandas as pd
-import plotly.express as px
-from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
-from skyfield.api import load, Topos
-from pyfr24 import FR24API
-import base64
+import time
+import streamlit as st
 import requests
+import folium
+from streamlit_folium import st_folium
+from math import radians, sin, cos, atan2, sqrt
 
-# Load ephemeris for moon calculations
-eph = load('de421.bsp')
-moon = eph['moon']
-earth = eph['earth']
-ts = load.timescale()
+# ─── CONFIG ─────────────────────────────────────────────────────────────────────
+HOME_LAT = -33.76025
+HOME_LON = 150.9711666
+DEFAULT_RADIUS_KM = 50
+DEFAULT_ALERT_RADIUS_M = 100
 
-# Pushover setup
-PUSHOVER_USER_KEY = "usasa4y2iuvz75krztrma829s21nvy"
-PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
+# OpenSky credentials (if you want to use OpenSky)
+OPENSKY_HOST     = "opensky-network.org"
+OPENSKY_USERNAME = os.getenv("OPENSKY_USERNAME")
+OPENSKY_PASSWORD = os.getenv("OPENSKY_PASSWORD")
 
-def send_pushover(title, message):
-    try:
-        url = "https://api.pushover.net/1/messages.json"
-        payload = {
-            "token": PUSHOVER_API_TOKEN,
-            "user": PUSHOVER_USER_KEY,
-            "title": title,
-            "message": message
-        }
-        requests.post(url, data=payload)
-    except Exception as e:
-        st.warning(f"Pushover notification failed: {e}")
+# Pushover credentials (for notifications)
+PUSHOVER_TOKEN = os.getenv("PUSHOVER_TOKEN")
+PUSHOVER_USER  = os.getenv("PUSHOVER_USER")
 
-# Constants
-DEFAULT_TARGET_LAT = -33.7602563
-DEFAULT_TARGET_LON = 150.9717434
-DEFAULT_ALERT_RADIUS_METERS = 50
-DEFAULT_RADIUS_KM = 20
-DEFAULT_FORECAST_INTERVAL_SECONDS = 30
-DEFAULT_FORECAST_DURATION_MINUTES = 5
-DEFAULT_HOME_CENTER = [-33.76025, 150.9711666]
-DEFAULT_SHADOW_WIDTH = 5
-DEFAULT_ZOOM = 10
-
---- shadow_tracker_app.py
-+++ shadow_tracker_app.py
-@@ Sidebar inputs (around line 50)
-- source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
-+ data_source = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
-
-- RADIUS_KM = None  # (or however you’d originally set this)
-+ RADIUS_KM = st.sidebar.slider(
-+     "Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM
-+ )
-
-@@ Fetch logic (around line 100)
-- if source_choice == "ADS-B Exchange":
--     adsb_url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={HOME_LAT}&lng={HOME_LON}&fDstL=0&fDstU={RADIUS_KM}"
-+ if data_source == "ADS-B Exchange":
-+     adsb_url = (
-+         "https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
-+         f"?lat={HOME_LAT}&lng={HOME_LON}"
-+         f"&fDstL=0&fDstU={RADIUS_KM}"
-+     )
-      response = requests.get(adsb_url, headers=ADSB_HEADERS)
-      data = response.json()
-      acs = data.get("acList", [])
-@@
-- elif source_choice == "OpenSky":
-+ elif data_source == "OpenSky":
-      opensky_url = f"https://{OPENSKY_HOST}/api/states/all"
-      response = requests.get(
-          opensky_url,
-          auth=(OPENSKY_USERNAME, OPENSKY_PASSWORD),
-      )
-      data = response.json()
-      acs = data.get("states", [])
+# ADS-B Exchange headers
+ADSB_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
-# Fetch aircraft based on user choice
-# ---------------- Fetch Aircraft Data ------------
-aircraft_states = []
-# Attempt to fetch from ADS-B Exchange if selected
-if data_source == "ADS-B Exchange":
-     # …fetch from ADS-B Exchange…
-    adsb_url = (
-        f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"f"?lat={HOME_LAT}&lng={HOME_LON}"f"&fDstL=0&fDstU={RADIUS_KM}")
-    try:
-        r = requests.get(adsb_url, timeout=10)
-        r.raise_for_status()
-        adsb_data = r.json()
-        ac_list = adsb_data.get("acList")
-        if not ac_list:
-            raise ValueError("Empty acList")
-        for ac in ac_list:
-            aircraft_states.append({
-                "callsign": ac.get("Callsign"),
-                "lat": ac.get("Lat"),
-                "lon": ac.get("Long"),
-                "velocity": ac.get("Spd"),
-                "heading": ac.get("Trak"),
-                "alt": ac.get("Alt")
-            })
-    except Exception as e:
-        st.warning(f"ADS-B Exchange error ({e}), falling back to OpenSky")
-        data_source = "OpenSky"
-# Fetch from OpenSky if selected or fallback
-elif data_source == "OpenSky":
-     # …fetch from OpenSky…
-    north = HOME_LAT + 0.5
-    south = HOME_LAT - 1.0
-    west = HOME_LON - 1.0
-    east = HOME_LON + 1.0
-    opensky_url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
-    try:
-        r = requests.get(opensky_url, timeout=10)
-        r.raise_for_status()
-        opensky_data = r.json()
-        states = opensky_data.get("states", []) or []
-        for ac in states:
-            aircraft_states.append({
-                "callsign": (ac[1].strip() or "N/A"),
-                "lat": ac[6],
-                "lon": ac[5],
-                "velocity": ac[9],
-                "heading": ac[10],
-                "alt": ac[13] or 0
-            })
-    except Exception as e:
-        st.error(f"Error fetching data from OpenSky: {e}")
-        aircraft_states = []
-# Utility functions
+# ─── HELPERS ────────────────────────────────────────────────────────────────────
+def send_pushover(message: str, title: str = "Shadow Alert") -> bool:
+    """Send a Pushover notification. Returns True on HTTP 200."""
+    if not PUSHOVER_USER or not PUSHOVER_TOKEN:
+        return False
+    payload = {
+        "token":   PUSHOVER_TOKEN,
+        "user":    PUSHOVER_USER,
+        "message": message,
+        "title":   title,
+    }
+    resp = requests.post("https://api.pushover.net/1/messages.json", data=payload)
+    return resp.status_code == 200
+
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    return R * 2 * math.asin(math.sqrt(a))
+    """Return distance between two (lat,lon) points in meters."""
+    R = 6371000  # Earth radius in m
+    φ1, φ2 = radians(lat1), radians(lat2)
+    dφ = radians(lat2 - lat1)
+    dλ = radians(lon2 - lon1)
+    a = sin(dφ/2)**2 + cos(φ1)*cos(φ2)*sin(dλ/2)**2
+    return R * (2 * atan2(sqrt(a), sqrt(1-a)))
 
-def move_position(lat, lon, heading_deg, distance_m):
-    R = 6371000
-    heading_rad = math.radians(heading_deg)
-    lat1 = math.radians(lat)
-    lon1 = math.radians(lon)
-    lat2 = math.asin(math.sin(lat1)*math.cos(distance_m/R) + math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad))
-    lon2 = lon1 + math.atan2(math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1), math.cos(distance_m/R)-math.sin(lat1)*math.sin(lat2))
-    return math.degrees(lat2), math.degrees(lon2)
 
-def get_shadow(lat, lon, alt_m, timestamp, source):
-    if source == "Sun":
-        sun_alt = get_sun_altitude(lat, lon, timestamp)
-        sun_az = get_sun_azimuth(lat, lon, timestamp)
+# ─── SIDEBAR ────────────────────────────────────────────────────────────────────
+st.sidebar.title("🛰️ Shadow Tracker Settings")
+
+data_source    = st.sidebar.selectbox(
+    "Data Source",
+    ["ADS-B Exchange", "OpenSky"],
+    index=0
+)
+
+RADIUS_KM      = st.sidebar.slider(
+    "Aircraft Search Radius (km)",
+    min_value=5, max_value=200, value=DEFAULT_RADIUS_KM
+)
+
+ALERT_RADIUS_M = st.sidebar.slider(
+    "Alert Radius (m)",
+    min_value=1, max_value=1000, value=DEFAULT_ALERT_RADIUS_M
+)
+
+MAP_ZOOM       = st.sidebar.slider(
+    "Map Zoom Level", min_value=2, max_value=18, value=10
+)
+
+AUTO_REFRESH   = st.sidebar.checkbox(
+    "Auto Refresh Map", value=True
+)
+
+REFRESH_INTERVAL = st.sidebar.number_input(
+    "Refresh Interval (s)",
+    min_value=1, max_value=3600, value=10
+)
+
+DEBUG_MODE     = st.sidebar.checkbox(
+    "Debug Mode (show raw JSON)", value=False
+)
+
+# ─── PUSHPUSHER TEST ─────────────────────────────────────────────────────────────
+if st.sidebar.button("Test Pushover"):
+    ok = send_pushover("🔔 This is a Pushover test from Shadow Tracker.")
+    if ok:
+        st.sidebar.success("✅ Pushover notification sent!")
     else:
-        observer = earth + Topos(latitude_degrees=lat, longitude_degrees=lon, elevation_m=0)
-        t = ts.utc(timestamp.year, timestamp.month, timestamp.day, timestamp.hour, timestamp.minute, timestamp.second)
-        astrometric = observer.at(t).observe(moon).apparent()
-        alt, az, _ = astrometric.altaz()
-        sun_alt, sun_az = alt.degrees, az.degrees
+        st.sidebar.error("❌ Pushover failed (check TOKEN/USER).")
 
-    if sun_alt <= 0:
-        return None, None
 
-    shadow_dist = alt_m / math.tan(math.radians(sun_alt))
-    shadow_lat = lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
-    shadow_lon = lon + (shadow_dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
-    return shadow_lat, shadow_lon
+# ─── FETCH AIRCRAFT DATA ─────────────────────────────────────────────────────────
+data = {}
+acs  = []
 
-# Count nearby aircraft within 5 miles (8046 meters)
-NEARBY_RADIUS_METERS = 8046
-nearby_count = 0
-for f in flights:
-    dist = haversine(f.latitude, f.longitude, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON)
-    if dist <= NEARBY_RADIUS_METERS:
-        nearby_count += 1
-
-# Show sidebar aircraft indicators
-st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(flights))
-st.sidebar.metric(label="🟢 Nearby (≤5 mi)", value=nearby_count)
-
-if show_debug:
-    with st.expander("✈️ Debug: Listing all aircraft", expanded=False):
-        for i, f in enumerate(flights):
-            st.markdown(f"**Aircraft {i+1}:**")
-            st.json(vars(f))
-
-# Aircraft rendering
-alerts_triggered = []
-for f in flights:
+if data_source == "ADS-B Exchange":
+    url = (
+        "https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
+        f"?lat={HOME_LAT}&lng={HOME_LON}"
+        f"&fDstL=0&fDstU={RADIUS_KM}"
+    )
     try:
-        if show_debug:
-            st.text(f"Attempting to render {getattr(f, 'callsign', 'N/A')} at lat={f.latitude}, lon={f.longitude}")
-        lat, lon = f.latitude, f.longitude
-        heading = f.heading
-        velocity = f.ground_speed
-        alt = f.baro_altitude or 0
-        callsign = f.callsign or f.identification or "N/A"
-        airline_logo_url = f.airline.get("logo", "") if f.airline else ""
-        shadow_alerted = False
-
-        color = "green" if getattr(f, 'alt_status', 'airborne') == "airborne" else "gray"
-
-        for source in [s for s in ("Sun", "Moon") if ((s == "Sun" and track_sun) or (s == "Moon" and track_moon)) or override_trails]:
-            trail = []
-            for i in range(0, DEFAULT_FORECAST_DURATION_MINUTES * 60 + 1, DEFAULT_FORECAST_INTERVAL_SECONDS):
-                future_time = selected_time + timedelta(seconds=i)
-                dist_moved = velocity * i
-                future_lat, future_lon = move_position(lat, lon, heading, dist_moved)
-                s_lat, s_lon = get_shadow(future_lat, future_lon, alt, future_time, source)
-                if s_lat is not None and s_lon is not None:
-                    trail.append((s_lat, s_lon))
-                    if not shadow_alerted and haversine(s_lat, s_lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= ALERT_RADIUS_METERS:
-                        alerts_triggered.append((callsign, int(i), s_lat, s_lon))
-                        with open(log_path, "a", newline="") as f_log:
-                            writer = csv.writer(f_log)
-                            writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), s_lat, s_lon, source])
-                        send_pushover("✈️ Shadow Alert", f"{callsign} shadow ({source}) over target in {int(i)}s")
-                        shadow_alerted = True
-
-            if trail:
-                dash = "5,5" if source == "Sun" else "2,8"
-                folium.PolyLine(trail, color=color, weight=shadow_width, opacity=0.7, dash_array=dash,
-                                tooltip=f"{callsign} ({source})").add_to(fmap)
-
-        # Always add aircraft marker regardless of trail
-        logo_html = f'<img src="{airline_logo_url}" width="50"><br>' if airline_logo_url else ""
-        popup_content = f"{logo_html}{callsign}<br>Alt: {round(alt)}m<br>Spd: {velocity} kt<br>Hdg: {heading}°"
-
-        folium.Marker((lat, lon), icon=folium.Icon(color=color, icon="plane", prefix="fa"),
-                      popup=popup_content).add_to(marker_cluster)
-
+        resp = requests.get(url, headers=ADSB_HEADERS, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        acs  = data.get("acList", [])
     except Exception as e:
-        st.warning(f"Error processing aircraft: {e}")
+        st.error(f"Error fetching ADS-B Exchange: {e}")
 
-# Display map
-st_folium(fmap, width=1200, height=700)
+elif data_source == "OpenSky":
+    url = f"https://{OPENSKY_HOST}/api/states/all"
+    try:
+        resp = requests.get(
+            url,
+            auth=(OPENSKY_USERNAME, OPENSKY_PASSWORD),
+            timeout=10
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("states", [])
+        # Map to same shape as ADS-B Exchange for simplicity
+        for s in raw:
+            acs.append({
+                "hex":      s[0],
+                "callsign": (s[1] or "").strip(),
+                "lat":      s[6],
+                "lon":      s[5],
+            })
+    except Exception as e:
+        st.error(f"Error fetching OpenSky: {e}")
 
-# Logs
-if os.path.exists(log_path):
-    st.sidebar.markdown("### 📅 Download Log")
-    with open(log_path, "rb") as f:
-        st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
+# ─── DEBUG RAW JSON ──────────────────────────────────────────────────────────────
+if DEBUG_MODE:
+    st.sidebar.write("Raw JSON:")
+    st.sidebar.json(data)
 
-    df_log = pd.read_csv(log_path)
-    if not df_log.empty:
-        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-        st.markdown("### 📊 Recent Alerts")
-        st.dataframe(df_log.tail(10))
 
-        fig = px.scatter(df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)",
-                         color="Source", hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
-        st.plotly_chart(fig, use_container_width=True)
+# ─── BUILD FOLIUM MAP ────────────────────────────────────────────────────────────
+m = folium.Map(
+    location=[HOME_LAT, HOME_LON],
+    zoom_start=MAP_ZOOM,
+    width=1200,
+    height=700
+)
+
+# Home marker (house icon)
+folium.Marker(
+    [HOME_LAT, HOME_LON],
+    tooltip="Home",
+    icon=folium.Icon(icon="home", prefix="fa")
+).add_to(m)
+
+
+# Aircraft markers + alert checks
+for ac in acs:
+    lat = ac.get("Lat")  or ac.get("lat")
+    lon = ac.get("Long") or ac.get("lon")
+    if lat is None or lon is None:
+        continue
+
+    callsign = ac.get("Call") or ac.get("callsign") or ac.get("hex") or "?"
+    # Place plane marker with tooltip = callsign
+    folium.Marker(
+        [lat, lon],
+        tooltip=callsign,
+        icon=folium.Icon(icon="plane", prefix="fa")
+    ).add_to(m)
+
+    # Distance check for alerts
+    dist_m = haversine(HOME_LAT, HOME_LON, lat, lon)
+    if dist_m <= ALERT_RADIUS_M:
+        msg = f"🚨 {callsign} is {int(dist_m)} m from home!"
+        st.sidebar.warning(msg)
+        send_pushover(msg)
+
+
+# ─── RENDER & AUTO-REFRESH ───────────────────────────────────────────────────────
+st_data = st_folium(m, width=1200, height=700)
+
+if AUTO_REFRESH:
+    time.sleep(REFRESH_INTERVAL)
+    st.experimental_rerun()
