@@ -18,9 +18,6 @@ FORECAST_DURATION_MINUTES = 5
 DEFAULT_SHADOW_WIDTH = 3
 
 # Sidebar controls
-track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
-track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
-override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
 # Target location inputs
 target_lat = st.sidebar.number_input("Target Latitude", value=DEFAULT_TARGET_LAT, format="%.6f")
 target_lon = st.sidebar.number_input("Target Longitude", value=DEFAULT_TARGET_LON, format="%.6f")
