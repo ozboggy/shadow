@@ -93,8 +93,11 @@ marker_cluster = MarkerCluster().add_to(fmap)
 import os
 fr = FR24API("01977ba5-1cef-726d-8f2f-8e6511f67088|PcIHECldlGp0bHEvVR47NsPzvKNoXwhthfKrVj7E71e0405e")
 try:
-    flights_dict = fr.search(bounds=(-34.5, -33.0, 150.0, 151.5))
-    flights = list(flights_dict.values())
+    flights = fr.get_aircraft(
+        lat=DEFAULT_HOME_CENTER[0],
+        lon=DEFAULT_HOME_CENTER[1],
+        radius_km=RADIUS_KM
+    )
 except Exception as e:
     st.error(f"Error fetching FlightRadar24 data: {e}")
     flights = []
