@@ -90,7 +90,7 @@ fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
 
 # Fetch aircraft from FlightRadar24 (mocked fallback)
-fr = FR24API(token=os.getenv("FR24_API_TOKEN"))
+fr = FR24API("01977ba5-1cef-726d-8f2f-8e6511f67088|PcIHECldlGp0bHEvVR47NsPzvKNoXwhthfKrVj7E71e0405e")
 try:
     flights_dict = fr.get_flights()
     flights = list(flights_dict.values())
