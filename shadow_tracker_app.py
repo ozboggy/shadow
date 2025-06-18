@@ -101,10 +101,7 @@ aircraft_states = []
 if data_source == "ADS-B Exchange":
      # …fetch from ADS-B Exchange…
     adsb_url = (
-        f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
-        f"?lat={HOME_LAT}&lng={HOME_LON}"
-        f"&fDstL=0&fDstU={RADIUS_KM}"
-    )
+        f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"f"?lat={HOME_LAT}&lng={HOME_LON}"f"&fDstL=0&fDstU={RADIUS_KM}")
     try:
         r = requests.get(adsb_url, timeout=10)
         r.raise_for_status()
