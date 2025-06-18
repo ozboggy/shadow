@@ -51,7 +51,7 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * (2 * atan2(sqrt(a), sqrt(1 - a)))
 
 # ─── SIDEBAR ────────────────────────────────────────────────────────────────────
-st.sidebar.title("🛰️ Shadow Tracker Settings")
+st.sidebar.title("🛰️ Shadow Tracker Settings-test-1.1")
 
 data_source = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
 RADIUS_KM = st.sidebar.slider("Aircraft Search Radius (km)", 5, 200, DEFAULT_RADIUS_KM)
