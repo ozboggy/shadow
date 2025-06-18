@@ -42,7 +42,7 @@ st.sidebar.header("Map & Alert Settings")
 zoom_level = st.sidebar.slider("Map Zoom Level", 1, 18, st.session_state.get("zoom", 12))
 search_radius_km = st.sidebar.slider("Search Radius (km)", 1, 100, 20)
 shadow_width = st.sidebar.slider("Shadow Path Width", 1, 10, 2)
-target_radius_m = st.sidebar.slider("Alert Radius (m)", 1, 1000, 50)
+target_radius_m = st.sidebar.slider("Alert Radius (m)", min_value=1, max_value=1000, value=50, step=1)
 enable_onscreen_alert = st.sidebar.checkbox("Enable Onscreen Alert", True)
 debug_mode = st.sidebar.checkbox("Debug Mode", False)
 if st.sidebar.button("Send Pushover Test"):
