@@ -222,6 +222,10 @@ for f in flights:
 st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(flights))
 st.sidebar.metric(label="🟢 Nearby (≤5 mi)", value=nearby_count)
 
+st.subheader("✈️ Debug: Listing all aircraft")
+for f in flights:
+    st.write(vars(f))
+
 # Aircraft rendering
 alerts_triggered = []
 for f in flights:
