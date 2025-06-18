@@ -97,19 +97,23 @@ if data_source == "OpenSky":
         st.error(f"OpenSky error: {e}")
         data = []
     for s in data:
-        # Parse OpenSky state vector
+        # Parse OpenSky state vector with type conversion
         if len(s) < 11:
             continue
-        icao = s[0]
-        callsign = s[1].strip() if s[1] else icao
-        lon = s[5]
-        lat = s[6]
-        baro = s[7] or 0
-        vel = s[9]
-        hdg = s[10]
+        try:
+            icao = s[0]
+            callsign = s[1].strip() if s[1] else icao
+            lon = float(s[5])
+            lat = float(s[6])
+            baro = float(s[7]) if s[7] is not None else 0.0
+            vel = float(s[9])
+            hdg = float(s[10])
+        except Exception:
+            continue
+        # Skip invalid coordinates or movement data
         if None in (lat, lon, vel, hdg):
             continue
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
+        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 elif data_source == "ADS-B Exchange":
     # Fetch from ADS-B Exchange via API
     api_key = os.getenv("RAPIDAPI_KEY")
@@ -128,16 +132,22 @@ elif data_source == "ADS-B Exchange":
             j = []
     # Parse ADS-B Exchange records
     for ac in j:
-        lat = ac.get("lat")
-        lon = ac.get("lon")
-        vel = ac.get("spd")
-        hdg = ac.get("trak")
-        baro = ac.get("alt_baro") if isinstance(ac.get("alt_baro"),(int,float)) else 0
-        cs = ac.get("flight") or ac.get("hex")
+        # Parse ADS-B Exchange record with type conversion
+        try:
+            lat = float(ac.get("lat"))
+            lon = float(ac.get("lon"))
+            vel = float(ac.get("spd"))
+            hdg = float(ac.get("trak"))
+            baro_raw = ac.get("alt_baro")
+            baro = float(baro_raw) if isinstance(baro_raw, (int, float, str)) and str(baro_raw).replace('.','',1).isdigit() else 0.0
+            cs = ac.get("flight") or ac.get("hex")
+        except Exception:
+            continue
         if None in (lat, lon, vel, hdg):
             continue
         callsign = cs.strip() if isinstance(cs, str) else cs
         aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
+
 # Plot
 for ac in aircraft_list:
     lat, lon, baro, vel, hdg, cs = ac["lat"], ac["lon"], ac["baro"], ac["vel"], ac["hdg"], ac["callsign"]
