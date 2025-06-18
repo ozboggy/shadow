@@ -18,6 +18,14 @@ FORECAST_DURATION_MINUTES = 5
 DEFAULT_SHADOW_WIDTH = 3
 
 # Sidebar controls
+track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
+track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
+override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
+# Target location inputs
+target_lat = st.sidebar.number_input("Target Latitude", value=DEFAULT_TARGET_LAT, format="%.6f")
+target_lon = st.sidebar.number_input("Target Longitude", value=DEFAULT_TARGET_LON, format="%.6f")
+# Map tile and data source
+
 tile_style = st.sidebar.selectbox(
     "Map Tile Style", ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
     index=1
@@ -37,7 +45,7 @@ selected_time = datetime.combine(t_sel_date, t_sel_time).replace(tzinfo=timezone
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 # Create map
-center = (DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON)
+center = (target_lat, target_lon)
 fmap = folium.Map(location=center, zoom_start=8, tiles=tile_style, control_scale=True)
 # Home
 folium.Marker(
@@ -88,7 +96,7 @@ if data_source == "OpenSky":
     dlon = dr/math.cos(math.radians(DEFAULT_TARGET_LAT))
     west = DEFAULT_TARGET_LON - dlon
     east = DEFAULT_TARGET_LON + dlon
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+    url = f"https://opensky-network.org/api/states/all?lamin={target_lat}-dr&lomin={target_lon}-dlon&lamax={target_lat}+dr&lomax={target_lon}+dlon"
     try:
         r = requests.get(url)
         r.raise_for_status()
@@ -116,7 +124,7 @@ if data_source == "OpenSky":
         aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 elif data_source == "ADS-B Exchange":
     # Fetch aircraft via ADS-B Exchange RapidAPI endpoint (using embedded API key)
-    url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{DEFAULT_RADIUS_KM}/"
+    url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{target_lat}/lon/{target_lon}/dist/{DEFAULT_RADIUS_KM}/"
     headers = {
         "x-rapidapi-key": "e462693263msh88bc8da3fa72b24p1589cajsnc84fccccf993",
         "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
