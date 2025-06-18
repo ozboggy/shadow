@@ -250,14 +250,14 @@ for f in flights:
 
         color = "green" if haversine(lat, lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= NEARBY_RADIUS_METERS else "blue"
 
-        for source in [s for s in ("Sun", "Moon") if (s == "Sun" and track_sun) or (s == "Moon" and track_moon)]:
+        for source in [s for s in ("Sun", "Moon") if ((s == "Sun" and track_sun) or (s == "Moon" and track_moon)) or (not track_sun and not track_moon)]:
             trail = []
             for i in range(0, DEFAULT_FORECAST_DURATION_MINUTES * 60 + 1, DEFAULT_FORECAST_INTERVAL_SECONDS):
                 future_time = selected_time + timedelta(seconds=i)
                 dist_moved = velocity * i
                 future_lat, future_lon = move_position(lat, lon, heading, dist_moved)
                 s_lat, s_lon = get_shadow(future_lat, future_lon, alt, future_time, source)
-                if s_lat and s_lon:
+                if s_lat is not None and s_lon is not None:
                     trail.append((s_lat, s_lon))
                     if not shadow_alerted and haversine(s_lat, s_lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= ALERT_RADIUS_METERS:
                         alerts_triggered.append((callsign, int(i), s_lat, s_lon))
