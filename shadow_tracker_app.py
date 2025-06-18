@@ -14,6 +14,7 @@ from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_s
 from skyfield.api import load, Topos
 from pyfr24 import FR24API
 import base64
+import requests
 
 # Load ephemeris for moon calculations
 eph = load('de421.bsp')
@@ -27,7 +28,6 @@ PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
 
 def send_pushover(title, message):
     try:
-        import requests
         url = "https://api.pushover.net/1/messages.json"
         payload = {
             "token": PUSHOVER_API_TOKEN,
@@ -89,48 +89,74 @@ if "fmap_base" not in st.session_state:
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
 
-# Fetch aircraft from local dump1090-style JSON feed
-import requests
+# Fetch aircraft from FlightRadar24 (mocked fallback)
+fr = FR24API(token=os.getenv("FR24_API_TOKEN"))
 try:
-    response = requests.get("http://114.73.176.156/tar1090/data.json")
-    response.raise_for_status()
-    dump1090_data = response.json()
-    flights = dump1090_data.get("aircraft", [])
+    flights_dict = fr.get_flights()
+    flights = list(flights_dict.values())
+
+    def is_within_bounds(flight, center_lat, center_lon, radius_km):
+        if not flight.latitude or not flight.longitude:
+            return False
+        dist = haversine(flight.latitude, flight.longitude, center_lat, center_lon)
+        return dist <= (radius_km * 1000)
+
+    flights = [f for f in flights if is_within_bounds(f, *DEFAULT_HOME_CENTER, RADIUS_KM)]
 except Exception as e:
-    st.error(f"Error fetching local ADS-B data: {e}")
+    st.error(f"Error fetching FlightRadar24 data: {e}")
     flights = []
 
-# Convert to compatible format
-class Dump1090Flight:
-    def __init__(self, data):
-        self.latitude = data.get("lat")
-        self.longitude = data.get("lon")
-        self.heading = data.get("track")
-        self.ground_speed = data.get("gs")
-        self.baro_altitude = data.get("alt_baro")
-        self.callsign = data.get("flight")
-        self.identification = data.get("hex")
-        self.airline = None
+# Utility functions
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371000
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
 
-flights = [Dump1090Flight(f) for f in flights if f.get("lat") and f.get("lon") and f.get("gs") and f.get("track")]
+def move_position(lat, lon, heading_deg, distance_m):
+    R = 6371000
+    heading_rad = math.radians(heading_deg)
+    lat1 = math.radians(lat)
+    lon1 = math.radians(lon)
+    lat2 = math.asin(math.sin(lat1)*math.cos(distance_m/R) + math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad))
+    lon2 = lon1 + math.atan2(math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1), math.cos(distance_m/R)-math.sin(lat1)*math.sin(lat2))
+    return math.degrees(lat2), math.degrees(lon2)
 
-aircraft_list = [f for f in flights if f.latitude and f.longitude and f.ground_speed and f.heading]
+def get_shadow(lat, lon, alt_m, timestamp, source):
+    if source == "Sun":
+        sun_alt = get_sun_altitude(lat, lon, timestamp)
+        sun_az = get_sun_azimuth(lat, lon, timestamp)
+    else:
+        observer = earth + Topos(latitude_degrees=lat, longitude_degrees=lon, elevation_m=0)
+        t = ts.utc(timestamp.year, timestamp.month, timestamp.day, timestamp.hour, timestamp.minute, timestamp.second)
+        astrometric = observer.at(t).observe(moon).apparent()
+        alt, az, _ = astrometric.altaz()
+        sun_alt, sun_az = alt.degrees, az.degrees
+
+    if sun_alt <= 0:
+        return None, None
+
+    shadow_dist = alt_m / math.tan(math.radians(sun_alt))
+    shadow_lat = lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
+    shadow_lon = lon + (shadow_dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
+    return shadow_lat, shadow_lon
 
 # Count nearby aircraft within 5 miles (8046 meters)
 NEARBY_RADIUS_METERS = 8046
 nearby_count = 0
-for f in aircraft_list:
+for f in flights:
     dist = haversine(f.latitude, f.longitude, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON)
     if dist <= NEARBY_RADIUS_METERS:
         nearby_count += 1
 
 # Show sidebar aircraft indicators
-st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(aircraft_list))
+st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(flights))
 st.sidebar.metric(label="🟢 Nearby (≤5 mi)", value=nearby_count)
 
 # Aircraft rendering
 alerts_triggered = []
-for f in aircraft_list:
+for f in flights:
     try:
         lat, lon = f.latitude, f.longitude
         heading = f.heading
