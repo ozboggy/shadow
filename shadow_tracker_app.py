@@ -233,6 +233,8 @@ if show_debug:
 alerts_triggered = []
 for f in flights:
     try:
+        if show_debug:
+            st.text(f"Attempting to render {getattr(f, 'callsign', 'N/A')} at lat={f.latitude}, lon={f.longitude}")
         lat, lon = f.latitude, f.longitude
         heading = f.heading
         velocity = f.ground_speed
