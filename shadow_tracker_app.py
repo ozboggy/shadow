@@ -53,6 +53,7 @@ DEFAULT_SHADOW_WIDTH = 5
 DEFAULT_ZOOM = 10
 
 # Sidebar settings
+show_debug = st.sidebar.checkbox("Show Aircraft Debug", value=False)
 source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=True)
@@ -222,10 +223,11 @@ for f in flights:
 st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(flights))
 st.sidebar.metric(label="🟢 Nearby (≤5 mi)", value=nearby_count)
 
-st.subheader("✈️ Debug: Listing all aircraft")
-for i, f in enumerate(flights):
-    st.markdown(f"**Aircraft {i+1}:**")
-    st.json(vars(f))
+if show_debug:
+    with st.expander("✈️ Debug: Listing all aircraft", expanded=False):
+        for i, f in enumerate(flights):
+            st.markdown(f"**Aircraft {i+1}:**")
+            st.json(vars(f))
 
 # Aircraft rendering
 alerts_triggered = []
