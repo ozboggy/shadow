@@ -74,7 +74,7 @@ except Exception as e:
 
 # Setup map
 if "zoom" not in st.session_state:
-    st.session_state.zoom = 14
+    st.session_state.zoom = 11
 if "center" not in st.session_state:
     st.session_state.center = HOME_CENTER
 
