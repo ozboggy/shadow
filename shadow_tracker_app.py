@@ -56,8 +56,8 @@ if not os.path.exists(log_path):
 st.set_page_config(layout="wide")
 st.title("✈️ Aircraft Shadow Tracker")
 
-selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
-selected_time_only = st.sidebar.time_input("Time (UTC)", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
+selected_date = datetime.utcnow().date()
+selected_time_only = dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
 selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
 shadow_source = st.sidebar.radio("Shadow Source", ["Sun", "Moon"], horizontal=True)
 
@@ -73,22 +73,9 @@ except Exception as e:
     data = {}
 
 # Setup map
-if "zoom" not in st.session_state:
-    st.session_state.zoom = 11
-if "center" not in st.session_state:
-    st.session_state.center = HOME_CENTER
-
-try:
-    center = st.session_state.center
-    if isinstance(center, dict) and "lat" in center and "lng" in center:
-        center = [center["lat"], center["lng"]]
-    elif not (isinstance(center, list) and len(center) == 2):
-        raise ValueError
-except Exception:
-    center = HOME_CENTER
-    st.session_state.center = center
-
-fmap = folium.Map(location=center, zoom_start=st.session_state.zoom)
+center = HOME_CENTER
+zoom = 10
+fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
@@ -136,54 +123,25 @@ for ac in aircraft_states:
         if None in (lat, lon, velocity, heading):
             continue
         alt = geo_altitude or 0
-        trail = []
         callsign = callsign.strip() if callsign else "N/A"
-        shadow_alerted = False
 
-        for i in range(0, FORECAST_DURATION_MINUTES * 60 + 1, FORECAST_INTERVAL_SECONDS):
-            future_time = selected_time + timedelta(seconds=i)
-            dist_moved = velocity * i
-            future_lat, future_lon = move_position(lat, lon, heading, dist_moved)
-            s_lat, s_lon = get_shadow(future_lat, future_lon, alt, future_time)
-            if s_lat and s_lon:
-                trail.append((s_lat, s_lon))
-                if not shadow_alerted and haversine(s_lat, s_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
-                    alerts_triggered.append((callsign, int(i), s_lat, s_lon))
-                    with open("alert_log.csv", "a", newline="") as f:
-                        writer = csv.writer(f)
-                        writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), s_lat, s_lon, shadow_source])
-                    send_pushover("✈️ Shadow Alert", f"{callsign} shadow over target in {int(i)}s")
-                    shadow_alerted = True
-
-        if trail:
-            folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5",
-                            tooltip=f"{callsign} ({shadow_source})").add_to(fmap)
+        # Only render live aircraft
         folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
-                      popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
+                      popup=f"{callsign}
+Alt: {round(alt)}m").add_to(marker_cluster)
     except Exception as e:
         st.warning(f"Error processing aircraft: {e}")
 
-# Display map and alerts
-if alerts_triggered:
-    st.error("🚨 Shadow ALERT!")
-    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    for cs, t, _, _ in alerts_triggered:
-        st.write(f"✈️ {cs} — in approx. {t} seconds")
-else:
-    st.success("✅ No forecast shadow paths intersect target area.")
-
-map_data = st_folium(fmap, width=1500, height=1000)
-if map_data and "zoom" in map_data and "center" in map_data:
-    st.session_state.zoom = map_data["zoom"]
-    st.session_state.center = map_data["center"]
+# Display map
+st_folium(fmap, width=2000, height=1400)
 
 # Logs
-if os.path.exists("alert_log.csv"):
+if os.path.exists(log_path):
     st.sidebar.markdown("### 📅 Download Log")
-    with open("alert_log.csv", "rb") as f:
+    with open(log_path, "rb") as f:
         st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
 
-    df_log = pd.read_csv("alert_log.csv")
+    df_log = pd.read_csv(log_path)
     if not df_log.empty:
         df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
         st.markdown("### 📊 Recent Alerts")
