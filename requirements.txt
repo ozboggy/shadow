@@ -6,3 +6,4 @@ pysolar
 pandas
 plotly
 skyfield
+pyfr24
