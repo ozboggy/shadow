@@ -115,32 +115,24 @@ if data_source == "OpenSky":
             continue
         aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 elif data_source == "ADS-B Exchange":
-    # Fetch from ADS-B Exchange via API
-    api_key = os.getenv("RAPIDAPI_KEY")
-    if not api_key:
-        st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
+    # Fetch from ADS-B Exchange VirtualRadar API (no API key needed)
+    url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={DEFAULT_TARGET_LAT}&lng={DEFAULT_TARGET_LON}&fDstL=0&fDstU={DEFAULT_RADIUS_KM}"
+    try:
+        r2 = requests.get(url)
+        r2.raise_for_status()
+        j = r2.json().get("acList", [])
+    except Exception as e:
+        st.error(f"ADS-B Exchange error: {e}")
         j = []
-    else:
-        url = f"https://adsbexchange.com/api/aircraft/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{DEFAULT_RADIUS_KM}/"
-        headers = {"api-auth": api_key}
-        try:
-            r2 = requests.get(url, headers=headers)
-            r2.raise_for_status()
-            j = r2.json().get("ac", [])
-        except Exception as e:
-            st.error(f"ADS-B Exchange error: {e}")
-            j = []
-    # Parse ADS-B Exchange records
+    # Parse VirtualRadar response
     for ac in j:
-        # Parse ADS-B Exchange record with type conversion
         try:
-            lat = float(ac.get("lat"))
-            lon = float(ac.get("lon"))
-            vel = float(ac.get("spd"))
-            hdg = float(ac.get("trak"))
-            baro_raw = ac.get("alt_baro")
-            baro = float(baro_raw) if isinstance(baro_raw, (int, float, str)) and str(baro_raw).replace('.','',1).isdigit() else 0.0
-            cs = ac.get("flight") or ac.get("hex")
+            lat = ac.get("Lat")
+            lon = ac.get("Long")
+            vel = ac.get("Spd")
+            hdg = ac.get("Trak")
+            baro = ac.get("Alt") or 0.0
+            cs = ac.get("Call") or ac.get("Reg") or ac.get("Hex")
         except Exception:
             continue
         if None in (lat, lon, vel, hdg):
