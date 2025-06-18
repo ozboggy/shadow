@@ -55,7 +55,8 @@ DEFAULT_ZOOM = 10
 # Sidebar settings
 override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
 show_debug = st.sidebar.checkbox("Show Aircraft Debug", value=False)
-source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
+- source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
++ data_source = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=True)
 RADIUS_KM = st.sidebar.slider("Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM)
