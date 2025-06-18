@@ -1,7 +1,6 @@
 import streamlit as st
 st.set_page_config(layout="wide")  # MUST be first Streamlit command
 
-import requests
 import folium
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
@@ -13,6 +12,8 @@ import pandas as pd
 import plotly.express as px
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 from skyfield.api import load, Topos
+from pyfr24 import FR24API
+import base64
 
 # Load ephemeris for moon calculations
 eph = load('de421.bsp')
@@ -26,6 +27,7 @@ PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
 
 def send_pushover(title, message):
     try:
+        import requests
         url = "https://api.pushover.net/1/messages.json"
         payload = {
             "token": PUSHOVER_API_TOKEN,
@@ -77,17 +79,6 @@ if st.sidebar.button("🔔 Test Pushover Alert"):
     send_pushover("✅ Test Alert", "This is a test notification from the Shadow Tracker App")
     st.sidebar.success("Test notification sent!")
 
-# Fetch aircraft (OpenSky fallback)
-north, south, west, east = -33.0, -34.5, 150.0, 151.5
-url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
-try:
-    r = requests.get(url)
-    r.raise_for_status()
-    data = r.json()
-except Exception as e:
-    st.error(f"Error fetching OpenSky data: {e}")
-    data = {}
-
 # Setup map base (static)
 center = DEFAULT_HOME_CENTER
 if "fmap_base" not in st.session_state:
@@ -98,6 +89,13 @@ if "fmap_base" not in st.session_state:
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
 
+# Fetch aircraft from FlightRadar24
+fr = FR24API()
+try:
+    flights = fr.get_flights(bounds=(-34.5, -33.0, 150.0, 151.5))
+except Exception as e:
+    st.error(f"Error fetching FlightRadar24 data: {e}")
+    flights = []
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -135,32 +133,30 @@ def get_shadow(lat, lon, alt_m, timestamp, source):
     return shadow_lat, shadow_lon
 
 # Filter valid aircraft
-aircraft_states = data.get("states", [])
-valid_aircraft = [ac for ac in aircraft_states if None not in (ac[5], ac[6], ac[9], ac[10])]
+aircraft_list = [f for f in flights if f.latitude and f.longitude and f.ground_speed and f.heading]
 
 # Count nearby aircraft within 5 miles (8046 meters)
 NEARBY_RADIUS_METERS = 8046
 nearby_count = 0
-for ac in valid_aircraft:
-    _, _, _, _, _, lon, lat, *_ = ac
-    if lat and lon:
-        dist = haversine(lat, lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON)
-        if dist <= NEARBY_RADIUS_METERS:
-            nearby_count += 1
+for f in aircraft_list:
+    dist = haversine(f.latitude, f.longitude, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON)
+    if dist <= NEARBY_RADIUS_METERS:
+        nearby_count += 1
 
 # Show sidebar aircraft indicators
-st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(valid_aircraft))
+st.sidebar.metric(label="✈️ Tracked Aircraft", value=len(aircraft_list))
 st.sidebar.metric(label="🟢 Nearby (≤5 mi)", value=nearby_count)
 
 # Aircraft rendering
 alerts_triggered = []
-for ac in valid_aircraft:
+for f in aircraft_list:
     try:
-        icao24, callsign, _, _, _, lon, lat, baro_altitude, _, velocity, heading, _, _, geo_altitude, *_ = ac
-        if None in (lat, lon, velocity, heading):
-            continue
-        alt = geo_altitude or 0
-        callsign = callsign.strip() if callsign else "N/A"
+        lat, lon = f.latitude, f.longitude
+        heading = f.heading
+        velocity = f.ground_speed
+        alt = f.baro_altitude or 0
+        callsign = f.callsign or f.identification or "N/A"
+        airline_logo_url = f.airline.get("logo", "") if f.airline else ""
         shadow_alerted = False
 
         color = "green" if haversine(lat, lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= NEARBY_RADIUS_METERS else "blue"
@@ -176,8 +172,8 @@ for ac in valid_aircraft:
                     trail.append((s_lat, s_lon))
                     if not shadow_alerted and haversine(s_lat, s_lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= ALERT_RADIUS_METERS:
                         alerts_triggered.append((callsign, int(i), s_lat, s_lon))
-                        with open(log_path, "a", newline="") as f:
-                            writer = csv.writer(f)
+                        with open(log_path, "a", newline="") as f_log:
+                            writer = csv.writer(f_log)
                             writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), s_lat, s_lon, source])
                         send_pushover("✈️ Shadow Alert", f"{callsign} shadow ({source}) over target in {int(i)}s")
                         shadow_alerted = True
@@ -187,8 +183,11 @@ for ac in valid_aircraft:
                 folium.PolyLine(trail, color=color, weight=shadow_width, opacity=0.7, dash_array=dash,
                                 tooltip=f"{callsign} ({source})").add_to(fmap)
 
+        logo_html = f'<img src="{airline_logo_url}" width="50"><br>' if airline_logo_url else ""
+        popup_content = f"{logo_html}{callsign}<br>Alt: {round(alt)}m"
+
         folium.Marker((lat, lon), icon=folium.Icon(color=color, icon="plane", prefix="fa"),
-                      popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
+                      popup=popup_content).add_to(marker_cluster)
     except Exception as e:
         st.warning(f"Error processing aircraft: {e}")
 
