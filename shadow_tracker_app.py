@@ -122,15 +122,12 @@ elif data_source == "ADS-B Exchange":
             # Heading: try 'track' then 'trak'
             hdg_raw = ac.get("track") if ac.get("track") is not None else ac.get("trak")
             hdg = float(hdg_raw)
-            raw = ac.get("alt_baro"); baro = float(raw) if isinstance(raw,(int,float,str)) and str(raw).replace('.','',1).isdigit() else 0.0
+            raw = ac.get("alt_baro")
+            baro = float(raw) if isinstance(raw, (int, float, str)) and str(raw).replace('.', '', 1).isdigit() else 0.0
             cs = ac.get("flight") or ac.get("hex")
         except Exception:
             continue
-            raw = ac.get("alt_baro"); baro = float(raw) if isinstance(raw,(int,float,str)) and str(raw).replace('.','',1).isdigit() else 0.0
-            cs = ac.get("flight") or ac.get("hex")
-        except:
-            continue
-        callsign = cs.strip() if isinstance(cs,str) else cs
+        callsign = cs.strip() if isinstance(cs, str) else cs
         aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 
 # Plot aircraft and shadows
