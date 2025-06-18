@@ -83,43 +83,23 @@ def hav(lat1, lon1, lat2, lon2):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
     return R*2*math.asin(math.sqrt(a))
 
-# Fetch flights
-aircraft_list = []
-if data_source == "OpenSky":
-    # bounding box
-    dr = DEFAULT_RADIUS_KM/111.0
-    south = DEFAULT_TARGET_LAT - dr
-    north = DEFAULT_TARGET_LAT + dr
-    dlon = dr/math.cos(math.radians(DEFAULT_TARGET_LAT))
-    west = DEFAULT_TARGET_LON - dlon
-    east = DEFAULT_TARGET_LON + dlon
-    url = f"https://opensky-network.org/api/states/all?lamin={target_lat}-dr&lomin={target_lon}-dlon&lamax={target_lat}+dr&lomax={target_lon}+dlon"
+for ac in acs:
     try:
-        r = requests.get(url)
-        r.raise_for_status()
-        data = r.json().get("states", [])
-    except Exception as e:
-        st.error(f"OpenSky error: {e}")
-        data = []
-    for s in data:
-        # Parse OpenSky state vector with type conversion
-        if len(s) < 11:
-            continue
-        try:
-            icao = s[0]
-            callsign = s[1].strip() if s[1] else icao
-            lon = float(s[5])
-            lat = float(s[6])
-            baro = float(s[7]) if s[7] is not None else 0.0
-            vel = float(s[9])
-            hdg = float(s[10])
-        except Exception:
-            continue
-        # Skip invalid coordinates or movement data
-        if None in (lat, lon, vel, hdg):
-            continue
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
-elif data_source == "ADS-B Exchange":
+        lat = float(ac.get("lat"))
+        lon = float(ac.get("lon"))
+        vel = float(ac.get("gs", ac.get("spd", 0)))
+        hdg = float(ac.get("track", ac.get("trak", 0)))
+        raw_alt = ac.get("alt_baro")
+        baro = float(raw_alt) if isinstance(raw_alt, (int, float, str)) and str(raw_alt).replace('.', '', 1).isdigit() else 0.0
+        cs = ac.get("flight") or ac.get("hex")
+    except Exception:
+        continue
+    callsign = cs.strip() if isinstance(cs, str) else cs
+    if None in (lat, lon, vel, hdg):
+        continue
+    aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
+
+# Plot "ADS-B Exchange":
     # Fetch aircraft via ADS-B Exchange RapidAPI endpoint (using embedded API key)
     url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{target_lat}/lon/{target_lon}/dist/{DEFAULT_RADIUS_KM}/"
     headers = {
