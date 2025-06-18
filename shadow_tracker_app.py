@@ -32,31 +32,36 @@ def send_pushover(message: str, title: str = "Shadow Alert") -> bool:
     """Send a Pushover notification. Returns True on HTTP 200."""
     if not PUSHOVER_USER or not PUSHOVER_TOKEN:
         return False
-    resp = requests.post(
-        "https://api.pushover.net/1/messages.json",
-        data={
-            "token": PUSHOVER_TOKEN,
-            "user":  PUSHOVER_USER,
-            "message": message,
-            "title":   title,
-        }
-    )
-    return resp.status_code == 200
+    try:
+        resp = requests.post(
+            "https://api.pushover.net/1/messages.json",
+            data={
+                "token": PUSHOVER_TOKEN,
+                "user":  PUSHOVER_USER,
+                "message": message,
+                "title":   title,
+            }
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
 
 
 def haversine(lat1, lon1, lat2, lon2):
-    """Return distance between two (lat,lon) points in meters."""
-    # attempt to convert all inputs to float; return inf if any fail
+    """Return distance between two (lat,lon) points in meters. Returns inf on error."""
     try:
-        lat1, lon1, lat2, lon2 = map(float, (lat1, lon1, lat2, lon2))
-    except (TypeError, ValueError):
+        # Convert to floats
+        lat1_f, lon1_f, lat2_f, lon2_f = map(float, (lat1, lon1, lat2, lon2))
+        # Earth radius (meters)
+        R = 6371000
+        φ1 = radians(lat1_f)
+        φ2 = radians(lat2_f)
+        dφ = radians(lat2_f - lat1_f)
+        dλ = radians(lon2_f - lon1_f)
+        a = sin(dφ/2)**2 + cos(φ1)*cos(φ2)*sin(dλ/2)**2
+        return R * (2 * atan2(sqrt(a), sqrt(1 - a)))
+    except Exception:
         return float('inf')
-    R = 6371000  # Earth radius in meters
-    φ1, φ2 = radians(lat1), radians(lat2)
-    dφ = radians(lat2 - lat1)
-    dλ = radians(lon2 - lon1)
-    a = sin(dφ/2)**2 + cos(φ1)*cos(φ2)*sin(dλ/2)**2
-    return R * (2 * atan2(sqrt(a), sqrt(1-a)))
 
 # ─── SIDEBAR ────────────────────────────────────────────────────────────────────
 st.sidebar.title("🛰️ Shadow Tracker Settings")
@@ -108,7 +113,7 @@ if data_source == "ADS-B Exchange":
         try:
             resp = requests.get(url, headers=ADSB_HEADERS, timeout=10)
             if resp.status_code != 200:
-                st.error(f"ADS-B Exchange returned {{resp.status_code}}: {{resp.text}}")
+                st.error(f"ADS-B Exchange returned {resp.status_code}: {resp.text}")
             else:
                 text = resp.text.strip()
                 if not text:
@@ -116,12 +121,11 @@ if data_source == "ADS-B Exchange":
                 else:
                     try:
                         data = resp.json()
-                        # Lite endpoint returns { "ac": [...] }
                         acs = data.get("ac", [])
                     except JSONDecodeError as jde:
-                        st.error(f"JSON parse error: {{jde}}. Raw: {{text}}")
+                        st.error(f"JSON parse error: {jde}. Raw: {text}")
         except Exception as e:
-            st.error(f"Error fetching ADS-B Exchange: {{e}}")
+            st.error(f"Error fetching ADS-B Exchange: {e}")
 
 elif data_source == "OpenSky":
     url = f"https://{OPENSKY_HOST}/api/states/all"
@@ -141,7 +145,7 @@ elif data_source == "OpenSky":
                 "hex":      s[0],
             })
     except Exception as e:
-        st.error(f"Error fetching OpenSky: {{e}}")
+        st.error(f"Error fetching OpenSky: {e}")
 
 if DEBUG_MODE:
     st.sidebar.write("Raw JSON:")
@@ -165,19 +169,19 @@ folium.Marker(
 # Aircraft markers & alerts
 for ac in acs:
     # normalize coordinate keys
-    lat = ac.get("lat") if isinstance(ac.get("lat"), (int, float)) else ac.get("Lat")
-    lon = ac.get("lon") if isinstance(ac.get("lon"), (int, float)) else ac.get("Long")
-    if lat is None or lon is None:
+    lat_val = ac.get("lat") if isinstance(ac.get("lat"), (int, float)) else ac.get("Lat")
+    lon_val = ac.get("lon") if isinstance(ac.get("lon"), (int, float)) else ac.get("Lon")
+    if lat_val is None or lon_val is None:
         continue
 
-    callsign = ac.get("Call") or ac.get("callsign") or ac.get("hex") or "?"
+    callsign = ac.get("flight") or ac.get("callsign") or ac.get("hex") or "?"
     folium.Marker(
-        [lat, lon],
+        [lat_val, lon_val],
         tooltip=callsign,
         icon=folium.Icon(icon="plane", prefix="fa")
     ).add_to(m)
 
-    dist_m = haversine(HOME_LAT, HOME_LON, lat, lon)
+    dist_m = haversine(HOME_LAT, HOME_LON, lat_val, lon_val)
     if dist_m <= ALERT_RADIUS_M:
         msg = f"🚨 {callsign} is {int(dist_m)} m from home!"
         st.sidebar.warning(msg)
