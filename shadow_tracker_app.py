@@ -115,27 +115,32 @@ if data_source == "OpenSky":
             continue
         aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 elif data_source == "ADS-B Exchange":
-    # Fetch from ADS-B Exchange VirtualRadar API (no API key needed)
-    url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={DEFAULT_TARGET_LAT}&lng={DEFAULT_TARGET_LON}&fDstL=0&fDstU={DEFAULT_RADIUS_KM}"
-    try:
-        r2 = requests.get(url)
-        r2.raise_for_status()
-        j = r2.json().get("acList", [])
-    except Exception as e:
-        st.error(f"ADS-B Exchange error: {e}")
-        j = []
-    # Parse VirtualRadar response
-    for ac in j:
+    # Fetch from ADS-B Exchange via RapidAPI
+    api_key = os.getenv("RAPIDAPI_KEY")
+    if not api_key:
+        st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
+        acs = []
+    else:
+        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{DEFAULT_RADIUS_KM}/"
+        headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
         try:
-            lat = ac.get("Lat")
-            lon = ac.get("Long")
-            vel = ac.get("Spd")
-            hdg = ac.get("Trak")
-            baro = ac.get("Alt") or 0.0
-            cs = ac.get("Call") or ac.get("Reg") or ac.get("Hex")
+            resp2 = requests.get(url, headers=headers)
+            resp2.raise_for_status()
+            acs = resp2.json().get("ac", [])
+        except Exception as e:
+            st.error(f"ADS-B Exchange error: {e}")
+            acs = []
+    # Parse RapidAPI response
+    for ac in acs:
+        try:
+            lat = float(ac.get("lat"))
+            lon = float(ac.get("lon"))
+            vel = float(ac.get("spd"))
+            hdg = float(ac.get("trak"))
+            baro_raw = ac.get("alt_baro")
+            baro = float(baro_raw) if isinstance(baro_raw, (int, float, str)) and str(baro_raw).replace('.', '', 1).isdigit() else 0.0
+            cs = ac.get("flight") or ac.get("hex")
         except Exception:
-            continue
-        if None in (lat, lon, vel, hdg):
             continue
         callsign = cs.strip() if isinstance(cs, str) else cs
         aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
