@@ -41,7 +41,7 @@ st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 # Initialize map
 center = (-33.7554186, 150.9656457)
-fmap = folium.Map(location=center, zoom_start=11, tiles=tile_style, control_scale=True)
+fmap = folium.Map(location=center, zoom_start=12, tiles=tile_style, control_scale=True)
 # Home marker
 folium.Marker(
     location=center,
