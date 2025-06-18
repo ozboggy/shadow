@@ -1,5 +1,3 @@
-from dotenv import load_dotenv
-load_dotenv()
 import streamlit as st
 st.set_page_config(layout="wide")  # MUST be first Streamlit command
 
@@ -10,6 +8,8 @@ from datetime import datetime, time as dt_time, timezone, timedelta
 import math
 import csv
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import pandas as pd
 import plotly.express as px
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
