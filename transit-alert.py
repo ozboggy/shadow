@@ -44,6 +44,30 @@ debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 if st.sidebar.button("Send Pushover Test"):
     send_pushover("✈️ Test Alert", "This is a Pushover test notification.", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
     st.sidebar.success("Pushover test sent!")
+# Button to test the onscreen alert directly
+if st.sidebar.button("Test Onscreen Alert"):
+    if enable_onscreen_alert:
+        st.error("🚨 TEST Shadow ALERT!")
+        st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+        st.markdown(
+            """
+            <script>
+            if (Notification.permission === 'granted') {
+                new Notification("✈️ Shadow Alert", { body: "This is a test onscreen alert." });
+            } else {
+                Notification.requestPermission().then(p => {
+                    if (p === 'granted') {
+                        new Notification("✈️ Shadow Alert", { body: "This is a test onscreen alert." });
+                    }
+                });
+            }
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
+        st.write("🚨 This is a test onscreen alert!")
+    else:
+        st.sidebar.warning("Onscreen alerts are disabled.")
 
 # ---------------- Additional Sidebar Controls ----------------
 tile_style = st.sidebar.selectbox(
@@ -111,7 +135,12 @@ aircraft_states = data.get("states", [])
 st.session_state.zoom = zoom_level
 fmap = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom_level, tiles=tile_style)
 marker_cluster = MarkerCluster().add_to(fmap)
-folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Home").add_to(fmap)
+# Home marker as house icon
+folium.Marker(
+    (TARGET_LAT, TARGET_LON),
+    icon=folium.Icon(color="red", icon="home", prefix="fa"),
+    popup="Home"
+).add_to(fmap)
 
 # ---------------- Process each aircraft -------------
 alerts_triggered = []
@@ -141,6 +170,7 @@ for ac in filtered_states:
             sun_az = get_azimuth(future_lat, future_lon, future_time)
             if debug_mode and track_sun:
                 st.sidebar.write(f"Debug: {callsign} @ t+{i}s -> pos=({future_lat:.4f},{future_lon:.4f}), sun_alt={sun_alt:.2f}")
+                st.sidebar.write(ac)  # Raw state data
             if sun_alt > 0 and alt > 0 and track_sun:
                 shadow_dist = alt / math.tan(math.radians(sun_alt))
                 shadow_lat = future_lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
@@ -170,7 +200,7 @@ if alerts_triggered and enable_onscreen_alert:
             new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
         } else {
             Notification.requestPermission().then(p => {
-                if (p === 'granted') {
+                if (p ==="granted") {
                     new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
                 }
             });
