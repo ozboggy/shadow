@@ -37,7 +37,7 @@ sel_date = st.sidebar.date_input("Date (UTC)", datetime.utcnow().date())
 sel_time = st.sidebar.time_input("Time (UTC)", dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
 selected_time = datetime.combine(sel_date, sel_time).replace(tzinfo=timezone.utc)
 
-st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
+st.title(f"✈️ Aircraft Shadow Tracker test-v3 ({data_source})")
 
 # Initialize map
 center = (target_lat, target_lon)
