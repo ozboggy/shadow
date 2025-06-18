@@ -279,15 +279,7 @@ for f in flights:
 
         folium.Marker((lat, lon), icon=folium.Icon(color=color, icon="plane", prefix="fa"),
                       popup=popup_content).add_to(marker_cluster)
-                dash = "5,5" if source == "Sun" else "2,8"
-                folium.PolyLine(trail, color=color, weight=shadow_width, opacity=0.7, dash_array=dash,
-                                tooltip=f"{callsign} ({source})").add_to(fmap)
 
-        logo_html = f'<img src="{airline_logo_url}" width="50"><br>' if airline_logo_url else ""
-        popup_content = f"{logo_html}{callsign}<br>Alt: {round(alt)}m<br>Spd: {velocity} kt<br>Hdg: {heading}°"
-
-        folium.Marker((lat, lon), icon=folium.Icon(color=color, icon="plane", prefix="fa"),
-                      popup=popup_content).add_to(marker_cluster)
     except Exception as e:
         st.warning(f"Error processing aircraft: {e}")
 
