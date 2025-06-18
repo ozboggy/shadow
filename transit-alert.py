@@ -46,8 +46,6 @@ if st.sidebar.button("Send Pushover Test"):
     st.sidebar.success("Pushover test sent!")
 
 # ---------------- Additional Sidebar Controls ----------------
-target_lat = st.sidebar.number_input("Target Latitude", value=-33.7602563, format="%.6f")
-target_lon = st.sidebar.number_input("Target Longitude", value=150.9717434, format="%.6f")
 tile_style = st.sidebar.selectbox(
     "Map Tile Style",
     ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
@@ -67,8 +65,8 @@ FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 HOME_LAT = -33.7597655
 HOME_LON = 150.9723678
-TARGET_LAT = target_lat
-TARGET_LON = target_lon
+TARGET_LAT = HOME_LAT
+TARGET_LON = HOME_LON
 RADIUS_KM = search_radius_km
 
 # ---------------- Utils Functions ---------------
@@ -113,7 +111,7 @@ aircraft_states = data.get("states", [])
 st.session_state.zoom = zoom_level
 fmap = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom_level, tiles=tile_style)
 marker_cluster = MarkerCluster().add_to(fmap)
-folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target/Home").add_to(fmap)
+folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Home").add_to(fmap)
 
 alerts_triggered = []
 filtered_states = []
@@ -152,7 +150,7 @@ for ac in filtered_states:
                     with open(log_path, "a", newline="") as f:
                         writer = csv.writer(f)
                         writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
-                    send_pushover("✈️ Shadow Alert", f"{callsign} will pass over target in {int(i)} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
+                    send_pushover("✈️ Shadow Alert", f"{callsign} will pass over home in {int(i)} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
                     shadow_alerted = True
         if trail and (track_sun or override_trails):
             folium.PolyLine(trail, color="black", weight=shadow_width, opacity=0.7, dash_array="5,5", tooltip=f"{callsign} (shadow)").add_to(fmap)
@@ -167,11 +165,11 @@ if alerts_triggered and enable_onscreen_alert:
     st.markdown("""
     <script>
     if (Notification.permission === 'granted') {
-        new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over target!" });
+        new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
     } else {
         Notification.requestPermission().then(p => {
             if (p === 'granted') {
-                new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over target!" });
+                new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
             }
         });
     }
@@ -180,7 +178,7 @@ if alerts_triggered and enable_onscreen_alert:
     for cs, t, _, _ in alerts_triggered:
         st.write(f"✈️ {cs} — in approx. {t} seconds")
 elif not alerts_triggered:
-    st.success("✅ No forecast shadow paths intersect target area.")
+    st.success("✅ No forecast shadow paths intersect home area.")
 
 # ---------------- Logs & Charts ----------------
 if os.path.exists(log_path):
@@ -196,7 +194,7 @@ if os.path.exists(log_path):
         st.plotly_chart(fig, use_container_width=True)
 
 # ---------------- Render Map ----------------
-map_data = st_folium(fmap, width=1000, height=700)
+map_data = st_folium(fmap, width=2000, height=1400)
 if map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
