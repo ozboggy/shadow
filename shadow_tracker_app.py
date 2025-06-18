@@ -170,7 +170,7 @@ for ac in aircraft_states:
         st.warning(f"Error processing aircraft: {e}")
 
 # Display map
-st_folium(fmap, width=2000, height=1400)
+st_folium(fmap, width=1200, height=700)
 
 # Logs
 if os.path.exists(log_path):
