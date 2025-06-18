@@ -104,7 +104,7 @@ if source_choice == "ADS-B Exchange":
             "Authorization": f"Bearer {ADSBEX_API_KEY}",
             "Accept": "application/json"
         }
-        url = f"https://api.adsbexchange.com/api/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{RADIUS_KM}/"
+        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/hex/a4b605/"
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         adsb_data = response.json()
