@@ -53,6 +53,7 @@ DEFAULT_SHADOW_WIDTH = 5
 DEFAULT_ZOOM = 10
 
 # Sidebar settings
+map_theme = st.sidebar.selectbox("Map Theme", ["CartoDB Positron", "CartoDB Dark_Matter", "OpenStreetMap", "Stamen Toner", "Stamen Terrain"], index=0)
 override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
 show_debug = st.sidebar.checkbox("Show Aircraft Debug", value=False)
 source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
@@ -86,9 +87,24 @@ if st.sidebar.button("🔔 Test Pushover Alert"):
 
 # Setup map
 center = DEFAULT_HOME_CENTER
-fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
+fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True, tiles=None, prefer_canvas=True)
+
+# Add selectable tile layers
+folium.TileLayer("CartoDB Positron", name="CartoDB Positron").add_to(fmap)
+folium.TileLayer("CartoDB Dark_Matter", name="CartoDB Dark_Matter").add_to(fmap)
+folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(fmap)
+folium.TileLayer("Stamen Toner", name="Stamen Toner").add_to(fmap)
+folium.TileLayer("Stamen Terrain", name="Stamen Terrain").add_to(fmap)
+
+folium.LayerControl(position='topright', collapsed=False).add_to(fmap)
 folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
-marker_cluster = MarkerCluster().add_to(fmap)
+aircraft_layer = folium.FeatureGroup(name="Aircraft Markers", show=True)
+sun_layer = folium.FeatureGroup(name="Sun Shadows", show=True)
+moon_layer = folium.FeatureGroup(name="Moon Shadows", show=True)
+marker_cluster = MarkerCluster().add_to(aircraft_layer)
+fmap.add_child(aircraft_layer)
+fmap.add_child(sun_layer)
+fmap.add_child(moon_layer)
 
 # Fetch aircraft based on user choice
 flights = []
@@ -267,14 +283,15 @@ for f in flights:
 
             if trail:
                 dash = "5,5" if source == "Sun" else "2,8"
+                layer_target = sun_layer if source == "Sun" else moon_layer
                 folium.PolyLine(trail, color=color, weight=shadow_width, opacity=0.7, dash_array=dash,
-                                tooltip=f"{callsign} ({source})").add_to(fmap)
+                                tooltip=f"{callsign} ({source})").add_to(layer_target)
 
         # Always add aircraft marker regardless of trail
         logo_html = f'<img src="{airline_logo_url}" width="50"><br>' if airline_logo_url else ""
         popup_content = f"{logo_html}{callsign}<br>Alt: {round(alt)}m<br>Spd: {velocity} kt<br>Hdg: {heading}°"
 
-        folium.Marker((lat, lon), icon=folium.Icon(color=color, icon="plane", prefix="fa"),
+        folium.Marker(location=(lat, lon), icon=folium.Icon(color=color, icon="plane", prefix="fa"),
                       popup=popup_content).add_to(marker_cluster)
 
     except Exception as e:
