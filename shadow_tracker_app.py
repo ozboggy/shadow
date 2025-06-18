@@ -92,7 +92,7 @@ marker_cluster = MarkerCluster().add_to(fmap)
 # Fetch aircraft from local dump1090-style JSON feed
 import requests
 try:
-    response = requests.get("http://192.168.0.47/tar1090/data.json")
+    response = requests.get("http://114.73.176.156/tar1090/data.json")
     response.raise_for_status()
     dump1090_data = response.json()
     flights = dump1090_data.get("aircraft", [])
