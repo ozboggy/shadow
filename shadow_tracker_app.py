@@ -53,7 +53,7 @@ DEFAULT_SHADOW_WIDTH = 5
 DEFAULT_ZOOM = 10
 
 # Sidebar settings
-map_theme = st.sidebar.selectbox("Map Theme", ["CartoDB Positron", "CartoDB Dark_Matter", "OpenStreetMap", "Stamen Toner", "Stamen Terrain"], index=0)
+map_theme = st.sidebar.selectbox("Map Theme", ["CartoDB Positron", "CartoDB Dark_Matter", "OpenStreetMap", "Stamen Toner", "Stamen Terrain", "Stamen Watercolor", "Esri WorldImagery", "CartoDB Voyager"], index=0)
 override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
 show_debug = st.sidebar.checkbox("Show Aircraft Debug", value=False)
 source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
@@ -95,8 +95,11 @@ folium.TileLayer("CartoDB Dark_Matter", name="CartoDB Dark_Matter").add_to(fmap)
 folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(fmap)
 folium.TileLayer("Stamen Toner", name="Stamen Toner", attr="Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.").add_to(fmap)
 folium.TileLayer("Stamen Terrain", name="Stamen Terrain", attr="Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.").add_to(fmap)
+folium.TileLayer("Stamen Watercolor", name="Stamen Watercolor", attr="Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.").add_to(fmap)
+folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/World_Imagery/MapServer/tile/{z}/{y}/{x}", name="Esri WorldImagery", attr="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community").add_to(fmap)
+folium.TileLayer("CartoDB Voyager", name="CartoDB Voyager").add_to(fmap)
 
-folium.LayerControl(position='topright', collapsed=False).add_to(fmap)
+folium.LayerControl(position='topright', collapsed=False).add_to(fmap)(position='topright', collapsed=False).add_to(fmap)
 folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
 aircraft_layer = folium.FeatureGroup(name="Aircraft Markers", show=True)
 sun_layer = folium.FeatureGroup(name="Sun Shadows", show=True)
