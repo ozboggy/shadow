@@ -25,11 +25,7 @@ def send_pushover(title, message, user_key, api_token):
 
 # -------------- Streamlit Page Config -------------
 st.set_page_config(layout="wide")
-# Auto-refresh controls
-auto_refresh = st.sidebar.checkbox("Auto Refresh Map", value=True)
-refresh_interval = st.sidebar.number_input("Refresh Interval (s)", min_value=1, value=10)
-if auto_refresh:
-    st.markdown(f"<meta http-equiv='refresh' content='{refresh_interval}'>", unsafe_allow_html=True)
+# Removed auto-refresh to prevent map flashing
 st.title("✈️ Aircraft Shadow Forecast")
 
 # ---------------- Sidebar Inputs ------------------
@@ -42,8 +38,7 @@ selected_time = datetime.combine(selected_date, selected_time_only).replace(tzin
 st.sidebar.header("Map & Alert Settings")
 zoom_level = st.sidebar.slider("Map Zoom Level", min_value=1, max_value=18, value=st.session_state.get("zoom", 12))
 search_radius_km = st.sidebar.slider("Search Radius (km)", min_value=1, max_value=100, value=20)
-# Unit label 'm' added for meters
-shadow_width = st.sidebar.slider("Shadow Path Width (m)", min_value=1, max_value=10, value=2)
+shadow_width = st.sidebar.slider("Shadow Path Width", min_value=1, max_value=10, value=2)
 enable_onscreen_alert = st.sidebar.checkbox("Enable Onscreen Alert", value=True)
 debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
 if st.sidebar.button("Send Pushover Test"):
@@ -186,3 +181,54 @@ for ac in filtered_states:
                     with open(log_path, "a", newline="") as f:
                         writer = csv.writer(f)
                         writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), shadow_lat, shadow_lon])
+                    send_pushover("✈️ Shadow Alert", f"{callsign} will pass over home in {int(i)} sec", PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
+                    shadow_alerted = True
+        if trail and (track_sun or override_trails):
+            folium.PolyLine(trail, color="black", weight=shadow_width, opacity=0.7, dash_array="5,5", tooltip=f"{callsign} (shadow)").add_to(fmap)
+        folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
+    except Exception as e:
+        st.warning(f"⚠️ Error processing aircraft: {e}")
+
+# ---------------- Onscreen Alerts ----------------
+if alerts_triggered and enable_onscreen_alert:
+    st.error("🚨 Shadow ALERT!")
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+    st.markdown(
+        """
+        <script>
+        if (Notification.permission === 'granted') {
+            new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
+        } else {
+            Notification.requestPermission().then(p => {
+                if (p ==="granted") {
+                    new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over home!" });
+                }
+            });
+        }
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
+    for cs, t, _, _ in alerts_triggered:
+        st.write(f"✈️ {cs} — in approx. {t} seconds")
+else:
+    st.success("✅ No forecast shadow paths intersect home area.")
+
+# ---------------- Logs & Charts ----------------
+if os.path.exists(log_path):
+    st.sidebar.markdown("### 📥 Download Log")
+    with open(log_path, "rb") as f:
+        st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        st.markdown("### 📊 Recent Alerts")
+        st.dataframe(df_log.tail(10))
+        fig = px.scatter(df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)", hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
+        st.plotly_chart(fig, use_container_width=True)
+
+# ---------------- Render Map ----------------
+map_data = st_folium(fmap, width=1000, height=700)
+if map_data and "zoom" in map_data and "center" in map_data:
+    st.session_state.zoom = map_data["zoom"]
+    st.session_state.center = map_data["center"]
