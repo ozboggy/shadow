@@ -93,8 +93,8 @@ fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True, tiles=No
 folium.TileLayer("CartoDB Positron", name="CartoDB Positron").add_to(fmap)
 folium.TileLayer("CartoDB Dark_Matter", name="CartoDB Dark_Matter").add_to(fmap)
 folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(fmap)
-folium.TileLayer("Stamen Toner", name="Stamen Toner").add_to(fmap)
-folium.TileLayer("Stamen Terrain", name="Stamen Terrain").add_to(fmap)
+folium.TileLayer("Stamen Toner", name="Stamen Toner", attr="Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.").add_to(fmap)
+folium.TileLayer("Stamen Terrain", name="Stamen Terrain", attr="Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.").add_to(fmap)
 
 folium.LayerControl(position='topright', collapsed=False).add_to(fmap)
 folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
