@@ -81,25 +81,21 @@ if data_source == "OpenSky":
         st.error(f"OpenSky error: {e}")
         data = []
     for s in data:
-        icao, callsign, *_, lon, lat, baro, _, vel, hdg, *_ = s
-        if None in (lat, lon, vel, hdg): continue
-        callsign = callsign.strip() or icao
-        aircraft_list.append({"lat":lat, "lon":lon, "baro":baro or 0, "vel":vel, "hdg":hdg, "callsign":callsign})
+        # Parse OpenSky state vector
+        if len(s) < 11:
+            continue
+        icao = s[0]
+        callsign = s[1].strip() if s[1] else icao
+        lon = s[5]
+        lat = s[6]
+        baro = s[7] or 0
+        vel = s[9]
+        hdg = s[10]
+        if None in (lat, lon, vel, hdg):
+            continue
+        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 elif data_source == "ADS-B Exchange":
-    key=os.getenv("RAPIDAPI_KEY")
-    if not key:
-        st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
-    else:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{DEFAULT_RADIUS_KM}/"
-        headers={"x-rapidapi-key":key, "x-rapidapi-host":"adsbexchange-com1.p.rapidapi.com"}
-        try:
-            r = requests.get(url, headers=headers)
-            r.raise_for_status()
-            j=r.json().get("ac", [])
-        except Exception as e:
-            st.error(f"ADS-B Exchange error: {e}")
-            j=[]
-        for ac in j:
+:
             lat=ac.get("lat"); lon=ac.get("lon"); vel=ac.get("spd"); hdg=ac.get("trak"); baro=ac.get("alt_baro") if isinstance(ac.get("alt_baro"),(int,float)) else 0; cs=ac.get("flight") or ac.get("hex")
             if None in (lat, lon, vel, hdg): continue
             aircraft_list.append({"lat":lat, "lon":lon, "baro":baro, "vel":vel, "hdg":hdg, "callsign":cs})
