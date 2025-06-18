@@ -108,6 +108,7 @@ if source_choice == "ADS-B Exchange":
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         data = response.json()
+        st.write("ADS-B Exchange raw response:", data)
         aircraft = data.get("ac", [])
 
         class RapidAPIAircraft:
