@@ -116,7 +116,16 @@ elif data_source == "ADS-B Exchange":
     for ac in adsb:
         try:
             lat = float(ac.get("lat")); lon = float(ac.get("lon"))
-            vel = float(ac.get("spd")); hdg = float(ac.get("trak"))
+            # Speed: try 'gs' then 'spd'
+            vel_raw = ac.get("gs") if ac.get("gs") is not None else ac.get("spd")
+            vel = float(vel_raw)
+            # Heading: try 'track' then 'trak'
+            hdg_raw = ac.get("track") if ac.get("track") is not None else ac.get("trak")
+            hdg = float(hdg_raw)
+            raw = ac.get("alt_baro"); baro = float(raw) if isinstance(raw,(int,float,str)) and str(raw).replace('.','',1).isdigit() else 0.0
+            cs = ac.get("flight") or ac.get("hex")
+        except Exception:
+            continue
             raw = ac.get("alt_baro"); baro = float(raw) if isinstance(raw,(int,float,str)) and str(raw).replace('.','',1).isdigit() else 0.0
             cs = ac.get("flight") or ac.get("hex")
         except:
