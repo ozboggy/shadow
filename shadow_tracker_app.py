@@ -1,4 +1,6 @@
 import streamlit as st
+st.set_page_config(layout="wide")  # MUST be first Streamlit command
+
 import requests
 import folium
 from folium.plugins import MarkerCluster
@@ -47,7 +49,8 @@ DEFAULT_SHADOW_WIDTH = 5
 DEFAULT_ZOOM = 10
 
 # Sidebar settings
-shadow_source = st.sidebar.radio("Shadow Source", ["Sun", "Moon"], horizontal=True)
+track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
+track_moon = st.sidebar.checkbox("Show Moon Shadows", value=True)
 RADIUS_KM = st.sidebar.slider("Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM)
 ALERT_RADIUS_METERS = st.sidebar.slider("Alert Radius (meters)", 10, 500, DEFAULT_ALERT_RADIUS_METERS)
 zoom = st.sidebar.slider("Map Zoom Level", 5, 18, DEFAULT_ZOOM)
@@ -68,8 +71,6 @@ if not os.path.exists(log_path):
         writer = csv.writer(f)
         writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon", "Source"])
 
-# UI
-st.set_page_config(layout="wide")
 st.title("✈️ Aircraft Shadow Tracker")
 
 # Fetch aircraft (OpenSky fallback)
@@ -89,7 +90,6 @@ fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
 folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
-
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = math.radians(lat2 - lat1)
@@ -106,8 +106,8 @@ def move_position(lat, lon, heading_deg, distance_m):
     lon2 = lon1 + math.atan2(math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1), math.cos(distance_m/R)-math.sin(lat1)*math.sin(lat2))
     return math.degrees(lat2), math.degrees(lon2)
 
-def get_shadow(lat, lon, alt_m, timestamp):
-    if shadow_source == "Sun":
+def get_shadow(lat, lon, alt_m, timestamp, source):
+    if source == "Sun":
         sun_alt = get_sun_altitude(lat, lon, timestamp)
         sun_az = get_sun_azimuth(lat, lon, timestamp)
     else:
@@ -136,26 +136,30 @@ for ac in aircraft_states:
         alt = geo_altitude or 0
         callsign = callsign.strip() if callsign else "N/A"
         shadow_alerted = False
-        trail = []
 
-        for i in range(0, DEFAULT_FORECAST_DURATION_MINUTES * 60 + 1, DEFAULT_FORECAST_INTERVAL_SECONDS):
-            future_time = selected_time + timedelta(seconds=i)
-            dist_moved = velocity * i
-            future_lat, future_lon = move_position(lat, lon, heading, dist_moved)
-            s_lat, s_lon = get_shadow(future_lat, future_lon, alt, future_time)
-            if s_lat and s_lon:
-                trail.append((s_lat, s_lon))
-                if not shadow_alerted and haversine(s_lat, s_lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= ALERT_RADIUS_METERS:
-                    alerts_triggered.append((callsign, int(i), s_lat, s_lon))
-                    with open(log_path, "a", newline="") as f:
-                        writer = csv.writer(f)
-                        writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), s_lat, s_lon, shadow_source])
-                    send_pushover("✈️ Shadow Alert", f"{callsign} shadow over target in {int(i)}s")
-                    shadow_alerted = True
+        for source in [s for s in ("Sun", "Moon") if (s == "Sun" and track_sun) or (s == "Moon" and track_moon)]:
+            trail = []
+            for i in range(0, DEFAULT_FORECAST_DURATION_MINUTES * 60 + 1, DEFAULT_FORECAST_INTERVAL_SECONDS):
+                future_time = selected_time + timedelta(seconds=i)
+                dist_moved = velocity * i
+                future_lat, future_lon = move_position(lat, lon, heading, dist_moved)
+                s_lat, s_lon = get_shadow(future_lat, future_lon, alt, future_time, source)
+                if s_lat and s_lon:
+                    trail.append((s_lat, s_lon))
+                    if not shadow_alerted and haversine(s_lat, s_lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= ALERT_RADIUS_METERS:
+                        alerts_triggered.append((callsign, int(i), s_lat, s_lon))
+                        with open(log_path, "a", newline="") as f:
+                            writer = csv.writer(f)
+                            writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), s_lat, s_lon, source])
+                        send_pushover("✈️ Shadow Alert", f"{callsign} shadow ({source}) over target in {int(i)}s")
+                        shadow_alerted = True
 
-        if trail:
-            folium.PolyLine(trail, color="black", weight=shadow_width, opacity=0.7, dash_array="5,5",
-                            tooltip=f"{callsign} ({shadow_source})").add_to(fmap)
+            if trail:
+                color = "black" if source == "Sun" else "gray"
+                dash = "5,5" if source == "Sun" else "2,8"
+                folium.PolyLine(trail, color=color, weight=shadow_width, opacity=0.7, dash_array=dash,
+                                tooltip=f"{callsign} ({source})").add_to(fmap)
+
         folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
                       popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
     except Exception as e:
