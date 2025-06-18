@@ -53,6 +53,7 @@ DEFAULT_SHADOW_WIDTH = 5
 DEFAULT_ZOOM = 10
 
 # Sidebar settings
+source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=True)
 RADIUS_KM = st.sidebar.slider("Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM)
@@ -91,44 +92,64 @@ if "fmap_base" not in st.session_state:
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
 
-# Fetch aircraft from ADS-B Exchange
-try:
-    ADSBEX_API_KEY = os.getenv("ADSBX_API_KEY")
-    if not ADSBEX_API_KEY:
-        raise ValueError("ADSBX_API_KEY not set in environment variables.")
+# Fetch aircraft based on user choice
+flights = []
+if source_choice == "ADS-B Exchange":
+    try:
+        ADSBEX_API_KEY = os.getenv("ADSBX_API_KEY")
+        if not ADSBEX_API_KEY:
+            raise ValueError("ADSBX_API_KEY not set in environment variables.")
 
-    headers = {
-    "Authorization": f"Bearer {ADSBEX_API_KEY}",
-    "Accept": "application/json"
-}
-    bounds = {
-        "lamin": DEFAULT_TARGET_LAT - 1,
-        "lomin": DEFAULT_TARGET_LON - 1,
-        "lamax": DEFAULT_TARGET_LAT + 1,
-        "lomax": DEFAULT_TARGET_LON + 1
-    }
-    url = f"https://api.adsbexchange.com/api/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{RADIUS_KM}/"
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    adsb_data = response.json()
-    flights = adsb_data.get("ac", [])
+        headers = {
+            "Authorization": f"Bearer {ADSBEX_API_KEY}",
+            "Accept": "application/json"
+        }
+        url = f"https://api.adsbexchange.com/api/v2/lat/{DEFAULT_TARGET_LAT}/lon/{DEFAULT_TARGET_LON}/dist/{RADIUS_KM}/"
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        adsb_data = response.json()
+        adsb_flights = adsb_data.get("ac", [])
 
-    class ADSBFlight:
-        def __init__(self, ac):
-            self.latitude = ac.get("lat")
-            self.longitude = ac.get("lon")
-            self.heading = ac.get("trak")
-            self.ground_speed = ac.get("spd")
-            self.baro_altitude = ac.get("alt_baro")
-            self.callsign = ac.get("flight")
-            self.identification = ac.get("hex")
-            self.airline = None
+        class ADSBFlight:
+            def __init__(self, ac):
+                self.latitude = ac.get("lat")
+                self.longitude = ac.get("lon")
+                self.heading = ac.get("trak")
+                self.ground_speed = ac.get("spd")
+                self.baro_altitude = ac.get("alt_baro")
+                self.callsign = ac.get("flight")
+                self.identification = ac.get("hex")
+                self.airline = None
 
-    flights = [ADSBFlight(ac) for ac in flights if ac.get("lat") and ac.get("lon") and ac.get("spd") and ac.get("trak")]
+        flights = [ADSBFlight(ac) for ac in adsb_flights if ac.get("lat") and ac.get("lon") and ac.get("spd") and ac.get("trak")]
 
-except Exception as e:
-    st.error(f"Error fetching ADS-B Exchange data: {e}")
-    flights = []
+    except Exception as e:
+        st.error(f"Error fetching ADS-B Exchange data: {e}")
+
+elif source_choice == "OpenSky":
+    try:
+        north, south, west, east = DEFAULT_TARGET_LAT + 1, DEFAULT_TARGET_LAT - 1, DEFAULT_TARGET_LON - 1, DEFAULT_TARGET_LON + 1
+        url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        states = data.get("states", [])
+
+        class OpenSkyFlight:
+            def __init__(self, state):
+                self.identification = state[0]
+                self.callsign = state[1].strip() if state[1] else ""
+                self.longitude = state[5]
+                self.latitude = state[6]
+                self.baro_altitude = state[7]
+                self.ground_speed = state[9]
+                self.heading = state[10]
+                self.airline = None
+
+        flights = [OpenSkyFlight(s) for s in states if s[5] and s[6] and s[9] and s[10]]
+
+    except Exception as e:
+        st.error(f"Error fetching OpenSky data: {e}")
 
 # Utility functions
 def haversine(lat1, lon1, lat2, lon2):
