@@ -48,9 +48,25 @@ folium.Marker(
 
 # Utilities
 def move_position(lat, lon, heading, dist):
+    """
+    Move a point given initial coordinates, heading, and distance.
+    lat, lon: coordinates in degrees
+    heading: in degrees or numeric string
+    dist: distance in meters
+    """
     R = 6371000
-    hdr = math.radians(heading)
-    lat1, lon1 = math.radians(lat), math.radians(lon)
+    # Safely convert heading to float
+    try:
+        hdr = math.radians(float(heading))
+    except Exception:
+        hdr = 0.0
+    # Ensure lat/lon are floats
+    try:
+        lat1 = math.radians(float(lat))
+        lon1 = math.radians(float(lon))
+    except Exception:
+        return lat, lon
+    # Calculate new position
     lat2 = math.asin(math.sin(lat1)*math.cos(dist/R) + math.cos(lat1)*math.sin(dist/R)*math.cos(hdr))
     lon2 = lon1 + math.atan2(math.sin(hdr)*math.sin(dist/R)*math.cos(lat1), math.cos(dist/R) - math.sin(lat1)*math.sin(lat2))
     return math.degrees(lat2), math.degrees(lon2)
