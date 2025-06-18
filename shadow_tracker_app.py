@@ -36,13 +36,13 @@ def send_pushover(title, message):
         st.warning(f"Pushover notification failed: {e}")
 
 # Constants
-TARGET_LAT = -33.7603831919607
-TARGET_LON = 150.971709164045
+TARGET_LAT = -33.7602563
+TARGET_LON = 150.9717434
 ALERT_RADIUS_METERS = 50
 RADIUS_KM = 20
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
-HOME_CENTER = [-33.7600134, 150.9714619]
+HOME_CENTER = [-33.7602563, 150.9717434]
 
 # Logging
 log_file = "alert_log.csv"
