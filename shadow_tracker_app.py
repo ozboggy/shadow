@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 import streamlit as st
 st.set_page_config(layout="wide")  # MUST be first Streamlit command
 
