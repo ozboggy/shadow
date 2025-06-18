@@ -121,9 +121,9 @@ if source_choice == "ADS-B Exchange":
             def __init__(self, ac):
                 self.latitude = ac.get("lat")
                 self.longitude = ac.get("lon")
-                self.heading = ac.get("trak")
-                self.ground_speed = ac.get("spd")
-                self.baro_altitude = ac.get("alt_baro")
+                self.heading = ac.get("trak") or 0
+                self.ground_speed = ac.get("spd") or 0
+                self.baro_altitude = ac.get("alt_baro") or 0
                 self.callsign = ac.get("flight")
                 self.identification = ac.get("hex")
                 self.airline = None
