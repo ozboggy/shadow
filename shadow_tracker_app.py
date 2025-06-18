@@ -85,6 +85,7 @@ if st.sidebar.button("🔔 Test Pushover Alert"):
     st.sidebar.success("Test notification sent!")
 
 # Setup map
+center = DEFAULT_HOME_CENTER
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 folium.Marker((DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
 marker_cluster = MarkerCluster().add_to(fmap)
