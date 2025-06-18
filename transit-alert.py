@@ -1,3 +1,4 @@
+# Filename: transit-alert.py
 import streamlit as st
 import requests
 import folium
@@ -54,7 +55,7 @@ tile_style = st.sidebar.selectbox(
 data_source = st.sidebar.selectbox(
     "Data Source",
     ["OpenSky", "ADS-B Exchange"],
-    index=0
+    index=1  # Default to ADS-B Exchange
 )
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
@@ -97,15 +98,19 @@ if not os.path.exists(log_path):
 
 # ---------------- Fetch Aircraft Data ------------
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
-url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+# Choose data source endpoint
+if data_source == "ADS-B Exchange":
+    url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={HOME_LAT}&lng={HOME_LON}&fDstL=0&fDstU={RADIUS_KM}"
+else:
+    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
 try:
     r = requests.get(url)
     r.raise_for_status()
     data = r.json()
+    aircraft_states = data.get("states", data.get("acList", []))
 except Exception as e:
-    st.error(f"Error fetching OpenSky data: {e}")
-    data = {}
-aircraft_states = data.get("states", [])
+    st.error(f"Error fetching {data_source} data: {e}")
+    aircraft_states = []
 
 # ---------------- Initialize Map ----------------
 st.session_state.zoom = zoom_level
@@ -117,7 +122,9 @@ alerts_triggered = []
 filtered_states = []
 for ac in aircraft_states:
     try:
-        _, callsign, _, _, _, lon, lat, *_ = ac
+        callsign = ac[1] if data_source == "OpenSky" else ac.get("Callsign", "N/A")
+        lon = ac[5] if data_source == "OpenSky" else ac.get("Long")
+        lat = ac[6] if data_source == "OpenSky" else ac.get("Lat")
         if lat and lon and haversine(lat, lon, HOME_LAT, HOME_LON)/1000 <= RADIUS_KM:
             filtered_states.append(ac)
     except:
@@ -126,10 +133,16 @@ for ac in aircraft_states:
 # ---------------- Process each aircraft -------------
 for ac in filtered_states:
     try:
-        icao24, callsign, _, _, _, lon, lat, baro_alt, _, velocity, heading, _, _, geo_alt, *_ = ac
+        if data_source == "OpenSky":
+            _, callsign, _, _, _, lon, lat, baro_alt, _, velocity, heading, *_ = ac
+        else:
+            callsign = ac.get("Callsign", "N/A").strip()
+            lat = ac.get("Lat")
+            lon = ac.get("Long")
+            velocity = ac.get("Spd")
+            heading = ac.get("Trak")
+            geo_alt = ac.get("Alt"); alt = geo_alt or 0
         if None in (lat, lon, velocity, heading): continue
-        alt = geo_alt or 0
-        callsign = callsign.strip() if callsign else "N/A"
         trail = []
         shadow_alerted = False
         for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
@@ -194,7 +207,7 @@ if os.path.exists(log_path):
         st.plotly_chart(fig, use_container_width=True)
 
 # ---------------- Render Map ----------------
-map_data = st_folium(fmap, width=2000, height=1400)
+map_data = st_folium(fmap, width=1000, height=700)
 if map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
