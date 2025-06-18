@@ -124,12 +124,13 @@ if source_choice == "ADS-B Exchange":
                 self.longitude = ac.get("lon")
                 self.heading = ac.get("trak") or 0
                 self.ground_speed = ac.get("spd") or 0
+                self.alt_status = "airborne" if ac.get("alt_baro") != "ground" else "ground"
                 self.baro_altitude = ac.get("alt_baro") or 0
                 self.callsign = ac.get("flight")
                 self.identification = ac.get("hex")
                 self.airline = None
 
-        flights = [RapidAPIAircraft(ac) for ac in aircraft if ac.get("lat") is not None and ac.get("lon") is not None and ac.get("spd") is not None and ac.get("trak") is not None and ac.get("alt_baro") != "ground"]
+        flights = [RapidAPIAircraft(ac) for ac in aircraft if ac.get("lat") is not None and ac.get("lon") is not None and ac.get("spd") is not None and ac.get("trak") is not None]
 
     except Exception as e:
         st.warning(f"ADS-B Exchange via RapidAPI failed: {e} — falling back to OpenSky")
@@ -249,7 +250,7 @@ for f in flights:
         airline_logo_url = f.airline.get("logo", "") if f.airline else ""
         shadow_alerted = False
 
-        color = "green" if haversine(lat, lon, DEFAULT_TARGET_LAT, DEFAULT_TARGET_LON) <= NEARBY_RADIUS_METERS else "blue"
+        color = "green" if getattr(f, 'baro_altitude', 0) not in ("ground", 0) else "gray"
 
         for source in [s for s in ("Sun", "Moon") if ((s == "Sun" and track_sun) or (s == "Moon" and track_moon)) or override_trails]:
             trail = []
