@@ -124,7 +124,29 @@ if source_choice == "ADS-B Exchange":
         flights = [ADSBFlight(ac) for ac in adsb_flights if ac.get("lat") and ac.get("lon") and ac.get("spd") and ac.get("trak")]
 
     except Exception as e:
-        st.error(f"Error fetching ADS-B Exchange data: {e}")
+    st.warning(f"ADS-B Exchange failed: {e} — falling back to OpenSky")
+    try:
+        north, south, west, east = DEFAULT_TARGET_LAT + 1, DEFAULT_TARGET_LAT - 1, DEFAULT_TARGET_LON - 1, DEFAULT_TARGET_LON + 1
+        url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        states = data.get("states", [])
+
+        class OpenSkyFlight:
+            def __init__(self, state):
+                self.identification = state[0]
+                self.callsign = state[1].strip() if state[1] else ""
+                self.longitude = state[5]
+                self.latitude = state[6]
+                self.baro_altitude = state[7]
+                self.ground_speed = state[9]
+                self.heading = state[10]
+                self.airline = None
+
+        flights = [OpenSkyFlight(s) for s in states if s[5] and s[6] and s[9] and s[10]]
+    except Exception as fallback_error:
+        st.error(f"Fallback to OpenSky also failed: {fallback_error}")
 
 elif source_choice == "OpenSky":
     try:
