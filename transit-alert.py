@@ -121,45 +121,53 @@ if not os.path.exists(log_path):
         writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
 
 # ---------------- Fetch Aircraft Data ------------
+aircraft_states = []
+# Attempt to fetch from ADS-B Exchange if selected
 if data_source == "ADS-B Exchange":
-    url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={HOME_LAT}&lng={HOME_LON}&fDstL=0&fDstU={RADIUS_KM}"
-else:
+    adsb_url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={HOME_LAT}&lng={HOME_LON}&fDstL=0&fDstU={RADIUS_KM}"
+    try:
+        r = requests.get(adsb_url, timeout=10)
+        r.raise_for_status()
+        adsb_data = r.json()
+        ac_list = adsb_data.get("acList")
+        if not ac_list:
+            raise ValueError("Empty acList")
+        for ac in ac_list:
+            aircraft_states.append({
+                "callsign": ac.get("Callsign"),
+                "lat": ac.get("Lat"),
+                "lon": ac.get("Long"),
+                "velocity": ac.get("Spd"),
+                "heading": ac.get("Trak"),
+                "alt": ac.get("Alt")
+            })
+    except Exception as e:
+        st.warning(f"ADS-B Exchange error ({e}), falling back to OpenSky")
+        data_source = "OpenSky"
+# Fetch from OpenSky if selected or fallback
+if data_source == "OpenSky":
     north = HOME_LAT + 0.5
     south = HOME_LAT - 1.0
     west = HOME_LON - 1.0
     east = HOME_LON + 1.0
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
-try:
-    r = requests.get(url)
-    r.raise_for_status()
-    data = r.json()
-except Exception as e:
-    st.error(f"Error fetching data from {data_source}: {e}")
-    data = {}
-
-# Normalize aircraft list
-aircraft_states = []
-if data_source == "ADS-B Exchange":
-    for ac in data.get("acList", []):
-        aircraft_states.append({
-            "callsign": ac.get("Callsign"),
-            "lat": ac.get("Lat"),
-            "lon": ac.get("Long"),
-            "velocity": ac.get("Spd"),
-            "heading": ac.get("Trak"),
-            "alt": ac.get("Alt")
-        })
-else:
-    for ac in data.get("states", []):
-        aircraft_states.append({
-            "callsign": ac[1].strip() or "N/A",
-            "lat": ac[6],
-            "lon": ac[5],
-            "velocity": ac[9],
-            "heading": ac[10],
-            "alt": ac[13] or 0
-        })
-
+    opensky_url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+    try:
+        r = requests.get(opensky_url, timeout=10)
+        r.raise_for_status()
+        opensky_data = r.json()
+        states = opensky_data.get("states", []) or []
+        for ac in states:
+            aircraft_states.append({
+                "callsign": (ac[1].strip() or "N/A"),
+                "lat": ac[6],
+                "lon": ac[5],
+                "velocity": ac[9],
+                "heading": ac[10],
+                "alt": ac[13] or 0
+            })
+    except Exception as e:
+        st.error(f"Error fetching data from OpenSky: {e}")
+        aircraft_states = []
 # ---------------- Initialize Map ----------------
 st.session_state.zoom = zoom_level
 fmap = folium.Map(location=[HOME_LAT, HOME_LON], zoom_start=zoom_level, tiles=tile_style)
