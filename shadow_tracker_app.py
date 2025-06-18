@@ -89,60 +89,31 @@ if "fmap_base" not in st.session_state:
 fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
 marker_cluster = MarkerCluster().add_to(fmap)
 
-# Fetch aircraft from FlightRadar24
-import os
-fr = FR24API("01977ba5-1cef-726d-8f2f-8e6511f67088|PcIHECldlGp0bHEvVR47NsPzvKNoXwhthfKrVj7E71e0405e")
+# Fetch aircraft from local dump1090-style JSON feed
+import requests
 try:
-    flights_dict = fr.get_flights()
-    flights = list(flights_dict.values())
-
-    def is_within_bounds(flight, center_lat, center_lon, radius_km):
-        if not flight.latitude or not flight.longitude:
-            return False
-        dist = haversine(flight.latitude, flight.longitude, center_lat, center_lon)
-        return dist <= (radius_km * 1000)
-
-    flights = [f for f in flights if is_within_bounds(f, *DEFAULT_HOME_CENTER, RADIUS_KM)]
+    response = requests.get("http://192.168.0.47/tar1090/data.json")
+    response.raise_for_status()
+    dump1090_data = response.json()
+    flights = dump1090_data.get("aircraft", [])
 except Exception as e:
-    st.error(f"Error fetching FlightRadar24 data: {e}")
+    st.error(f"Error fetching local ADS-B data: {e}")
     flights = []
 
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    return R * 2 * math.asin(math.sqrt(a))
+# Convert to compatible format
+class Dump1090Flight:
+    def __init__(self, data):
+        self.latitude = data.get("lat")
+        self.longitude = data.get("lon")
+        self.heading = data.get("track")
+        self.ground_speed = data.get("gs")
+        self.baro_altitude = data.get("alt_baro")
+        self.callsign = data.get("flight")
+        self.identification = data.get("hex")
+        self.airline = None
 
-def move_position(lat, lon, heading_deg, distance_m):
-    R = 6371000
-    heading_rad = math.radians(heading_deg)
-    lat1 = math.radians(lat)
-    lon1 = math.radians(lon)
-    lat2 = math.asin(math.sin(lat1)*math.cos(distance_m/R) + math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad))
-    lon2 = lon1 + math.atan2(math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1), math.cos(distance_m/R)-math.sin(lat1)*math.sin(lat2))
-    return math.degrees(lat2), math.degrees(lon2)
+flights = [Dump1090Flight(f) for f in flights if f.get("lat") and f.get("lon") and f.get("gs") and f.get("track")]
 
-def get_shadow(lat, lon, alt_m, timestamp, source):
-    if source == "Sun":
-        sun_alt = get_sun_altitude(lat, lon, timestamp)
-        sun_az = get_sun_azimuth(lat, lon, timestamp)
-    else:
-        observer = earth + Topos(latitude_degrees=lat, longitude_degrees=lon, elevation_m=0)
-        t = ts.utc(timestamp.year, timestamp.month, timestamp.day, timestamp.hour, timestamp.minute, timestamp.second)
-        astrometric = observer.at(t).observe(moon).apparent()
-        alt, az, _ = astrometric.altaz()
-        sun_alt, sun_az = alt.degrees, az.degrees
-
-    if sun_alt <= 0:
-        return None, None
-
-    shadow_dist = alt_m / math.tan(math.radians(sun_alt))
-    shadow_lat = lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
-    shadow_lon = lon + (shadow_dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
-    return shadow_lat, shadow_lon
-
-# Filter valid aircraft
 aircraft_list = [f for f in flights if f.latitude and f.longitude and f.ground_speed and f.heading]
 
 # Count nearby aircraft within 5 miles (8046 meters)
