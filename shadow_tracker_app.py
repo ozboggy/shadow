@@ -46,8 +46,10 @@ def send_pushover(message: str, title: str = "Shadow Alert") -> bool:
 
 def haversine(lat1, lon1, lat2, lon2):
     """Return distance between two (lat,lon) points in meters."""
-    # ensure numeric types
-    if any(v is None for v in (lat1, lon1, lat2, lon2)):
+    # attempt to convert all inputs to float; return inf if any fail
+    try:
+        lat1, lon1, lat2, lon2 = map(float, (lat1, lon1, lat2, lon2))
+    except (TypeError, ValueError):
         return float('inf')
     R = 6371000  # Earth radius in meters
     φ1, φ2 = radians(lat1), radians(lat2)
@@ -163,8 +165,8 @@ folium.Marker(
 # Aircraft markers & alerts
 for ac in acs:
     # normalize coordinate keys
-    lat = ac.get("lat") if isinstance(ac.get("lat"), (int,float)) else ac.get("Lat")
-    lon = ac.get("lon") if isinstance(ac.get("lon"), (int,float)) else ac.get("Long")
+    lat = ac.get("lat") if isinstance(ac.get("lat"), (int, float)) else ac.get("Lat")
+    lon = ac.get("lon") if isinstance(ac.get("lon"), (int, float)) else ac.get("Long")
     if lat is None or lon is None:
         continue
 
