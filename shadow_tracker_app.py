@@ -100,3 +100,6 @@ folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/World_Imagery/Map
 folium.TileLayer("CartoDB Voyager", name="CartoDB Voyager").add_to(fmap)
 
 folium.LayerControl(position='topright', collapsed=False).add_to(fmap)
+
+# Render the map
+st_folium(fmap, width=1200, height=800)
