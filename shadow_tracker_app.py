@@ -55,8 +55,7 @@ DEFAULT_ZOOM = 10
 # Sidebar settings
 override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
 show_debug = st.sidebar.checkbox("Show Aircraft Debug", value=False)
-- source_choice = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
-+ data_source = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
+data_source = st.sidebar.selectbox("Data Source", ["ADS-B Exchange", "OpenSky"], index=0)
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=True)
 RADIUS_KM = st.sidebar.slider("Aircraft Search Radius (km)", 5, 100, DEFAULT_RADIUS_KM)
@@ -100,6 +99,7 @@ marker_cluster = MarkerCluster().add_to(fmap)
 aircraft_states = []
 # Attempt to fetch from ADS-B Exchange if selected
 if data_source == "ADS-B Exchange":
+     # …fetch from ADS-B Exchange…
     adsb_url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={HOME_LAT}&lng={HOME_LON}&fDstL=0&fDstU={RADIUS_KM}"
     try:
         r = requests.get(adsb_url, timeout=10)
@@ -121,7 +121,8 @@ if data_source == "ADS-B Exchange":
         st.warning(f"ADS-B Exchange error ({e}), falling back to OpenSky")
         data_source = "OpenSky"
 # Fetch from OpenSky if selected or fallback
-if data_source == "OpenSky":
+elif data_source == "OpenSky":
+     # …fetch from OpenSky…
     north = HOME_LAT + 0.5
     south = HOME_LAT - 1.0
     west = HOME_LON - 1.0
