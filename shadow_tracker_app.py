@@ -203,29 +203,56 @@ else:
 
 # Logs
 # 🖼 Include images or visual alert history
-
 if os.path.exists(log_path):
     st.sidebar.markdown("### 📥 Download Log")
-    with open(log_path,"rb") as f: st.sidebar.download_button("Download alert_log.csv",f,file_name="alert_log.csv",mime="text/csv")
-    df=pd.read_csv(log_path)
+    with open(log_path, "rb") as f:
+        st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
+
+    df = pd.read_csv(log_path)
     if not df.empty:
-        df['Time UTC']=pd.to_datetime(df['Time UTC'])
+        # Prepare time column
+        df['Time UTC'] = pd.to_datetime(df['Time UTC'])
+
+        # Recent alerts table
         st.markdown("### 📊 Recent Alerts")
         st.dataframe(df.tail(10))
-        fig=px.scatter(df,x="Time UTC",y="Callsign",size="Time Until Alert (sec)",hover_data=["Lat","Lon"],title="Shadow Alerts Over Time")
-        st.plotly_chart(fig, use_container_width=True)
-        # Alert history chart: daily counts
-        df_count = df.groupby(df['Time UTC'].dt.date).size().reset_index(name='Count')
-        df_count.rename(columns={'Time UTC':'Date'}, inplace=True)
-        fig2 = px.bar(df_count, x='Date', y='Count', title='Daily Shadow Alert Counts')
-        st.plotly_chart(fig2, use_container_width=True)
-        # Spatial density of alerts
-        fig3 = px.density_mapbox(
-            df, lat='Lat', lon='Lon', radius=10,
-            center={'lat': CENTER_LAT, 'lon': CENTER_LON}, zoom=zoom_level,
-            mapbox_style='open-street-map', title='Alert Location Density'
+
+        # Scatter plot over time
+        fig_time = px.scatter(
+            df,
+            x="Time UTC", y="Callsign",
+            size="Time Until Alert (sec)",
+            color="Source",
+            hover_data=["Lat", "Lon"],
+            title="Shadow Alerts Over Time"
         )
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig_time, use_container_width=True)
+
+        # Daily alert counts
+        df_counts = (
+            df.set_index('Time UTC')
+              .resample('D')
+              .size()
+              .reset_index(name='Count')
+        )
+        fig_daily = px.bar(
+            df_counts,
+            x='Time UTC', y='Count',
+            title='Daily Shadow Alert Counts'
+        )
+        st.plotly_chart(fig_daily, use_container_width=True)
+
+        # Geographic density map
+        fig_density = px.density_mapbox(
+            df,
+            lat='Lat', lon='Lon',
+            radius=20,
+            center={'lat': CENTER_LAT, 'lon': CENTER_LON},
+            zoom=zoom_level,
+            mapbox_style='open-street-map',
+            title='Alert Location Density'
+        )
+        st.plotly_chart(fig_density, use_container_width=True)
 
 # Test buttons
 if test_alert:
