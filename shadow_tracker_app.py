@@ -51,7 +51,7 @@ with st.sidebar:
     data_source = st.selectbox("Data Source", ["OpenSky", "ADS-B Exchange"], index=0)
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     st.markdown(f"**Search Radius:** {radius_km} km")
-    alert_radius_m = st.slider("Shadow Alert Radius (m)", 0, 1000, 50)
+    alert_radius_m = st.slider("Shadow Alert Radius (m)", 1, 10000, 50)
     st.markdown(f"**Shadow Alert Radius:** {alert_radius_m} m")
     track_sun = st.checkbox("Show Sun Shadows", True)
     track_moon = st.checkbox("Show Moon Shadows", False)
