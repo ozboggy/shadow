@@ -192,7 +192,7 @@ if alerts:
     }
     </script>
     """, unsafe_allow_html=True)
-    send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alist}")("✈️ Shadow ALERT",f"Shadows detected for: {alist}")
+    send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alist}")
 else:
     st.success("✅ No forecast shadow paths intersect target area.")
 
