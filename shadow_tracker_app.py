@@ -170,13 +170,17 @@ with st.sidebar.expander("Show details"):
 # Plot aircraft and trails with direction arrows
 for ac in aircraft_list:
     lat, lon, baro, vel, hdg, cs = ac['lat'], ac['lon'], ac['baro'], ac['vel'], ac['hdg'], ac['callsign']
-    # Aircraft icon rotated by heading
+    # Aircraft icon rotated by heading; adjust orientation offset
     folium.map.Marker(
         (lat, lon),
         icon=DivIcon(
             icon_size=(20,20),
             icon_anchor=(10,10),
-            html=f'<i class="fa fa-plane" style="color:blue;transform:rotate({hdg}deg);font-size:20px"></i>'
+            html=(
+                f'<i class="fa fa-plane" '
+                f'style="color:blue; transform: rotate({hdg-90}deg); '
+                f'transform-origin: center; font-size:20px"></i>'
+            )
         ),
         popup=f"{cs}\nAlt:{baro}m\nSpd:{vel}m/s"
     ).add_to(fmap)
