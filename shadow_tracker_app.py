@@ -222,9 +222,17 @@ if st.session_state.get('test_home_alert'):
 # Plot
 for ac in aircraft_list:
     lat,lon,baro,vel,hdg,cs = ac['lat'],ac['lon'],ac['baro'],ac['vel'],ac['hdg'],ac['callsign']
-    folium.Marker((lat,lon), icon=DivIcon(icon_size=(20,20),icon_anchor=(10,10),html=f'<i class="fa fa-plane" style="color:blue;transform:rotate({hdg-90}deg);transform-origin:center;font-size:20px"></i>'),popup=f"{cs}
-Alt:{baro}m
-Spd:{vel}m/s").add_to(fmap)
+    folium.Marker(
+        (lat, lon),
+        icon=DivIcon(
+            icon_size=(20,20),
+            icon_anchor=(10,10),
+            html=f'<i class="fa fa-plane" style="color:blue;transform:rotate({hdg-90}deg);transform-origin:center;font-size:20px"></i>'
+        ),
+        popup=f"{cs}
+Alt: {baro} m
+Spd: {vel} m/s"
+    ).add_to(fmap)
     folium.Marker((lat,lon), icon=DivIcon(icon_size=(150,36),icon_anchor=(0,0),html=f'<div style="font-size:12px">{cs}</div>')).add_to(fmap)
     trail_pts = calculate_trail(lat,lon,baro,vel,hdg)
     if trail_pts:
