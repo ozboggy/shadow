@@ -135,24 +135,36 @@ if data_source == "OpenSky":
         states = r.json().get("states", [])
     except Exception:
         states = []
-    for s in states:
+        for s in states:
         if len(s) < 11:
             continue
-        # Explicit field indices
         icao = s[0]
         cs_raw = s[1]
         lon = s[5]
         lat = s[6]
         baro_raw = s[7]
-        vel = s[9]
-        hdg = s[10]
+        vel_raw = s[9]
+        hdg_raw = s[10]
         cs = cs_raw.strip() if isinstance(cs_raw, str) else icao
+        # Safely parse numerical values
+        try:
+            baro = float(baro_raw)
+        except Exception:
+            baro = 0.0
+        try:
+            vel = float(vel_raw)
+        except Exception:
+            vel = 0.0
+        try:
+            hdg = float(hdg_raw)
+        except Exception:
+            hdg = 0.0
         aircraft_list.append({
             "lat": float(lat),
             "lon": float(lon),
-            "baro": float(baro_raw) if baro_raw is not None else 0.0,
-            "vel": float(vel) if vel is not None else 0.0,
-            "hdg": float(hdg) if hdg is not None else 0.0,
+            "baro": baro,
+            "vel": vel,
+            "hdg": hdg,
             "callsign": cs
         })
 elif data_source == "ADS-B Exchange":
