@@ -32,10 +32,8 @@ track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
 override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
 
-# Time selection
-sel_date = st.sidebar.date_input("Date (UTC)", datetime.utcnow().date())
-sel_time = st.sidebar.time_input("Time (UTC)", datetime.utcnow().time().replace(microsecond=0))
-selected_time = datetime.combine(sel_date, sel_time).replace(tzinfo=timezone.utc)
+# Use current UTC time for calculations
+selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
@@ -157,4 +155,4 @@ for ac in aircraft_list:
             folium.PolyLine(locations=trail, color="black", weight=DEFAULT_SHADOW_WIDTH, opacity=0.6).add_to(fmap)
 
 # Render map
-st_folium(fmap, width=900, height=600)
+st_folium(fmap, width=1200, height=800)
