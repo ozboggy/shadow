@@ -1,155 +1,105 @@
-# ---- Shadow Alert Utilities ----
-LOG_FILE = "alert_log.csv"
-
-def haversine(lat1, lon1, lat2, lon2):
-    from math import radians, cos, sin, asin, sqrt
-    R = 6371000  # meters
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    return 2 * R * asin(sqrt(a))
-
-def log_alert(callsign, shadow_lat, shadow_lon):
-    try:
-        with open(LOG_FILE, "a") as logf:
-            logf.write(f"{datetime.utcnow()},{callsign},{shadow_lat},{shadow_lon}\n")
-    except Exception as e:
-        st.warning(f"⚠️ Failed to log alert: {e}")
-
 import streamlit as st
-import requests
-import json
-import folium
-from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
-from datetime import datetime
-from math import radians, cos, sin
-from datetime import timezone
-from pysolar.solar import get_altitude
-import math
-from time import time
+import requests
+import pandas as pd
+import folium
+from pysolar.solar import get_altitude, get_azimuth
+from datetime import datetime, timezone
 import os
-import time
 import csv
+import math
 
-st.set_page_config(layout="wide")
+# --- CONFIGURATION ---
+HOME_LAT = st.sidebar.number_input("Home Latitude", value=YOUR_HOME_LAT)
+HOME_LON = st.sidebar.number_input("Home Longitude", value=YOUR_HOME_LON)
+RADIUS_MI = st.sidebar.slider("Tracking Radius (mi)", min_value=1, max_value=50, value=10)
+REFRESH_SECONDS = 30
+LOG_FILE = "alert_log.csv"
+CACHE_FILE = "map_state.json"
 
-# ---- Constants ----
-DEFAULT_HOME = [-33.7608864, 150.9709575]
-DEFAULT_ZOOM = 14
+# Initialize session state for map
+if 'map_center' not in st.session_state:
+    st.session_state.map_center = (HOME_LAT, HOME_LON)
+if 'zoom' not in st.session_state:
+    st.session_state.zoom = 12
 
-# ---- Load last map state if available ----
-def load_map_config():
-    try:
-        with open("map_config.json", "r") as f:
-            cfg = json.load(f)
-            center = cfg.get("center", DEFAULT_HOME)
-            if (not isinstance(center, list) or len(center) != 2 or
-                not all(isinstance(x, (int, float)) for x in center)):
-                center = DEFAULT_HOME
-            zoom = cfg.get("zoom", DEFAULT_ZOOM)
-            return {"center": center, "zoom": zoom}
-    except Exception:
-        return {"zoom": DEFAULT_ZOOM, "center": DEFAULT_HOME}
-    try:
-        with open("map_config.json", "r") as f:
-            return json.load(f)
-    except Exception:
-        return {"zoom": DEFAULT_ZOOM, "center": DEFAULT_HOME}
+st.title("✈️ Aircraft Shadow Tracker")
 
-# ---- Save map state ----
-def save_map_config(zoom, center):
-    try:
-        with open("map_config.json", "w") as f:
-            json.dump({"zoom": zoom, "center": center}, f)
-    except Exception as e:
-        st.warning(f"⚠️ Failed to save map config: {e}")
+# Auto-refresh
+count = st.experimental_data_editor([], num_rows=0)  # hack to trigger rerun
+st.experimental_rerun() if st.button("Refresh Now") else None
 
-# ---- UI ----
-st.sidebar.title("🧭 Map Controls")
-home_lat = st.sidebar.number_input("Home Latitude", value=DEFAULT_HOME[0], format="%.7f")
-home_lon = st.sidebar.number_input("Home Longitude", value=DEFAULT_HOME[1], format="%.7f")
-zoom_lock = st.sidebar.checkbox("🔒 Lock Zoom to 3-Mile Radius from Home", value=False)
+# Fetch aircraft data
+@st.experimental_memo(ttl=REFRESH_SECONDS)
+def fetch_aircraft(lat, lon, radius_m):
+    url = f"https://opensky-network.org/api/states/all?lamin={lat - radius_m}&lomin={lon - radius_m}&lamax={lat + radius_m}&lomax={lon + radius_m}"
+    resp = requests.get(url, timeout=10)
+    data = resp.json().get('states', [])
+    columns = ['icao24', 'callsign', 'origin_country', 'time_position',
+               'last_contact', 'lon', 'lat', 'baro_altitude', 'velocity',
+               'true_track', 'vertical_rate', 'sensors', 'geo_altitude']
+    return pd.DataFrame(data, columns=columns)
 
-map_config = load_map_config()
-start_center = map_config.get("center", DEFAULT_HOME)
-start_zoom = map_config.get("zoom", DEFAULT_ZOOM if not zoom_lock else 15)
+# Utility: project shadow endpoint
+def project_shadow(lat, lon, altitude_m, solar_elev, solar_azim):
+    if solar_elev <= 0:
+        return None
+    shadow_length = altitude_m / math.tan(math.radians(solar_elev))
+    # Convert to degrees approx
+    meters_per_deg = 111_000
+    dx = shadow_length * math.sin(math.radians(solar_azim))
+    dy = shadow_length * math.cos(math.radians(solar_azim))
+    dlat = dy / meters_per_deg
+    dlon = dx / (meters_per_deg * math.cos(math.radians(lat)))
+    return lat + dlat, lon + dlon
 
-# ---- Create map ----
-fmap = folium.Map(location=start_center, zoom_start=start_zoom, control_scale=True)
+# Main map creation
+def create_map(df):
+    fmap = folium.Map(location=st.session_state.map_center, zoom_start=st.session_state.zoom)
+    # Home marker
+    folium.Marker([HOME_LAT, HOME_LON], icon=folium.Icon(color='red'), tooltip='Home').add_to(fmap)
 
-# ---- Load aircraft from OpenSky ----
-bounds = fmap.get_bounds() if hasattr(fmap, 'get_bounds') else None
-home_latlon = [home_lat, home_lon]
-aircraft_data = []
-try:
-    resp = requests.get(
-        'https://opensky-network.org/api/states/all',
-        params={'lamin': home_lat - 0.3, 'lamax': home_lat + 0.3,
-                'lomin': home_lon - 0.3, 'lomax': home_lon + 0.3},
-        timeout=10
-    )
-    data = resp.json() if resp.ok else {}
-    states = data.get("states", [])
-    for state in states:
-        if not state or len(state) < 8: continue
-        lat, lon, alt = state[6], state[5], state[7]
-        if lat is None or lon is None or alt is None: continue
-        aircraft_data.append((state[1], lat, lon, alt))
-except Exception as e:
-    st.warning(f"Failed to load aircraft: {e}")
-# ---- Predict and display shadows ----
-now = datetime.utcnow().replace(tzinfo=timezone.utc)
-sun_elevation = get_altitude(home_lat, home_lon, now)
-if sun_elevation > 0:
-    for callsign, lat, lon, alt in aircraft_data:
-        try:
-            theta = radians(90 - sun_elevation)
-            shadow_length = alt / math.tan(theta)
-            dx = shadow_length * cos(radians(180))
-            dy = shadow_length * sin(radians(180))
-            shadow_lat = lat + (dy / 111111)
-            shadow_lon = lon + (dx / (111111 * cos(radians(lat))))
-            icon = folium.Icon(icon='plane', prefix='fa', color='blue')
-            folium.Marker(location=[lat, lon], icon=icon, tooltip=callsign).add_to(fmap)
-            folium.CircleMarker(location=[shadow_lat, shadow_lon], radius=3, color='gray',
-                                fill=True, fill_opacity=0.5, tooltip='Shadow').add_to(fmap)
-            if haversine(shadow_lat, shadow_lon, home_lat, home_lon) < alert_radius:
-                log_alert(callsign, shadow_lat, shadow_lon)
-                alert_log.append((callsign, shadow_lat, shadow_lon))
-                alert_triggered = True
-        except Exception as se:
-            continue
-        try:
-            shadow_length = alt / math.tan(theta)
-            dx = shadow_length * cos(radians(180))
-            dy = shadow_length * sin(radians(180))
-            shadow_lat = lat + (dy / 111111)
-            shadow_lon = lon + (dx / (111111 * cos(radians(lat))))
-            folium.CircleMarker(location=[lat, lon], radius=4, color='blue', tooltip=callsign).add_to(fmap)
-            folium.CircleMarker(location=[shadow_lat, shadow_lon], radius=3, color='gray', fill=True, fill_opacity=0.5, tooltip='Shadow').add_to(fmap)
-            if haversine(shadow_lat, shadow_lon, home_lat, home_lon) < alert_radius:
-                alert_log.append((callsign, shadow_lat, shadow_lon))
-                alert_triggered = True
-        except Exception as se:
-            continue
+    for _, row in df.iterrows():
+        lat, lon = row['lat'], row['lon']
+        alt_m = row['baro_altitude'] or 0
+        now = datetime.now(timezone.utc)
+        elev = get_altitude(HOME_LAT, HOME_LON, now)
+        azim = get_azimuth(HOME_LAT, HOME_LON, now)
+        shadow_pt = project_shadow(lat, lon, alt_m, elev, azim)
 
-# ---- Example aircraft (you can replace this with real data feed later) ----
-folium.CircleMarker(location=DEFAULT_HOME, radius=8, color="red", fill=True, fill_opacity=0.6, tooltip="Home").add_to(fmap)
-folium.Marker(location=[home_lat + 0.01, home_lon + 0.01], tooltip="Aircraft A1").add_to(fmap)
-        folium.Marker(location=[lat, lon], icon=icon, tooltip=callsign).add_to(fmap)
+        # Plot plane
+        folium.Marker([lat, lon], icon=folium.Icon(icon='plane', prefix='fa'),
+                      tooltip=row['callsign'].strip() or row['icao24']).add_to(fmap)
+        # Plot shadow
+        if shadow_pt:
+            folium.CircleMarker(shadow_pt, radius=5, color='gray', fill=True,
+                                fill_opacity=0.7, tooltip='Shadow').add_to(fmap)
+            # Alert check
+            dist = math.hypot((shadow_pt[0]-HOME_LAT)*meters_per_deg,
+                              (shadow_pt[1]-HOME_LON)*meters_per_deg*math.cos(math.radians(HOME_LAT)))
+            if dist < 50:  # within ~50m
+                st.warning(f"Shadow from {row['callsign'].strip() or row['icao24']} is over home!")
+                # Log alert
+                with open(LOG_FILE, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([datetime.utcnow().isoformat(), row['icao24'], row['callsign']])
+    return fmap
 
-# ---- Render map and capture state ----
-map_output = st_folium(fmap, width=1400, height=800)
+# Fetch & render
+df = fetch_aircraft(HOME_LAT, HOME_LON, RADIUS_MI * 1609)
+fmap = create_map(df)
 
-# ---- Save new center/zoom ----
-if map_output and "zoom" in map_output and "center" in map_output:
-    save_map_config(map_output["zoom"], map_output["center"])
+# Render map and capture state
+map_data = st_folium(fmap, width=700, height=500)
+if map_data and 'center' in map_data:
+    st.session_state.map_center = (map_data['center']['lat'], map_data['center']['lng'])
+if map_data and 'zoom' in map_data:
+    st.session_state.zoom = map_data['zoom']
 
-# ---- Alert and Auto-Refresh ----
-if alert_triggered:
-    st.error("🚨 Shadow over home location!")
-
-st.markdown("⏱ Auto-refresh every 30 seconds...")
-time.sleep(30)
-st.experimental_rerun()
+# Show log
+if st.sidebar.checkbox("Show Alert Log"):
+    if os.path.exists(LOG_FILE):
+        log_df = pd.read_csv(LOG_FILE, header=None, names=['timestamp', 'icao24', 'callsign'])
+        st.sidebar.dataframe(log_df)
+    else:
+        st.sidebar.write("No alerts yet.")
