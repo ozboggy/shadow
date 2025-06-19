@@ -163,21 +163,36 @@ for ac in aircraft_list:
 
 # Alerts UI
 if alerts:
-    alist=", ".join(alerts)
+    alist = ", ".join(alerts)
     st.error(f"🚨 Shadow ALERT for: {alist}")
-    # Continuous looping audio alert using HTML5 audio tag
-    st.markdown("""
-    <audio autoplay loop>
-      <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
-    </audio>
-    """, unsafe_allow_html=True)
+    # Text-to-speech 'Terrain Terrain' alert using Web Speech API
     st.markdown("""
     <script>
-    if(Notification.permission==='granted') new Notification("✈️ Shadow Alert",{body:"Aircraft shadow over target!"});
-    else Notification.requestPermission().then(p=>{if(p==='granted') new Notification("✈️ Shadow Alert",{body:"Aircraft shadow over target!"});});
+    function alertTerrain() {
+        var msg = new SpeechSynthesisUtterance('Terrain, Terrain');
+        msg.rate = 1;
+        window.speechSynthesis.speak(msg);
+    }
+    // Speak twice
+    alertTerrain();
+    setTimeout(alertTerrain, 1000);
     </script>
-    """,unsafe_allow_html=True)
-    send_pushover("✈️ Shadow ALERT",f"Shadows detected for: {alist}")
+    """, unsafe_allow_html=True)
+    # Desktop notification
+    st.markdown("""
+    <script>
+    if (Notification.permission === 'granted') {
+        new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" });
+    } else {
+        Notification.requestPermission().then(p => {
+            if (p === 'granted') {
+                new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" });
+            }
+        });
+    }
+    </script>
+    """, unsafe_allow_html=True)
+    send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alist}")("✈️ Shadow ALERT",f"Shadows detected for: {alist}")
 else:
     st.success("✅ No forecast shadow paths intersect target area.")
 
