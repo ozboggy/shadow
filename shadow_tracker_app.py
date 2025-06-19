@@ -197,32 +197,7 @@ def calculate_trail(lat, lon, baro, vel, hdg):
 
 # Initialize map
 fmap=folium.Map(location=(TARGET_LAT,TARGET_LON),zoom_start=zoom_level,tiles=tile_style,control_scale=True)
-folium.Marker((TARGET_LAT,TARGET_LON),icon=folium.Icon(color="red",icon="home",prefix="fa"),popup="Home").add_to(fmap)
-
-# Fetch data
-aircraft_list=fetch_opensky(TARGET_LAT,TARGET_LON,radius_km) if data_source=="OpenSky" else fetch_adsb(TARGET_LAT,TARGET_LON,radius_km)
-
-# Alert triggers
-if st.session_state.get('send_alert'):
-    msg=f"{len(aircraft_list)} aircraft in range"
-    if enable_pushover:
-        requests.post("https://api.pushover.net/1/messages.json",data={"user":PUSHOVER_USER_KEY,"token":PUSHOVER_APP_TOKEN,"message":msg})
-        st.sidebar.success("Alert sent.")
-    st.session_state['send_alert']=False
-
-# Track home-shadow condition
-home_alert=False
-
-# On-screen test alert
-if st.session_state.get('test_home_alert'):
-    st.warning("⚠️ Test: Aircraft shadow over home!")
-    home_alert=True
-    st.session_state['test_home_alert']=False
-
-# Plot
-for ac in aircraft_list:
-    lat,lon,baro,vel,hdg,cs = ac['lat'],ac['lon'],ac['baro'],ac['vel'],ac['hdg'],ac['callsign']
-    folium.Marker(
+folium.Marker(
         (lat, lon),
         icon=DivIcon(
             icon_size=(20,20),
