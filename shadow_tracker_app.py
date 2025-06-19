@@ -202,6 +202,8 @@ else:
     st.success("✅ No forecast shadow paths intersect target area.")
 
 # Logs
+# 🖼 Include images or visual alert history
+
 if os.path.exists(log_path):
     st.sidebar.markdown("### 📥 Download Log")
     with open(log_path,"rb") as f: st.sidebar.download_button("Download alert_log.csv",f,file_name="alert_log.csv",mime="text/csv")
