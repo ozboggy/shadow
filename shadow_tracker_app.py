@@ -4,20 +4,20 @@ load_dotenv()
 import os
 import folium
 from streamlit_folium import st_folium
-from datetime import datetime, time as dt_time, timezone, timedelta
+from datetime import datetime, timezone, timedelta
 import math
 import requests
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 
 # Constants
+CENTER_LAT = 0.0
+CENTER_LON = 0.0
 DEFAULT_RADIUS_KM = 20
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 DEFAULT_SHADOW_WIDTH = 3
 
 # Sidebar controls
-target_lat = st.sidebar.number_input("Target Latitude", value=-33.7602563, format="%.6f")
-target_lon = st.sidebar.number_input("Target Longitude", value=150.9717434, format="%.6f")
 tile_style = st.sidebar.selectbox(
     "Map Tile Style",
     ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
@@ -34,20 +34,14 @@ override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", valu
 
 # Time selection
 sel_date = st.sidebar.date_input("Date (UTC)", datetime.utcnow().date())
-sel_time = st.sidebar.time_input("Time (UTC)", dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
+sel_time = st.sidebar.time_input("Time (UTC)", datetime.utcnow().time().replace(microsecond=0))
 selected_time = datetime.combine(sel_date, sel_time).replace(tzinfo=timezone.utc)
 
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 # Initialize map
-center = (target_lat, target_lon)
+center = (CENTER_LAT, CENTER_LON)
 fmap = folium.Map(location=center, zoom_start=8, tiles=tile_style, control_scale=True)
-# Home marker
-folium.Marker(
-    location=center,
-    icon=folium.Icon(color="red", icon="home", prefix="fa"),
-    popup="Home"
-).add_to(fmap)
 
 # Utils
 
@@ -78,9 +72,9 @@ aircraft_list = []
 
 if data_source == "OpenSky":
     dr = DEFAULT_RADIUS_KM / 111.0
-    south = target_lat - dr; north = target_lat + dr
-    dlon = dr / math.cos(math.radians(target_lat))
-    west = target_lon - dlon; east = target_lon + dlon
+    south = CENTER_LAT - dr; north = CENTER_LAT + dr
+    dlon = dr / math.cos(math.radians(CENTER_LAT))
+    west = CENTER_LON - dlon; east = CENTER_LON + dlon
     url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
     try:
         r = requests.get(url); r.raise_for_status()
@@ -91,13 +85,15 @@ if data_source == "OpenSky":
     for s in states:
         if len(s) < 11: continue
         try:
-            icao = s[0]; cs = s[1].strip() if s[1] else icao
-            lon = float(s[5]); lat = float(s[6])
-            baro = float(s[7]) if s[7] is not None else 0.0
-            vel = float(s[9]); hdg = float(s[10])
+            icao, cs_raw, _, _, _, lon, lat, baro_raw, _, vel, hdg = s[:11]
+            cs = cs_raw.strip() if cs_raw else icao
+            aircraft_list.append({
+                "lat": float(lat), "lon": float(lon),
+                "baro": float(baro_raw) if baro_raw else 0.0,
+                "vel": float(vel), "hdg": float(hdg), "callsign": cs
+            })
         except:
             continue
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
 
 elif data_source == "ADS-B Exchange":
     api_key = os.getenv("RAPIDAPI_KEY")
@@ -105,7 +101,7 @@ elif data_source == "ADS-B Exchange":
         st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
         adsb = []
     else:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{target_lat}/lon/{target_lon}/dist/{DEFAULT_RADIUS_KM}/"
+        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{DEFAULT_RADIUS_KM}/"
         headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
         try:
             r2 = requests.get(url, headers=headers); r2.raise_for_status()
@@ -116,24 +112,24 @@ elif data_source == "ADS-B Exchange":
     for ac in adsb:
         try:
             lat = float(ac.get("lat")); lon = float(ac.get("lon"))
-            # Speed: try 'gs' then 'spd'
-            vel_raw = ac.get("gs") if ac.get("gs") is not None else ac.get("spd")
-            vel = float(vel_raw)
-            # Heading: try 'track' then 'trak'
-            hdg_raw = ac.get("track") if ac.get("track") is not None else ac.get("trak")
-            hdg = float(hdg_raw)
-            raw = ac.get("alt_baro")
-            baro = float(raw) if isinstance(raw, (int, float, str)) and str(raw).replace('.', '', 1).isdigit() else 0.0
+            vel_raw = ac.get("gs") or ac.get("spd")
+            hdg_raw = ac.get("track") or ac.get("trak")
+            baro_raw = ac.get("alt_baro")
             cs = ac.get("flight") or ac.get("hex")
-        except Exception:
+            aircraft_list.append({
+                "lat": lat, "lon": lon,
+                "baro": float(baro_raw) if baro_raw else 0.0,
+                "vel": float(vel_raw) if vel_raw else 0.0,
+                "hdg": float(hdg_raw) if hdg_raw else 0.0,
+                "callsign": cs.strip() if cs else None
+            })
+        except:
             continue
-        callsign = cs.strip() if isinstance(cs, str) else cs
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": callsign})
 
 # Plot aircraft and shadows
 for ac in aircraft_list:
-    lat = ac["lat"]; lon = ac["lon"]; baro = ac["baro"]
-    vel = ac["vel"]; hdg = ac["hdg"]; cs = ac["callsign"]
+    lat, lon = ac["lat"], ac["lon"]
+    baro, vel, hdg, cs = ac["baro"], ac["vel"], ac["hdg"], ac["callsign"]
     folium.Marker(
         location=(lat, lon),
         icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
@@ -143,8 +139,7 @@ for ac in aircraft_list:
         trail = []
         for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
             ft = selected_time + timedelta(seconds=i)
-            dist = vel * i
-            f_lat, f_lon = move_position(lat, lon, hdg, dist)
+            f_lat, f_lon = move_position(lat, lon, hdg, vel * i)
             sun_alt = get_sun_altitude(f_lat, f_lon, ft)
             if track_sun and sun_alt > 0:
                 az = get_sun_azimuth(f_lat, f_lon, ft)
