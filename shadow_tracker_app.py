@@ -18,6 +18,7 @@ DEFAULT_RADIUS_KM = 20
 DEFAULT_INTERVAL_SEC = 30
 DEFAULT_DURATION_MIN = 5
 DEFAULT_SHADOW_WIDTH = 3
+DEFAULT_ZOOM = 11
 
 # Sidebar controls
 st.sidebar.header("Configuration")
@@ -33,6 +34,8 @@ tile_style = st.sidebar.selectbox(
     ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
     index=1
 )
+
+zoom_level = st.sidebar.slider("Map Zoom", min_value=1, max_value=18, value=DEFAULT_ZOOM)
 
 track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
@@ -173,7 +176,7 @@ def calculate_trail(lat: float, lon: float, baro: float, vel: float, hdg: float)
     return points
 
 # Initialize map centered at constant target
-fmap = folium.Map(location=(TARGET_LAT, TARGET_LON), zoom_start=11, tiles=tile_style, control_scale=True)
+fmap = folium.Map(location=(TARGET_LAT, TARGET_LON), zoom_start=zoom_level, tiles=tile_style, control_scale=True)
 # Home marker
 folium.Marker(
     location=(TARGET_LAT, TARGET_LON),
