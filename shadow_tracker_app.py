@@ -197,6 +197,10 @@ for ac in aircraft_list:
         location=(lat, lon),
         icon=DivIcon(
             icon_size=(30,30), icon_anchor=(15,15),
+            html=f"""
+                <i class='fa fa-plane' style='transform: rotate({hdg-90}deg); color: {'red' if alert else 'blue'}; font-size:24px;'></i>
+            """
+        ), icon_anchor=(15,15),
             html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: {'red' if alert else 'blue'}; font-size: 24px;"></i>'
         ),
         popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
