@@ -165,6 +165,12 @@ for ac in aircraft_list:
 if alerts:
     alist = ", ".join(alerts)
     st.error(f"🚨 Shadow ALERT for: {alist}")
+    # Continuous audio alert
+    st.markdown("""
+    <audio autoplay loop>
+      <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
+    </audio>
+    """, unsafe_allow_html=True)
     # Text-to-speech 'Terrain Terrain' alert using Web Speech API
     st.markdown("""
     <script>
@@ -173,7 +179,6 @@ if alerts:
         msg.rate = 1;
         window.speechSynthesis.speak(msg);
     }
-    // Speak twice
     alertTerrain();
     setTimeout(alertTerrain, 1000);
     </script>
