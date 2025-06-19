@@ -40,6 +40,7 @@ with st.sidebar:
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
     override_trails = st.checkbox("Show Trails Regardless of Sun/Moon", value=False)
+    test_alert = st.button("Test Alert")  # Trigger a test alert
     st.header("Map Settings")
     zoom_level = st.slider("Initial Zoom Level", min_value=1, max_value=18, value=DEFAULT_ZOOM)
     map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=1200)
