@@ -65,8 +65,8 @@ with st.sidebar:
     test_pushover = st.button("Test Pushover")
     st.header("Map Settings")
     zoom_level = st.slider("Initial Zoom Level", min_value=1, max_value=18, value=DEFAULT_ZOOM)
-    map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=1200)
-    map_height = st.number_input("Height (px)", min_value=300, max_value=1500, value=800)
+    map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=600) // default changed to 600
+    map_height = st.number_input("Height (px)", min_value=300, max_value=1500, value=600) // default changed to 600
 
 # Use current UTC time for calculations
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
