@@ -188,7 +188,7 @@ for ac in aircraft_list:
             attributes={
                 'fill': 'blue',
                 'font-weight': 'bold',
-                'font-size': '10px'
+                'font-size': '6px'
             }
         )
         arrow.add_to(fmap)
