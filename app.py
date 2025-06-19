@@ -1,147 +1,170 @@
-
 import streamlit as st
 import requests
-import json
 import folium
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
-from datetime import datetime
-from math import radians, cos, sin
-from datetime import timezone
-from pysolar.solar import get_altitude
+from datetime import datetime, time as dt_time, timezone, timedelta
 import math
-from time import time
-import os
-import time
 import csv
+import os
+import pandas as pd
+import plotly.express as px
+from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
+from skyfield.api import load, Topos
 
+# Load ephemeris for moon calculations
+eph = load('de421.bsp')
+moon = eph['moon']
+earth = eph['earth']
+ts = load.timescale()
+
+# Pushover setup
+PUSHOVER_USER_KEY = "usasa4y2iuvz75krztrma829s21nvy"
+PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
+
+def send_pushover(title, message):
+    try:
+        url = "https://api.pushover.net/1/messages.json"
+        payload = {
+            "token": PUSHOVER_API_TOKEN,
+            "user": PUSHOVER_USER_KEY,
+            "title": title,
+            "message": message
+        }
+        requests.post(url, data=payload)
+    except Exception as e:
+        st.warning(f"Pushover notification failed: {e}")
+
+# Constants
+TARGET_LAT = -33.7602563
+TARGET_LON = 150.9717434
+ALERT_RADIUS_METERS = 50
+RADIUS_KM = 20
+FORECAST_INTERVAL_SECONDS = 30
+FORECAST_DURATION_MINUTES = 5
+HOME_CENTER = [-33.7602563, 150.9717434]
+
+# Logging
+log_file = "alert_log.csv"
+log_path = os.path.join(os.path.dirname(__file__), log_file)
+if not os.path.exists(log_path):
+    with open(log_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon", "Source"])
+
+# UI
 st.set_page_config(layout="wide")
+st.title("✈️ Aircraft Shadow Tracker")
 
-# ---- Constants ----
-DEFAULT_HOME = [-33.7608864, 150.9709575]
-DEFAULT_ZOOM = 14
+selected_date = datetime.utcnow().date()
+selected_time_only = dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
+selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
+shadow_source = st.sidebar.radio("Shadow Source", ["Sun", "Moon"], horizontal=True)
 
-# ---- Load last map state if available ----
-def load_map_config():
-    try:
-        with open("map_config.json", "r") as f:
-            cfg = json.load(f)
-            center = cfg.get("center", DEFAULT_HOME)
-            if (not isinstance(center, list) or len(center) != 2 or
-                not all(isinstance(x, (int, float)) for x in center)):
-                center = DEFAULT_HOME
-            zoom = cfg.get("zoom", DEFAULT_ZOOM)
-            return {"center": center, "zoom": zoom}
-    except Exception:
-        return {"zoom": DEFAULT_ZOOM, "center": DEFAULT_HOME}
-    try:
-        with open("map_config.json", "r") as f:
-            return json.load(f)
-    except Exception:
-        return {"zoom": DEFAULT_ZOOM, "center": DEFAULT_HOME}
-
-# ---- Save map state ----
-def save_map_config(zoom, center):
-    try:
-        with open("map_config.json", "w") as f:
-            json.dump({"zoom": zoom, "center": center}, f)
-    except Exception as e:
-        st.warning(f"⚠️ Failed to save map config: {e}")
-
-# ---- UI ----
-st.sidebar.title("🧭 Map Controls")
-home_lat = st.sidebar.number_input("Home Latitude", value=DEFAULT_HOME[0], format="%.7f")
-home_lon = st.sidebar.number_input("Home Longitude", value=DEFAULT_HOME[1], format="%.7f")
-zoom_lock = st.sidebar.checkbox("🔒 Lock Zoom to 3-Mile Radius from Home", value=False)
-
-map_config = load_map_config()
-start_center = map_config.get("center", DEFAULT_HOME)
-start_zoom = map_config.get("zoom", DEFAULT_ZOOM if not zoom_lock else 15)
-
-# ---- Create map ----
-fmap = folium.Map(location=start_center, zoom_start=start_zoom, control_scale=True)
-
-# ---- Load aircraft from OpenSky ----
-bounds = fmap.get_bounds() if hasattr(fmap, 'get_bounds') else None
-home_latlon = [home_lat, home_lon]
-aircraft_data = []
+# Fetch aircraft (OpenSky fallback)
+north, south, west, east = -33.0, -34.5, 150.0, 151.5
+url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
 try:
-    resp = requests.get(
-        'https://opensky-network.org/api/states/all',
-        params={'lamin': home_lat - 0.3, 'lamax': home_lat + 0.3,
-                'lomin': home_lon - 0.3, 'lomax': home_lon + 0.3},
-        timeout=10
-    )
-    data = resp.json() if resp.ok else {}
-    states = data.get("states", [])
-    for state in states:
-        if not state or len(state) < 8: continue
-        lat, lon, alt = state[6], state[5], state[7]
-        if lat is None or lon is None or alt is None: continue
-        aircraft_data.append((state[1], lat, lon, alt))
+    r = requests.get(url)
+    r.raise_for_status()
+    data = r.json()
 except Exception as e:
-    st.warning(f"Failed to load aircraft: {e}")
-# ---- Predict and display shadows ----
-now = datetime.utcnow().replace(tzinfo=timezone.utc)
-sun_elevation = get_altitude(home_lat, home_lon, now)
-if sun_elevation > 0:
+    st.error(f"Error fetching OpenSky data: {e}")
+    data = {}
 
-# ---- Check if shadow crosses home ----
+# Setup map
+center = HOME_CENTER
+zoom = 10
+fmap = folium.Map(location=center, zoom_start=zoom, control_scale=True)
+marker_cluster = MarkerCluster().add_to(fmap)
+folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
+
 def haversine(lat1, lon1, lat2, lon2):
-    from math import radians, cos, sin, asin, sqrt
-    R = 6371000  # meters
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    return 2 * R * asin(sqrt(a))
+    R = 6371000
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
 
-alert_radius = 100  # meters
-alert_triggered = False
+def move_position(lat, lon, heading_deg, distance_m):
+    R = 6371000
+    heading_rad = math.radians(heading_deg)
+    lat1 = math.radians(lat)
+    lon1 = math.radians(lon)
+    lat2 = math.asin(math.sin(lat1)*math.cos(distance_m/R) + math.cos(lat1)*math.sin(distance_m/R)*math.cos(heading_rad))
+    lon2 = lon1 + math.atan2(math.sin(heading_rad)*math.sin(distance_m/R)*math.cos(lat1), math.cos(distance_m/R)-math.sin(lat1)*math.sin(lat2))
+    return math.degrees(lat2), math.degrees(lon2)
 
+def get_shadow(lat, lon, alt_m, timestamp):
+    if shadow_source == "Sun":
+        sun_alt = get_sun_altitude(lat, lon, timestamp)
+        sun_az = get_sun_azimuth(lat, lon, timestamp)
+    else:
+        observer = earth + Topos(latitude_degrees=lat, longitude_degrees=lon, elevation_m=0)
+        t = ts.utc(timestamp.year, timestamp.month, timestamp.day, timestamp.hour, timestamp.minute, timestamp.second)
+        astrometric = observer.at(t).observe(moon).apparent()
+        alt, az, _ = astrometric.altaz()
+        sun_alt, sun_az = alt.degrees, az.degrees
 
-# ---- Logging Setup ----
-LOG_FILE = "alert_log.csv"
-def log_alert(callsign, shadow_lat, shadow_lon):
+    if sun_alt <= 0:
+        return None, None
+
+    shadow_dist = alt_m / math.tan(math.radians(sun_alt))
+    shadow_lat = lat + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
+    shadow_lon = lon + (shadow_dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
+    return shadow_lat, shadow_lon
+
+# Aircraft rendering
+alerts_triggered = []
+aircraft_states = data.get("states", [])
+for ac in aircraft_states:
     try:
-        with open(LOG_FILE, "a") as logf:
-            logf.write(f"{datetime.utcnow()},{callsign},{shadow_lat},{shadow_lon}\n")
-    except Exception as e:
-        st.warning(f"⚠️ Failed to log alert: {e}")
-
-    for callsign, lat, lon, alt in aircraft_data:
-        try:
-            theta = radians(90 - sun_elevation)
-            shadow_length = alt / math.tan(theta)
-            dx = shadow_length * cos(radians(180))
-            dy = shadow_length * sin(radians(180))
-            shadow_lat = lat + (dy / 111111)
-            shadow_lon = lon + (dx / (111111 * cos(radians(lat))))
-            folium.CircleMarker(location=[lat, lon], radius=4, color='blue', tooltip=callsign).add_to(fmap)
-            folium.CircleMarker(location=[shadow_lat, shadow_lon], radius=3, color='gray', fill=True, fill_opacity=0.5, tooltip='Shadow').add_to(fmap)
-            if haversine(shadow_lat, shadow_lon, home_lat, home_lon) < alert_radius:
-                log_alert(callsign, shadow_lat, shadow_lon)
-                alert_log.append((callsign, shadow_lat, shadow_lon))
-                alert_triggered = True
-        except Exception as se:
+        icao24, callsign, _, _, _, lon, lat, baro_altitude, _, velocity, heading, _, _, geo_altitude, *_ = ac
+        if None in (lat, lon, velocity, heading):
             continue
+        alt = geo_altitude or 0
+        callsign = callsign.strip() if callsign else "N/A"
+        shadow_alerted = False
+        trail = []
 
-# ---- Example aircraft (you can replace this with real data feed later) ----
-folium.CircleMarker(location=DEFAULT_HOME, radius=8, color="red", fill=True, fill_opacity=0.6, tooltip="Home").add_to(fmap)
-folium.Marker(location=[home_lat + 0.01, home_lon + 0.01], tooltip="Aircraft A1").add_to(fmap)
-            icon = folium.Icon(icon='plane', prefix='fa', color='blue')
-            folium.Marker(location=[lat, lon], icon=icon, tooltip=callsign).add_to(fmap)
+        for i in range(0, FORECAST_DURATION_MINUTES * 60 + 1, FORECAST_INTERVAL_SECONDS):
+            future_time = selected_time + timedelta(seconds=i)
+            dist_moved = velocity * i
+            future_lat, future_lon = move_position(lat, lon, heading, dist_moved)
+            s_lat, s_lon = get_shadow(future_lat, future_lon, alt, future_time)
+            if s_lat and s_lon:
+                trail.append((s_lat, s_lon))
+                if not shadow_alerted and haversine(s_lat, s_lon, TARGET_LAT, TARGET_LON) <= ALERT_RADIUS_METERS:
+                    alerts_triggered.append((callsign, int(i), s_lat, s_lon))
+                    with open(log_path, "a", newline="") as f:
+                        writer = csv.writer(f)
+                        writer.writerow([datetime.utcnow().isoformat(), callsign, int(i), s_lat, s_lon, shadow_source])
+                    send_pushover("✈️ Shadow Alert", f"{callsign} shadow over target in {int(i)}s")
+                    shadow_alerted = True
 
-# ---- Render map and capture state ----
-map_output = st_folium(fmap, width=1400, height=800)
+        if trail:
+            folium.PolyLine(trail, color="black", weight=2, opacity=0.7, dash_array="5,5",
+                            tooltip=f"{callsign} ({shadow_source})").add_to(fmap)
+        folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
+                      popup=f"{callsign}\nAlt: {round(alt)}m").add_to(marker_cluster)
+    except Exception as e:
+        st.warning(f"Error processing aircraft: {e}")
 
-# ---- Save new center/zoom ----
-if map_output and "zoom" in map_output and "center" in map_output:
-    save_map_config(map_output["zoom"], map_output["center"])
+# Display map
+st_folium(fmap, width=2000, height=1400)
 
-# ---- Alert and Auto-Refresh ----
-if alert_triggered:
-    st.error("🚨 Shadow over home location!")
+# Logs
+if os.path.exists(log_path):
+    st.sidebar.markdown("### 📅 Download Log")
+    with open(log_path, "rb") as f:
+        st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
 
-st.markdown("⏱ Auto-refresh every 30 seconds...")
-time.sleep(30)
-st.experimental_rerun()
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        st.markdown("### 📊 Recent Alerts")
+        st.dataframe(df_log.tail(10))
+
+        fig = px.scatter(df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)",
+                         color="Source", hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
+        st.plotly_chart(fig, use_container_width=True)
