@@ -165,7 +165,12 @@ for ac in aircraft_list:
 if alerts:
     alist=", ".join(alerts)
     st.error(f"🚨 Shadow ALERT for: {alist}")
-    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg",autoplay=True)
+    # Continuous looping audio alert using HTML5 audio tag
+    st.markdown("""
+    <audio autoplay loop>
+      <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
+    </audio>
+    """, unsafe_allow_html=True)
     st.markdown("""
     <script>
     if(Notification.permission==='granted') new Notification("✈️ Shadow Alert",{body:"Aircraft shadow over target!"});
