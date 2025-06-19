@@ -50,22 +50,23 @@ debug_mode = st.sidebar.checkbox("Debug raw response", value=False)
 refresh_interval = st.sidebar.number_input("Auto-refresh Interval (sec)", min_value=0, max_value=300, value=0, step=10,
                                         help="0 = no auto-refresh; >0 to refresh")
 
-# Time selection fixed to current UTC
+# Use current UTC timestamp for calculations
 today = datetime.utcnow().replace(tzinfo=timezone.utc)
 selected_time = today
 
-# Auto-refresh via HTML meta
+# Auto-refresh meta tag
 if refresh_interval > 0:
     st.markdown(f'<meta http-equiv="refresh" content="{refresh_interval}">', unsafe_allow_html=True)
 
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
+# Helper to move position along bearing
 
 def move_position(lat: float, lon: float, heading: float, dist: float) -> tuple:
     R = 6371000
     try:
         hdr = math.radians(float(heading))
-        lat1 = math.radians(float(lat)); lon1 = math.radians(float(lon))
+        lat1 = math.radians(lat); lon1 = math.radians(lon)
     except:
         return lat, lon
     lat2 = math.asin(math.sin(lat1)*math.cos(dist/R) + math.cos(lat1)*math.sin(dist/R)*math.cos(hdr))
@@ -75,6 +76,7 @@ def move_position(lat: float, lon: float, heading: float, dist: float) -> tuple:
     )
     return math.degrees(lat2), math.degrees(lon2)
 
+# Fetch from OpenSky
 
 def fetch_opensky(lat: float, lon: float, radius: float) -> list:
     dr = radius / 111.0
@@ -102,6 +104,7 @@ def fetch_opensky(lat: float, lon: float, radius: float) -> list:
         acs.append({"lat": lat_f, "lon": lon_f, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
     return acs
 
+# Fetch from ADS-B Exchange
 
 def fetch_adsb(lat: float, lon: float, radius: float) -> list:
     api_key = os.getenv("RAPIDAPI_KEY")
@@ -130,6 +133,7 @@ def fetch_adsb(lat: float, lon: float, radius: float) -> list:
         acs.append({"lat": lat_f, "lon": lon_f, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
     return acs
 
+# Calculate shadow trail
 
 def calculate_trail(lat, lon, baro, vel, hdg) -> list:
     pts = []
@@ -149,14 +153,14 @@ def calculate_trail(lat, lon, baro, vel, hdg) -> list:
         pts.append((sh_lat, sh_lon))
     return pts
 
-# Initialize map
+# Initialize and center map
 fmap = folium.Map(location=(TARGET_LAT, TARGET_LON), zoom_start=zoom_level, tiles=tile_style, control_scale=True)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
 
-# Fetch data
+# Fetch aircraft
 aircraft_list = fetch_opensky(TARGET_LAT, TARGET_LON, radius_km) if data_source=="OpenSky" else fetch_adsb(TARGET_LAT, TARGET_LON, radius_km)
 
-# Sidebar status
+# Sidebar aircraft count
 st.sidebar.markdown("### Tracked Aircraft")
 cnt = len(aircraft_list)
 st.sidebar.write(f"{cnt} aircraft in range")
@@ -167,7 +171,7 @@ with st.sidebar.expander("Show details"):
     else:
         st.write("No aircraft in range.")
 
-# Plot
+# Plot aircraft and trails with direction arrows
 for ac in aircraft_list:
     lat, lon, baro, vel, hdg, cs = ac['lat'], ac['lon'], ac['baro'], ac['vel'], ac['hdg'], ac['callsign']
     folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{cs}\nAlt:{baro}m\nSpd:{vel}m/s").add_to(fmap)
@@ -176,7 +180,8 @@ for ac in aircraft_list:
     if trail:
         line = folium.PolyLine(locations=trail, weight=shadow_width, opacity=0.6)
         fmap.add_child(line)
-        PolyLineTextPath(line, '►', repeat=True, offset=8, attributes={'fill':'black','font-weight':'bold','font-size':'12px'})
+        # Add red arrow symbols along the trail
+        PolyLineTextPath(line, '▶', repeat=True, offset=12, attributes={'fill':'red','font-weight':'bold','font-size':'16px'})
 
 # Render map
 st_folium(fmap, width=900, height=600)
