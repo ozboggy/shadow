@@ -157,4 +157,4 @@ for ac in aircraft_list:
             folium.PolyLine(locations=trail, color="black", weight=DEFAULT_SHADOW_WIDTH, opacity=0.6).add_to(fmap)
 
 # Render map
-st_folium(fmap, width=1200, height=800)
+st_folium(fmap, width=900, height=600)
