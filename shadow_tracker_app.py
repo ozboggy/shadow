@@ -32,7 +32,7 @@ data_source = st.sidebar.selectbox(
 tile_style = st.sidebar.selectbox(
     "Map Tile Style",
     ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
-    index=1
+    index=0
 )
 
 zoom_level = st.sidebar.slider("Map Zoom", min_value=1, max_value=18, value=DEFAULT_ZOOM)
