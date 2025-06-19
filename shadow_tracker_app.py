@@ -63,7 +63,27 @@ with st.sidebar:
     map_width = st.number_input("Width (px)", 400, 2000, 600)
     map_height = st.number_input("Height (px)", 300, 1500, 600)
     
-    # Alert History in sidebar
+        # Alert History in sidebar
+    st.markdown("---")
+    st.markdown("### 📥 Download Log")
+    if os.path.exists(log_path):
+        with open(log_path, "rb") as log_file_obj:
+            st.download_button(
+                "Download alert_log.csv",
+                log_file_obj,
+                file_name="alert_log.csv",
+                mime="text/csv"
+            )
+        df_log = pd.read_csv(log_path)
+        if not df_log.empty:
+            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+            st.markdown("### 🕑 Recent Alerts")
+            recent = (
+                df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']]
+                .sort_values('Time UTC', ascending=False)
+                .head(5)
+            )
+            st.dataframe(recent)
     st.markdown("---")
     st.markdown("### 🕑 Recent Alerts")
     if os.path.exists(log_path):
@@ -225,30 +245,7 @@ if map_data and 'zoom' in map_data and 'center' in map_data:
     st.session_state.zoom = map_data['zoom']
     st.session_state.center = map_data['center']
 
-# Alert History Expander below map
-with st.expander("🖼 Alert History", expanded=True):
-    if os.path.exists(log_path):
-        st.markdown("### 📥 Download Log")
-        with open(log_path, "rb") as f:
-            st.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
-        df_log = pd.read_csv(log_path)
-        if not df_log.empty:
-            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-            st.markdown("### 🕑 Recent Alerts Detail")
-            st.dataframe(
-                df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']]
-                    .sort_values('Time UTC', ascending=False)
-                    .head(10)
-            )
-            st.markdown("### 📊 Alert Timeline")
-            fig = px.scatter(
-                df_log,
-                x="Time UTC", y="Callsign",
-                size="Time Until Alert (sec)",
-                hover_data=["Lat", "Lon"],
-                title="Shadow Alerts Over Time"
-            )
-            st.plotly_chart(fig, use_container_width=True)
+# Remove expander block (history now in sidebar)
 
 # Test buttons
 if test_alert:
