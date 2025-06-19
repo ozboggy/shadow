@@ -62,8 +62,18 @@ with st.sidebar:
     zoom_level = st.slider("Initial Zoom Level", 1, 18, DEFAULT_ZOOM)
     map_width = st.number_input("Width (px)", 400, 2000, 600)
     map_height = st.number_input("Height (px)", 300, 1500, 600)
-
-# Current UTC time
+    
+    # Alert History in sidebar
+    st.markdown("---")
+    st.markdown("### 🕑 Recent Alerts")
+    if os.path.exists(log_path):
+        df_log = pd.read_csv(log_path)
+        if not df_log.empty:
+            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+            recent = df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']].sort_values('Time UTC', ascending=False).head(5)
+            st.dataframe(recent)
+    st.markdown("---")
+# Current UTC time"
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 
 # Title
