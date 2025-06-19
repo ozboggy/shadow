@@ -9,3 +9,4 @@ pyfr24
 python-dotenv
 skyfields
 topos
+os
