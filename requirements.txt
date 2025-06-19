@@ -5,4 +5,5 @@ streamlit-folium
 pysolar
 pandas
 dotenv
+plotly.express
 plotly
