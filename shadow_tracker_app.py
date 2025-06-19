@@ -64,8 +64,7 @@ debug_mode = st.sidebar.checkbox("Debug raw response", False)
 refresh_interval = st.sidebar.number_input("Auto-refresh Interval (sec)", 0, 300, 0, 10)
 enable_pushover = st.sidebar.checkbox("Enable Pushover Alerts", False)
 enable_audio = st.sidebar.checkbox("Enable Audio Alert at Home", False)
-# Test on-screen alert
-if st.sidebar.button("Send Test Home Alert"):
+# Test on-screen alert\if st.sidebar.button("Send Test Home Alert"):
     st.session_state['test_home_alert'] = True
 
 if st.sidebar.button("Send Test Push"):
@@ -86,6 +85,9 @@ if st.sidebar.button("Send Test Audio"):
     beep = generate_beep()
     st.sidebar.audio(beep, format='audio/wav')
 
+if st.sidebar.button("Send Alert Push"):
+    st.session_state['send_alert'] = True
+
 # Auto-refresh
 if refresh_interval > 0:
     st.markdown(f'<meta http-equiv="refresh" content="{refresh_interval}">', unsafe_allow_html=True)
@@ -93,7 +95,7 @@ if refresh_interval > 0:
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 
-# Helpers
+# Helper functions
 
 def move_position(lat, lon, heading, dist):
     R = 6371000
@@ -127,7 +129,6 @@ def fetch_opensky(lat, lon, radius):
     except Exception as e:
         st.error(f"OpenSky error: {e}")
         return []
-
     acs = []
     for s in states:
         if len(s) < 11:
@@ -160,11 +161,10 @@ def fetch_adsb(lat, lon, radius):
     except Exception as e:
         st.error(f"ADS-B error: {e}")
         return []
-
     acs = []
     for ac in ac_list:
         try:
-            cs = (ac.get("flight") or ac.get("hex") or "").strip()
+            cs=(ac.get("flight") or ac.get("hex") or "").strip()
             lat_f, lon_f = float(ac.get("lat")), float(ac.get("lon"))
             baro_val = ac.get("alt_baro")
             baro = float(baro_val) if baro_val is not None else 0.0
@@ -183,7 +183,7 @@ def calculate_trail(lat, lon, baro, vel, hdg):
         dist=vel*i
         f_lat,f_lon=move_position(lat,lon,hdg,dist)
         sun_alt=get_sun_altitude(f_lat,f_lon,ft)
-        if (track_sun and sun_alt>0) or (track_moon and sun_alt<=0) or override_trails:
+        if(track_sun and sun_alt>0) or (track_moon and sun_alt<=0) or override_trails:
             az=get_sun_azimuth(f_lat,f_lon,ft)
         else:
             continue
@@ -237,7 +237,8 @@ for ac in aircraft_list:
 # Render map
 st_folium(fmap,width=900,height=600)
 
-# On-screen alert for home proximity\ if home_alert:
+# On-screen alert for home proximity
+if home_alert:
     st.warning("⚠️ Aircraft shadow over home!")
 
 # Audio alert if condition met
