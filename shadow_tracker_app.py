@@ -35,7 +35,7 @@ with st.sidebar:
     radius_km = st.slider("Search Radius (km)", min_value=1, max_value=100, value=DEFAULT_RADIUS_KM)
     st.markdown(f"**Search Radius:** {radius_km} km")
     shadow_width = st.slider("Shadow Line Width", min_value=1, max_value=10, value=DEFAULT_SHADOW_WIDTH)
-    alert_radius_m = st.slider("Alert Radius (m)", min_value=0, max_value=100, value=50)
+    alert_radius_m = st.slider("Alert Radius (m)", min_value=0, max_value=1000, value=50)
     st.markdown(f"**Alert Radius:** {alert_radius_m} m")
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
@@ -146,10 +146,10 @@ elif data_source == "ADS-B Exchange":
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(aircraft_list)}")
 
 # Plot aircraft and shadows
+alerts = []
 for ac in aircraft_list:
     lat, lon = ac["lat"], ac["lon"]
     baro, vel, hdg, cs = ac["baro"], ac["vel"], ac["hdg"], ac["callsign"]
-    # Check for alerts based on shadow proximity
     alert = False
     trail = []
     for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
@@ -162,17 +162,22 @@ for ac in aircraft_list:
             sh_lat = f_lat + (sd/111111)*math.cos(math.radians(az+180))
             sh_lon = f_lon + (sd/(111111*math.cos(math.radians(f_lat))))*math.sin(math.radians(az+180))
             trail.append((sh_lat, sh_lon))
-            # alert check
             if hav(sh_lat, sh_lon, CENTER_LAT, CENTER_LON) <= alert_radius_m:
                 alert = True
-    # draw aircraft icon
+    if alert:
+        alerts.append(cs)
     folium.Marker(
         location=(lat, lon),
         icon=DivIcon(icon_size=(30,30), icon_anchor=(15,15), html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: {'red' if alert else 'blue'}; font-size: 24px;"></i>'),
         popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
     ).add_to(fmap)
-    # draw trail
     if trail:
         folium.PolyLine(locations=trail, color="red" if alert else "black", weight=shadow_width, opacity=0.6).add_to(fmap)
+
+# Trigger alerts
+if alerts:
+    st.error(f"🚨 Shadow ALERT for: {', '.join(alerts)}")
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+
 # Render map
 st_folium(fmap, width=map_width, height=map_height)
