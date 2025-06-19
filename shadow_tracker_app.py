@@ -64,6 +64,9 @@ debug_mode = st.sidebar.checkbox("Debug raw response", False)
 refresh_interval = st.sidebar.number_input("Auto-refresh Interval (sec)", 0, 300, 0, 10)
 enable_pushover = st.sidebar.checkbox("Enable Pushover Alerts", False)
 enable_audio = st.sidebar.checkbox("Enable Audio Alert at Home", False)
+# Test on-screen alert
+if st.sidebar.button("Send Test Home Alert"):
+    st.session_state['test_home_alert'] = True
 
 if st.sidebar.button("Send Test Push"):
     resp = requests.post(
@@ -83,9 +86,7 @@ if st.sidebar.button("Send Test Audio"):
     beep = generate_beep()
     st.sidebar.audio(beep, format='audio/wav')
 
-if st.sidebar.button("Send Alert Push"):
-    st.session_state.send_alert = True
-
+# Auto-refresh
 if refresh_interval > 0:
     st.markdown(f'<meta http-equiv="refresh" content="{refresh_interval}">', unsafe_allow_html=True)
 
@@ -121,7 +122,7 @@ def fetch_opensky(lat, lon, radius):
         r = requests.get(url)
         r.raise_for_status()
         if debug_mode:
-            st.write("OpenSky raw response:", r.text)
+            st.write("OpenSky raw response:\n", r.text)
         states = r.json().get("states", [])
     except Exception as e:
         st.error(f"OpenSky error: {e}")
@@ -134,7 +135,7 @@ def fetch_opensky(lat, lon, radius):
         try:
             cs = s[1].strip() or s[0]
             lat_f, lon_f = float(s[6]), float(s[5])
-            baro = float(s[7] or 0)
+            baro = float(s[7]) if s[7] is not None else 0.0
             vel = float(s[9])
             hdg = float(s[10])
         except Exception:
@@ -154,7 +155,7 @@ def fetch_adsb(lat, lon, radius):
         r = requests.get(url,headers=headers)
         r.raise_for_status()
         if debug_mode:
-            st.write("ADS-B raw response:", r.text)
+            st.write("ADS-B raw response:\n", r.text)
         ac_list = r.json().get("ac",[])
     except Exception as e:
         st.error(f"ADS-B error: {e}")
@@ -165,7 +166,8 @@ def fetch_adsb(lat, lon, radius):
         try:
             cs = (ac.get("flight") or ac.get("hex") or "").strip()
             lat_f, lon_f = float(ac.get("lat")), float(ac.get("lon"))
-            baro = float(ac.get("alt_baro") or 0)
+            baro_val = ac.get("alt_baro")
+            baro = float(baro_val) if baro_val is not None else 0.0
             vel = float(ac.get("gs") or ac.get("spd") or 0)
             hdg = float(ac.get("track") or ac.get("trak") or 0)
         except Exception:
@@ -181,7 +183,7 @@ def calculate_trail(lat, lon, baro, vel, hdg):
         dist=vel*i
         f_lat,f_lon=move_position(lat,lon,hdg,dist)
         sun_alt=get_sun_altitude(f_lat,f_lon,ft)
-        if(track_sun and sun_alt>0) or (track_moon and sun_alt<=0) or override_trails:
+        if (track_sun and sun_alt>0) or (track_moon and sun_alt<=0) or override_trails:
             az=get_sun_azimuth(f_lat,f_lon,ft)
         else:
             continue
@@ -210,6 +212,12 @@ if st.session_state.get('send_alert'):
 # Track home-shadow condition
 home_alert=False
 
+# On-screen test alert
+if st.session_state.get('test_home_alert'):
+    st.warning("⚠️ Test: Aircraft shadow over home!")
+    home_alert=True
+    st.session_state['test_home_alert']=False
+
 # Plot
 for ac in aircraft_list:
     lat,lon,baro,vel,hdg,cs = ac['lat'],ac['lon'],ac['baro'],ac['vel'],ac['hdg'],ac['callsign']
@@ -229,8 +237,7 @@ for ac in aircraft_list:
 # Render map
 st_folium(fmap,width=900,height=600)
 
-# On-screen alert for home proximity
-if home_alert:
+# On-screen alert for home proximity\ if home_alert:
     st.warning("⚠️ Aircraft shadow over home!")
 
 # Audio alert if condition met
