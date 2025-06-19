@@ -31,8 +31,7 @@ with st.sidebar:
         "Data Source",
         ["OpenSky", "ADS-B Exchange"],
         index=0
-    )(
-        "Data Source",
+    )
         ["OpenSky", "ADS-B Exchange"],
         index=0
     )
