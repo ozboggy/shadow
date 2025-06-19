@@ -8,6 +8,8 @@ from streamlit_folium import st_folium
 from datetime import datetime, timezone, timedelta
 import math
 import requests
+import pandas as pd
+import plotly.express as px
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 
 # Constants
@@ -33,6 +35,13 @@ def send_pushover(title, message):
     except Exception as e:
         st.warning(f"Pushover notification failed: {e}")
 
+# Log file setup
+log_file = "alert_log.csv"
+log_path = os.path.join(os.path.dirname(__file__), log_file)
+if not os.path.exists(log_path):
+    with open(log_path, "w", newline="") as f:
+        f.write("Time UTC,Callsign,Time Until Alert (sec),Lat,Lon,Source\n")
+
 CENTER_LAT = -33.7602563
 CENTER_LON = 150.9717434
 DEFAULT_RADIUS_KM = 20
@@ -47,7 +56,7 @@ with st.sidebar:
     tile_style = st.selectbox(
         "Tile Style",
         ["OpenStreetMap", "CartoDB positron"],
-        index=0  # default to OpenStreetMap
+        index=0
     )
     data_source = st.selectbox(
         "Data Source",
@@ -66,9 +75,7 @@ with st.sidebar:
     st.header("Map Settings")
     zoom_level = st.slider("Initial Zoom Level", min_value=1, max_value=18, value=DEFAULT_ZOOM)
     map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=600)
-
     map_height = st.number_input("Height (px)", min_value=300, max_value=1500, value=600)
-     
 
 # Use current UTC time for calculations
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -89,7 +96,7 @@ folium.Marker(
     popup="Home"
 ).add_to(fmap)
 
-# Set shadow line width constant (sidebar removed)
+# Set shadow line width constant
 shadow_width = DEFAULT_SHADOW_WIDTH
 
 # Utils
@@ -114,13 +121,13 @@ def hav(lat1, lon1, lat2, lon2):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
     return R * 2 * math.asin(math.sqrt(a))
 
-# Fetch aircraft
+# Fetch and process aircraft data
 aircraft_list = []
 if data_source == "OpenSky":
     dr = radius_km / 111.0
-    south = CENTER_LAT - dr; north = CENTER_LAT + dr
+    south, north = CENTER_LAT - dr, CENTER_LAT + dr
     dlon = dr / math.cos(math.radians(CENTER_LAT))
-    west = CENTER_LON - dlon; east = CENTER_LON + dlon
+    west, east = CENTER_LON - dlon, CENTER_LON + dlon
     url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
     try:
         r = requests.get(url); r.raise_for_status()
@@ -130,14 +137,11 @@ if data_source == "OpenSky":
         states = []
     for s in states:
         if len(s) < 11: continue
-        try:
-            icao, cs_raw, _, _, _, lon, lat, baro_raw, _, vel, hdg = s[:11]
-            cs = cs_raw.strip() if cs_raw else icao
-            aircraft_list.append({"lat": float(lat), "lon": float(lon),
-                                  "baro": float(baro_raw) if baro_raw else 0.0,
-                                  "vel": float(vel), "hdg": float(hdg), "callsign": cs})
-        except:
-            continue
+        _, cs_raw, _, _, _, lon, lat, baro_raw, _, vel, hdg = s[:11]
+        cs = cs_raw.strip() if cs_raw else s[0]
+        aircraft_list.append({"lat": float(lat), "lon": float(lon),
+                              "baro": float(baro_raw) if baro_raw else 0.0,
+                              "vel": float(vel), "hdg": float(hdg), "callsign": cs})
 elif data_source == "ADS-B Exchange":
     api_key = os.getenv("RAPIDAPI_KEY")
     if not api_key:
@@ -153,24 +157,21 @@ elif data_source == "ADS-B Exchange":
             st.error(f"ADS-B Exchange error: {e}")
             adsb = []
     for ac in adsb:
-        try:
-            lat = float(ac.get("lat")); lon = float(ac.get("lon"))
-            vel_raw = ac.get("gs") or ac.get("spd")
-            hdg_raw = ac.get("track") or ac.get("trak")
-            baro_raw = ac.get("alt_baro")
-            cs = ac.get("flight") or ac.get("hex")
-            aircraft_list.append({"lat": lat, "lon": lon,
-                                  "baro": float(baro_raw) if baro_raw else 0.0,
-                                  "vel": float(vel_raw) if vel_raw else 0.0,
-                                  "hdg": float(hdg_raw) if hdg_raw else 0.0,
-                                  "callsign": cs.strip() if cs else None})
-        except:
-            continue
+        lat = float(ac.get("lat")); lon = float(ac.get("lon"))
+        vel_raw = ac.get("gs") or ac.get("spd")
+        hdg_raw = ac.get("track") or ac.get("trak")
+        baro_raw = ac.get("alt_baro")
+        cs = ac.get("flight") or ac.get("hex")
+        aircraft_list.append({"lat": lat, "lon": lon,
+                              "baro": float(baro_raw) if baro_raw else 0.0,
+                              "vel": float(vel_raw) if vel_raw else 0.0,
+                              "hdg": float(hdg_raw) if hdg_raw else 0.0,
+                              "callsign": cs.strip() if cs else None})
 
 # Display aircraft count with icon
 st.sidebar.markdown(f"✈️ **Tracked Aircraft:** {len(aircraft_list)}")
 
-# Plot aircraft and shadows
+# Plot aircraft and shadow trails
 alerts = []
 for ac in aircraft_list:
     lat, lon = ac["lat"], ac["lon"]
@@ -181,7 +182,7 @@ for ac in aircraft_list:
         ft = selected_time + timedelta(seconds=i)
         f_lat, f_lon = move_position(lat, lon, hdg, vel * i)
         sun_alt = get_sun_altitude(f_lat, f_lon, ft)
-        if track_sun and sun_alt > 0 or track_moon and sun_alt <= 0 or override_trails:
+        if (track_sun and sun_alt > 0) or (track_moon and sun_alt <= 0) or override_trails:
             az = get_sun_azimuth(f_lat, f_lon, ft)
             sd = baro / math.tan(math.radians(sun_alt if sun_alt>0 else 1))
             sh_lat = f_lat + (sd/111111)*math.cos(math.radians(az+180))
@@ -191,19 +192,25 @@ for ac in aircraft_list:
                 alert = True
     if alert:
         alerts.append(cs)
+    # Aircraft marker with rotation and alert coloring
     folium.Marker(
         location=(lat, lon),
-        icon=DivIcon(icon_size=(30,30), icon_anchor=(15,15), html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: {'red' if alert else 'blue'}; font-size: 24px;"></i>'),
+        icon=DivIcon(
+            icon_size=(30,30), icon_anchor=(15,15),
+            html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: {'red' if alert else 'blue'}; font-size: 24px;"></i>'
+        ),
         popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
     ).add_to(fmap)
+    # Shadow trail polyline
     if trail:
         folium.PolyLine(locations=trail, color="red" if alert else "black", weight=shadow_width, opacity=0.6).add_to(fmap)
 
-# Trigger alerts
+# Trigger alerts and notifications
 if alerts:
-    st.error(f"🚨 Shadow ALERT for: {', '.join(alerts)}")
+    alert_list = ", ".join(alerts)
+    st.error(f"🚨 Shadow ALERT for: {alert_list}")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    # Browser desktop notification
+    # Desktop notification snippet
     st.markdown("""
     <script>
     if (Notification.permission === 'granted') {
@@ -217,15 +224,31 @@ if alerts:
     }
     </script>
     """, unsafe_allow_html=True)
+    send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alert_list}")
 else:
     st.success("✅ No forecast shadow paths intersect target area.")
 
-# Test alert button
+# Logs
+if os.path.exists(log_path):
+    st.sidebar.markdown("### 📥 Download Log")
+    with open(log_path, "rb") as f:
+        st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
+
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        st.markdown("### 📊 Recent Alerts")
+        st.dataframe(df_log.tail(10))
+
+        fig = px.scatter(df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)",
+                         hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
+        st.plotly_chart(fig, use_container_width=True)
+
+# Test alert and Pushover buttons handling
 if test_alert:
     st.error("🚨 Test Alert Triggered!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
 
-# Test Pushover button
 if test_pushover:
     st.info("🔔 Sending test Pushover notification...")
     send_pushover("✈️ Test Push", "This is a test Pushover notification from your tracker.")
