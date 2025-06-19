@@ -49,12 +49,15 @@ selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 # Initialize map centered at Home with initial zoom
-center = (CENTER_LAT, CENTER_LON)
-fmap = folium.Map(location=center, zoom_start=zoom_level, tiles=tile_style, control_scale=True)
-
+fmap = folium.Map(
+    location=[CENTER_LAT, CENTER_LON],  # Home location
+    zoom_start=zoom_level,
+    tiles=tile_style,
+    control_scale=True
+)
 # Home marker
 folium.Marker(
-    location=center,
+    location=[CENTER_LAT, CENTER_LON],
     icon=folium.Icon(color="red", icon="home", prefix="fa"),
     popup="Home"
 ).add_to(fmap)
@@ -100,9 +103,11 @@ if data_source == "OpenSky":
         try:
             icao, cs_raw, _, _, _, lon, lat, baro_raw, _, vel, hdg = s[:11]
             cs = cs_raw.strip() if cs_raw else icao
-            aircraft_list.append({"lat": float(lat), "lon": float(lon),
-                                  "baro": float(baro_raw) if baro_raw else 0.0,
-                                  "vel": float(vel), "hdg": float(hdg), "callsign": cs})
+            aircraft_list.append({
+                "lat": float(lat), "lon": float(lon),
+                "baro": float(baro_raw) if baro_raw else 0.0,
+                "vel": float(vel), "hdg": float(hdg), "callsign": cs
+            })
         except:
             continue
 elif data_source == "ADS-B Exchange":
@@ -126,11 +131,13 @@ elif data_source == "ADS-B Exchange":
             hdg_raw = ac.get("track") or ac.get("trak")
             baro_raw = ac.get("alt_baro")
             cs = ac.get("flight") or ac.get("hex")
-            aircraft_list.append({"lat": lat, "lon": lon,
-                                  "baro": float(baro_raw) if baro_raw else 0.0,
-                                  "vel": float(vel_raw) if vel_raw else 0.0,
-                                  "hdg": float(hdg_raw) if hdg_raw else 0.0,
-                                  "callsign": cs.strip() if cs else None})
+            aircraft_list.append({
+                "lat": lat, "lon": lon,
+                "baro": float(baro_raw) if baro_raw else 0.0,
+                "vel": float(vel_raw) if vel_raw else 0.0,
+                "hdg": float(hdg_raw) if hdg_raw else 0.0,
+                "callsign": cs.strip() if cs else None
+            })
         except:
             continue
 # Display aircraft count
@@ -142,8 +149,11 @@ for ac in aircraft_list:
     baro, vel, hdg, cs = ac["baro"], ac["vel"], ac["hdg"], ac["callsign"]
     folium.Marker(
         location=(lat, lon),
-        icon=DivIcon(icon_size=(30,30), icon_anchor=(15,15),
-                     html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: blue; font-size: 24px;"></i>'),
+        icon=DivIcon(
+            icon_size=(30,30),
+            icon_anchor=(15,15),
+            html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: blue; font-size: 24px;"></i>'
+        ),
         popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
     ).add_to(fmap)
     if track_sun or track_moon or override_trails:
