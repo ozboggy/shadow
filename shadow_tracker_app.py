@@ -10,8 +10,8 @@ import requests
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 
 # Constants
-CENTER_LAT = 0.0
-CENTER_LON = 0.0
+CENTER_LAT = -33.7602563
+CENTER_LON = 150.9717434
 DEFAULT_RADIUS_KM = 20
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
