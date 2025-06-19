@@ -63,7 +63,7 @@ def move_position(lat, lon, heading, dist):
         return lat, lon
     lat2 = math.asin(math.sin(lat1)*math.cos(dist/R) + math.cos(lat1)*math.sin(dist/R)*math.cos(hdr))
     lon2 = lon1 + math.atan2(math.sin(hdr)*math.sin(dist/R)*math.cos(lat1), math.cos(dist/R)-math.sin(lat1)*math.sin(lat2))
-    return math.degrees(lat2), math.degrees(lat2)
+    return math.degrees(lat2), math.degrees(lon2)
 
 
 def hav(lat1, lon1, lat2, lon2):
