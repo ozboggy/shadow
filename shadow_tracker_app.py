@@ -203,6 +203,27 @@ for ac in aircraft_list:
 if alerts:
     st.error(f"🚨 Shadow ALERT for: {', '.join(alerts)}")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+# Alert UI
+if alerts_triggered:
+    st.error("🚨 Shadow ALERT!")
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+    st.markdown("""
+    <script>
+    if (Notification.permission === 'granted') {
+        new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over target!" });
+    } else {
+        Notification.requestPermission().then(p => {
+            if (p === 'granted') {
+                new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over target!" });
+            }
+        });
+    }
+    </script>
+    """, unsafe_allow_html=True)
+    for cs, t, _, _ in alerts_triggered:
+        st.write(f"✈️ {cs} — in approx. {t} seconds")
+else:
+    st.success("✅ No forecast shadow paths intersect target area.")
 
 # Test alert button
 if test_alert:
