@@ -10,7 +10,8 @@ import math
 import requests
 import pandas as pd
 import plotly.express as px
-from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
+from pysolar.solar import get_altitude as get_sun_altitude
+from pysolar.solar import azimuth as get_sun_azimuth
 
 # Cache the base map to avoid flickering
 @st.cache_resource
