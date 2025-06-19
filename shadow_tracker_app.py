@@ -124,45 +124,63 @@ def hav(lat1, lon1, lat2, lon2):
 # Fetch aircraft data
 aircraft_list = []
 if data_source == "OpenSky":
-    dr = radius_km/111.0
-    south, north = CENTER_LAT-dr, CENTER_LAT+dr
-    dlon = dr/math.cos(math.radians(CENTER_LAT))
-    west, east = CENTER_LON-dlon, CENTER_LON+dlon
+    dr = radius_km / 111.0
+    south, north = CENTER_LAT - dr, CENTER_LAT + dr
+    dlon = dr / math.cos(math.radians(CENTER_LAT))
+    west, east = CENTER_LON - dlon, CENTER_LON + dlon
     url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
     try:
-        r = requests.get(url); r.raise_for_status()
+        r = requests.get(url)
+        r.raise_for_status()
         states = r.json().get("states", [])
-    except:
+    except Exception:
         states = []
     for s in states:
-        if len(s) < 11: continue
-        icao, cs_raw, *_ , lon, lat, baro_raw, vel, hdg = s[0], s[1], *s[2:6], s[5], s[6], s[7], s[9], s[10]
-        cs = cs_raw.strip() if cs_raw else icao
+        if len(s) < 11:
+            continue
+        # Explicit field indices
+        icao = s[0]
+        cs_raw = s[1]
+        lon = s[5]
+        lat = s[6]
+        baro_raw = s[7]
+        vel = s[9]
+        hdg = s[10]
+        cs = cs_raw.strip() if isinstance(cs_raw, str) else icao
         aircraft_list.append({
             "lat": float(lat),
             "lon": float(lon),
-            "baro": float(baro_raw) if baro_raw else 0.0,
-            "vel": float(vel),
-            "hdg": float(hdg),
+            "baro": float(baro_raw) if baro_raw is not None else 0.0,
+            "vel": float(vel) if vel is not None else 0.0,
+            "hdg": float(hdg) if hdg is not None else 0.0,
             "callsign": cs
         })
 elif data_source == "ADS-B Exchange":
     api_key = os.getenv("RAPIDAPI_KEY")
     if api_key:
         url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-        headers={"x-rapidapi-key":api_key,"x-rapidapi-host":"adsbexchange-com1.p.rapidapi.com"}
+        headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
         try:
-            r2 = requests.get(url, headers=headers); r2.raise_for_status()
+            r2 = requests.get(url, headers=headers)
+            r2.raise_for_status()
             adsb = r2.json().get("ac", [])
-        except:
+        except Exception:
             adsb = []
         for ac in adsb:
-            lat=ac.get("lat"); lon=ac.get("lon")
-            vel=ac.get("gs") or ac.get("spd"); hdg=ac.get("track") or ac.get("trak")
-            baro=ac.get("alt_baro"); cs=ac.get("flight") or ac.get("hex")
-            aircraft_list.append({"lat":float(lat),"lon":float(lon),"baro":float(baro) if baro else 0.0,
-                                  "vel":float(vel) if vel else 0.0,"hdg":float(hdg) if hdg else 0.0,
-                                  "callsign":cs.strip() if cs else None})
+            lat = ac.get("lat")
+            lon = ac.get("lon")
+            vel_raw = ac.get("gs") or ac.get("spd")
+            hdg_raw = ac.get("track") or ac.get("trak")
+            baro_raw = ac.get("alt_baro")
+            cs = ac.get("flight") or ac.get("hex")
+            aircraft_list.append({
+                "lat": float(lat),
+                "lon": float(lon),
+                "baro": float(baro_raw) if baro_raw is not None else 0.0,
+                "vel": float(vel_raw) if vel_raw is not None else 0.0,
+                "hdg": float(hdg_raw) if hdg_raw is not None else 0.0,
+                "callsign": cs.strip() if isinstance(cs, str) else None
+            })
 
 # Sidebar count
 st.sidebar.markdown(f"✈️ **Tracked Aircraft:** {len(aircraft_list)}")
