@@ -68,7 +68,7 @@ with st.sidebar:
     map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=600)
 
     map_height = st.number_input("Height (px)", min_value=300, max_value=1500, value=600)
-     // default changed to 600
+     
 
 # Use current UTC time for calculations
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
