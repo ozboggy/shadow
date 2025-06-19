@@ -232,29 +232,42 @@ if map_data and 'zoom' in map_data and 'center' in map_data:
     st.session_state.zoom = map_data['zoom']
     st.session_state.center = map_data['center']
 
-# Logs: show recent alerts and timeline below map
-if os.path.exists(log_path):
-    st.markdown("### 📥 Download Log")
-    with open(log_path, "rb") as f:
-        st.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
-    df_log = pd.read_csv(log_path)
-    if not df_log.empty:
-        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-        st.markdown("### 🕑 Recent Alerts Detail")
-        st.dataframe(
-            df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']]
-                .sort_values('Time UTC', ascending=False)
-                .head(10)
-        )
-        st.markdown("### 📊 Alert Timeline")
-        fig = px.scatter(
-            df_log,
-            x="Time UTC", y="Callsign",
-            size="Time Until Alert (sec)",
-            hover_data=["Lat", "Lon"],
-            title="Shadow Alerts Over Time"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+# Render the map and preserve view
+map_data = st_folium(
+    fmap,
+    width=map_width,
+    height=map_height,
+    returned_objects=['zoom', 'center'],
+    key='aircraft_map'
+)
+if map_data and 'zoom' in map_data and 'center' in map_data:
+    st.session_state.zoom = map_data['zoom']
+    st.session_state.center = map_data['center']
+
+# Alert History in expandable window
+with st.expander("🖼 Alert History"):
+    if os.path.exists(log_path):
+        st.markdown("### 📥 Download Log")
+        with open(log_path, "rb") as f:
+            st.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
+        df_log = pd.read_csv(log_path)
+        if not df_log.empty:
+            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+            st.markdown("### 🕑 Recent Alerts Detail")
+            st.dataframe(
+                df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']]
+                    .sort_values('Time UTC', ascending=False)
+                    .head(10)
+            )
+            st.markdown("### 📊 Alert Timeline")
+            fig = px.scatter(
+                df_log,
+                x="Time UTC", y="Callsign",
+                size="Time Until Alert (sec)",
+                hover_data=["Lat", "Lon"],
+                title="Shadow Alerts Over Time"
+            )
+            st.plotly_chart(fig, use_container_width=True)
 # Test buttons
 if test_alert:
     st.error("🚨 Test Alert Triggered!")
