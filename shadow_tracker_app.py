@@ -165,8 +165,8 @@ elif data_source == "ADS-B Exchange":
         except:
             continue
 
-# Display aircraft count
-st.sidebar.markdown(f"**Tracked Aircraft:** {len(aircraft_list)}")
+# Display aircraft count with icon
+st.sidebar.markdown(f"✈️ **Tracked Aircraft:** {len(aircraft_list)}")}")
 
 # Plot aircraft and shadows
 alerts = []
