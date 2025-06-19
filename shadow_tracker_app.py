@@ -11,6 +11,30 @@ import requests
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 
 # Constants
+
+# Pushover configuration (set these in your .env)
+PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
+PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+
+# Function to send Pushover notifications
+def send_pushover(title, message):
+    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
+        st.warning("Pushover credentials not set in environment.")
+        return
+    try:
+        requests.post(
+            "https://api.pushover.net/1/messages.json",
+            data={
+                "token": PUSHOVER_API_TOKEN,
+                "user": PUSHOVER_USER_KEY,
+                "title": title,
+                "message": message
+            }
+        )
+    except Exception as e:
+        st.warning(f"Pushover notification failed: {e}")
+
+# Constants
 CENTER_LAT = -33.7602563
 CENTER_LON = 150.9717434
 DEFAULT_RADIUS_KM = 20
@@ -41,6 +65,7 @@ with st.sidebar:
     track_moon = st.checkbox("Show Moon Shadows", value=False)
     override_trails = st.checkbox("Show Trails Regardless of Sun/Moon", value=False)
     test_alert = st.button("Test Alert")  # Trigger a test alert
+    test_pushover = st.button("Test Pushover")  # Trigger a test Pushover notification  # Trigger a test alert
     st.header("Map Settings")
     zoom_level = st.slider("Initial Zoom Level", min_value=1, max_value=18, value=DEFAULT_ZOOM)
     map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=1200)
@@ -184,6 +209,11 @@ if alerts:
 if test_alert:
     st.error("🚨 Test Alert Triggered!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+
+# Test Pushover button
+if test_pushover:
+    st.info("🔔 Sending test Pushover notification...")
+    send_pushover("✈️ Test Push", "This is a test Pushover notification from your tracker.")
 
 # Render map
 st_folium(fmap, width=map_width, height=map_height)
