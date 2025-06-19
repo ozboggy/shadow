@@ -17,6 +17,7 @@ DEFAULT_RADIUS_KM = 20
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 DEFAULT_SHADOW_WIDTH = 3
+DEFAULT_ZOOM = 11
 
 # Sidebar controls
 with st.sidebar:
@@ -37,7 +38,8 @@ with st.sidebar:
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
     override_trails = st.checkbox("Show Trails Regardless of Sun/Moon", value=False)
-    st.header("Map Size")
+    st.header("Map Settings")
+    zoom_level = st.slider("Initial Zoom Level", min_value=1, max_value=18, value=DEFAULT_ZOOM)
     map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=1200)
     map_height = st.number_input("Height (px)", min_value=300, max_value=1500, value=800)
 
@@ -46,9 +48,9 @@ selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
-# Initialize map
+# Initialize map centered at Home with initial zoom
 center = (CENTER_LAT, CENTER_LON)
-fmap = folium.Map(location=center, zoom_start=8, tiles=tile_style, control_scale=True)
+fmap = folium.Map(location=center, zoom_start=zoom_level, tiles=tile_style, control_scale=True)
 
 # Home marker
 folium.Marker(
@@ -58,7 +60,6 @@ folium.Marker(
 ).add_to(fmap)
 
 # Utils
-
 def move_position(lat, lon, heading, dist):
     R = 6371000
     try:
@@ -73,7 +74,6 @@ def move_position(lat, lon, heading, dist):
     lon2 = lon1 + math.atan2(math.sin(hdr)*math.sin(dist/R)*math.cos(lat1), math.cos(dist/R)-math.sin(lat1)*math.sin(lat2))
     return math.degrees(lat2), math.degrees(lon2)
 
-
 def hav(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = math.radians(lat2 - lat1)
@@ -83,7 +83,6 @@ def hav(lat1, lon1, lat2, lon2):
 
 # Fetch aircraft
 aircraft_list = []
-
 if data_source == "OpenSky":
     dr = radius_km / 111.0
     south = CENTER_LAT - dr; north = CENTER_LAT + dr
@@ -101,14 +100,11 @@ if data_source == "OpenSky":
         try:
             icao, cs_raw, _, _, _, lon, lat, baro_raw, _, vel, hdg = s[:11]
             cs = cs_raw.strip() if cs_raw else icao
-            aircraft_list.append({
-                "lat": float(lat), "lon": float(lon),
-                "baro": float(baro_raw) if baro_raw else 0.0,
-                "vel": float(vel), "hdg": float(hdg), "callsign": cs
-            })
+            aircraft_list.append({"lat": float(lat), "lon": float(lon),
+                                  "baro": float(baro_raw) if baro_raw else 0.0,
+                                  "vel": float(vel), "hdg": float(hdg), "callsign": cs})
         except:
             continue
-
 elif data_source == "ADS-B Exchange":
     api_key = os.getenv("RAPIDAPI_KEY")
     if not api_key:
@@ -130,16 +126,13 @@ elif data_source == "ADS-B Exchange":
             hdg_raw = ac.get("track") or ac.get("trak")
             baro_raw = ac.get("alt_baro")
             cs = ac.get("flight") or ac.get("hex")
-            aircraft_list.append({
-                "lat": lat, "lon": lon,
-                "baro": float(baro_raw) if baro_raw else 0.0,
-                "vel": float(vel_raw) if vel_raw else 0.0,
-                "hdg": float(hdg_raw) if hdg_raw else 0.0,
-                "callsign": cs.strip() if cs else None
-            })
+            aircraft_list.append({"lat": lat, "lon": lon,
+                                  "baro": float(baro_raw) if baro_raw else 0.0,
+                                  "vel": float(vel_raw) if vel_raw else 0.0,
+                                  "hdg": float(hdg_raw) if hdg_raw else 0.0,
+                                  "callsign": cs.strip() if cs else None})
         except:
             continue
-
 # Display aircraft count
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(aircraft_list)}")
 
@@ -147,14 +140,10 @@ st.sidebar.markdown(f"**Tracked Aircraft:** {len(aircraft_list)}")
 for ac in aircraft_list:
     lat, lon = ac["lat"], ac["lon"]
     baro, vel, hdg, cs = ac["baro"], ac["vel"], ac["hdg"], ac["callsign"]
-    # Rotating plane icon
     folium.Marker(
         location=(lat, lon),
-        icon=DivIcon(
-            icon_size=(30,30),
-            icon_anchor=(15,15),
-            html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: blue; font-size: 24px;"></i>'
-        ),
+        icon=DivIcon(icon_size=(30,30), icon_anchor=(15,15),
+                     html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: blue; font-size: 24px;"></i>'),
         popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
     ).add_to(fmap)
     if track_sun or track_moon or override_trails:
@@ -177,6 +166,5 @@ for ac in aircraft_list:
             trail.append((sh_lat, sh_lon))
         if trail:
             folium.PolyLine(locations=trail, color="black", weight=shadow_width, opacity=0.6).add_to(fmap)
-
 # Render map
 st_folium(fmap, width=map_width, height=map_height)
