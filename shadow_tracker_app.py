@@ -45,7 +45,6 @@ def generate_beep(duration_s=0.5, freq=440, sample_rate=44100):
     return buf.read()
 
 # Sidebar controls
-st.sidebar.markdown(f"**Tracked Aircraft:** {len(aircraft_list)}")
 st.sidebar.header("Configuration")
 data_source = st.sidebar.selectbox("Data Source", ["OpenSky", "ADS-B Exchange"], index=0)
 tile_style = st.sidebar.selectbox(
