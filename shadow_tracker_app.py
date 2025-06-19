@@ -47,7 +47,7 @@ with st.sidebar:
     tile_style = st.selectbox(
         "Tile Style",
         ["OpenStreetMap", "CartoDB positron"],
-        index=1
+        index=0  # default to OpenStreetMap
     )
     data_source = st.selectbox(
         "Data Source",
