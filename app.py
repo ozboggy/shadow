@@ -10,7 +10,6 @@ from pysolar.solar import get_altitude, get_azimuth
 
 from math import radians, cos, sin, asin, sqrt
 import csv
-import os
 import pandas as pd
 import plotly.express as px
 
