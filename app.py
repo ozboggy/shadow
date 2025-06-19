@@ -46,9 +46,13 @@ FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 TARGET_LAT = -33.7603831919607
 TARGET_LON = 150.971709164045
+TARGET_LAT = -33.7554186
+TARGET_LON = 150.9656457
 ALERT_RADIUS_METERS = 50
 HOME_LAT = -33.7603831919607
 HOME_LON = 150.971709164045
+HOME_LAT = -33.7554186
+HOME_LON = 150.9656457
 RADIUS_KM = 20
 
 # Utils
@@ -99,7 +103,7 @@ if "center" not in st.session_state:
 try:
     location_center = [float(x) for x in st.session_state.center]
 except Exception:
-    location_center = [(north + south)/2, (east + west)/2]
+    location_center = [HOME_LAT, HOME_LON]
     st.session_state.center = location_center
 
 fmap = folium.Map(location=location_center, zoom_start=st.session_state.zoom)
