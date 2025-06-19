@@ -32,9 +32,6 @@ with st.sidebar:
         ["OpenSky", "ADS-B Exchange"],
         index=0
     )
-        ["OpenSky", "ADS-B Exchange"],
-        index=0
-    )
     radius_km = st.slider("Search Radius (km)", min_value=1, max_value=100, value=DEFAULT_RADIUS_KM)
     st.markdown(f"**Search Radius:** {radius_km} km")
     shadow_width = st.slider("Shadow Line Width", min_value=1, max_value=10, value=DEFAULT_SHADOW_WIDTH)
