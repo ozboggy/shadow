@@ -3,3 +3,6 @@ requests
 folium
 streamlit-folium
 pysolar
+time
+asin
+sqrt
