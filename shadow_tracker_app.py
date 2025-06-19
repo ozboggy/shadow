@@ -203,6 +203,7 @@ for ac in aircraft_list:
 if alerts:
     st.error(f"🚨 Shadow ALERT for: {', '.join(alerts)}")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+    
 # Alert UI
 if alerts_triggered:
     st.error("🚨 Shadow ALERT!")
