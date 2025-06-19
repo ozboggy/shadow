@@ -187,13 +187,16 @@ if data_source == "OpenSky":
 else:
     aircraft_list = fetch_adsb(TARGET_LAT, TARGET_LON, radius_km)
 
-# Indicate tracked aircraft in sidebar
+# Indicate tracked aircraft count and expand option
 st.sidebar.markdown("### Tracked Aircraft")
-if aircraft_list:
-    for ac in aircraft_list:
-        st.sidebar.write(f"• {ac['callsign']} — Alt {ac['baro']} m, Spd {ac['vel']} m/s")
-else:
-    st.sidebar.write("No aircraft in range.")
+count = len(aircraft_list)
+st.sidebar.write(f"{count} aircraft in range")
+with st.sidebar.expander("Show details", expanded=False):
+    if count > 0:
+        for ac in aircraft_list:
+            st.write(f"• {ac['callsign']} — Alt {ac['baro']} m, Spd {ac['vel']} m/s")
+    else:
+        st.write("No aircraft in range.")
 
 for ac in aircraft_list:
     lat = ac["lat"]; lon = ac["lon"]; baro = ac["baro"]
