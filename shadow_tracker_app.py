@@ -219,6 +219,13 @@ if os.path.exists(log_path):
         df_count.rename(columns={'Time UTC':'Date'}, inplace=True)
         fig2 = px.bar(df_count, x='Date', y='Count', title='Daily Shadow Alert Counts')
         st.plotly_chart(fig2, use_container_width=True)
+        # Spatial density of alerts
+        fig3 = px.density_mapbox(
+            df, lat='Lat', lon='Lon', radius=10,
+            center={'lat': CENTER_LAT, 'lon': CENTER_LON}, zoom=zoom_level,
+            mapbox_style='open-street-map', title='Alert Location Density'
+        )
+        st.plotly_chart(fig3, use_container_width=True)
 
 # Test buttons
 if test_alert:
