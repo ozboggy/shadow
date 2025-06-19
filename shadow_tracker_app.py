@@ -311,3 +311,48 @@ if test_alert:
 if test_pushover:
     st.info("🔔 Sending test Pushover notification...")
     send_pushover("✈️ Test Push", "This is a test shadow alert.")
+
+
+# Alert UI
+if alerts_triggered:
+    st.error("🚨 Shadow ALERT!")
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+    st.markdown("""
+    <script>
+    if (Notification.permission === 'granted') {
+        new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over target!" });
+    } else {
+        Notification.requestPermission().then(p => {
+            if (p === 'granted') {
+                new Notification("✈️ Shadow Alert", { body: "Aircraft shadow passing over target!" });
+            }
+        });
+    }
+    </script>
+    """, unsafe_allow_html=True)
+    for cs, t, _, _ in alerts_triggered:
+        st.write(f"✈️ {cs} — in approx. {t} seconds")
+else:
+    st.success("✅ No forecast shadow paths intersect target area.")
+
+# Logs
+if os.path.exists(log_path):
+    st.sidebar.markdown("### 📥 Download Log")
+    with open(log_path, "rb") as f:
+        st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
+
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        st.markdown("### 📊 Recent Alerts")
+        st.dataframe(df_log.tail(10))
+
+        fig = px.scatter(df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)",
+                         hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
+        st.plotly_chart(fig, use_container_width=True)
+
+
+map_data = st_folium(fmap, width=2000, height=1400)
+if map_data and "zoom" in map_data and "center" in map_data:
+    st.session_state.zoom = map_data["zoom"]
+    st.session_state.center = map_data["center"]
