@@ -11,7 +11,6 @@ import requests
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 
 # Constants
-
 # Pushover configuration (set these in your .env)
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
@@ -34,13 +33,12 @@ def send_pushover(title, message):
     except Exception as e:
         st.warning(f"Pushover notification failed: {e}")
 
-# Constants
 CENTER_LAT = -33.7602563
 CENTER_LON = 150.9717434
 DEFAULT_RADIUS_KM = 20
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
-DEFAULT_SHADOW_WIDTH = 3
+DEFAULT_SHADOW_WIDTH = 2
 DEFAULT_ZOOM = 11
 
 # Sidebar controls
@@ -58,14 +56,13 @@ with st.sidebar:
     )
     radius_km = st.slider("Search Radius (km)", min_value=1, max_value=100, value=DEFAULT_RADIUS_KM)
     st.markdown(f"**Search Radius:** {radius_km} km")
-    shadow_width = st.slider("Shadow Line Width", min_value=1, max_value=10, value=DEFAULT_SHADOW_WIDTH)
     alert_radius_m = st.slider("Shadow Alert Radius (m)", min_value=0, max_value=1000, value=50)
     st.markdown(f"**Shadow Alert Radius:** {alert_radius_m} m")
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
     override_trails = st.checkbox("Show Trails Regardless of Sun/Moon", value=False)
-    test_alert = st.button("Test Alert")  # Trigger a test alert
-    test_pushover = st.button("Test Pushover")  # Trigger a test Pushover notification  # Trigger a test alert
+    test_alert = st.button("Test Alert")
+    test_pushover = st.button("Test Pushover")
     st.header("Map Settings")
     zoom_level = st.slider("Initial Zoom Level", min_value=1, max_value=18, value=DEFAULT_ZOOM)
     map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=1200)
@@ -89,6 +86,9 @@ folium.Marker(
     icon=folium.Icon(color="red", icon="home", prefix="fa"),
     popup="Home"
 ).add_to(fmap)
+
+# Set shadow line width constant (sidebar removed)
+shadow_width = DEFAULT_SHADOW_WIDTH
 
 # Utils
 def move_position(lat, lon, heading, dist):
@@ -131,11 +131,9 @@ if data_source == "OpenSky":
         try:
             icao, cs_raw, _, _, _, lon, lat, baro_raw, _, vel, hdg = s[:11]
             cs = cs_raw.strip() if cs_raw else icao
-            aircraft_list.append({
-                "lat": float(lat), "lon": float(lon),
-                "baro": float(baro_raw) if baro_raw else 0.0,
-                "vel": float(vel), "hdg": float(hdg), "callsign": cs
-            })
+            aircraft_list.append({"lat": float(lat), "lon": float(lon),
+                                  "baro": float(baro_raw) if baro_raw else 0.0,
+                                  "vel": float(vel), "hdg": float(hdg), "callsign": cs})
         except:
             continue
 elif data_source == "ADS-B Exchange":
@@ -159,15 +157,14 @@ elif data_source == "ADS-B Exchange":
             hdg_raw = ac.get("track") or ac.get("trak")
             baro_raw = ac.get("alt_baro")
             cs = ac.get("flight") or ac.get("hex")
-            aircraft_list.append({
-                "lat": lat, "lon": lon,
-                "baro": float(baro_raw) if baro_raw else 0.0,
-                "vel": float(vel_raw) if vel_raw else 0.0,
-                "hdg": float(hdg_raw) if hdg_raw else 0.0,
-                "callsign": cs.strip() if cs else None
-            })
+            aircraft_list.append({"lat": lat, "lon": lon,
+                                  "baro": float(baro_raw) if baro_raw else 0.0,
+                                  "vel": float(vel_raw) if vel_raw else 0.0,
+                                  "hdg": float(hdg_raw) if hdg_raw else 0.0,
+                                  "callsign": cs.strip() if cs else None})
         except:
             continue
+
 # Display aircraft count
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(aircraft_list)}")
 
