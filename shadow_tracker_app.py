@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 import os
 import folium
+from folium.features import DivIcon
 from streamlit_folium import st_folium
 from datetime import datetime, timezone, timedelta
 import math
@@ -48,6 +49,13 @@ st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 # Initialize map
 center = (CENTER_LAT, CENTER_LON)
 fmap = folium.Map(location=center, zoom_start=8, tiles=tile_style, control_scale=True)
+
+# Home marker
+folium.Marker(
+    location=center,
+    icon=folium.Icon(color="red", icon="home", prefix="fa"),
+    popup="Home"
+).add_to(fmap)
 
 # Utils
 
@@ -139,9 +147,14 @@ st.sidebar.markdown(f"**Tracked Aircraft:** {len(aircraft_list)}")
 for ac in aircraft_list:
     lat, lon = ac["lat"], ac["lon"]
     baro, vel, hdg, cs = ac["baro"], ac["vel"], ac["hdg"], ac["callsign"]
+    # Rotating plane icon
     folium.Marker(
         location=(lat, lon),
-        icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
+        icon=DivIcon(
+            icon_size=(30,30),
+            icon_anchor=(15,15),
+            html=f'<i class="fa fa-plane" style="transform: rotate({hdg-90}deg); color: blue; font-size: 24px;"></i>'
+        ),
         popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
     ).add_to(fmap)
     if track_sun or track_moon or override_trails:
