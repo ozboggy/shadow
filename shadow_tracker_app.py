@@ -200,10 +200,20 @@ if alerts:
 else:
     st.success("✅ No forecast shadow paths intersect target area.")
 
-# Logs: always show recent alerts and timeline
-# Display recent alerts even when no live shadow alerts
-st.markdown("### 📥 Download Log")
+
+if test_alert:
+    st.error("🚨 Test Alert Triggered!")
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+if test_pushover:
+    st.info("🔔 Sending test Pushover notification...")
+    send_pushover("✈️ Test Push", "This is a test shadow alert.")
+
+# Render map
+st_folium(fmap, width=map_width, height=map_height)
+
+# Logs: show recent alerts and timeline below map
 if os.path.exists(log_path):
+    st.markdown("### 📥 Download Log")
     with open(log_path, "rb") as f:
         st.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
     df_log = pd.read_csv(log_path)
@@ -220,7 +230,6 @@ if os.path.exists(log_path):
             df_log,
             x="Time UTC", y="Callsign",
             size="Time Until Alert (sec)",
-            color=None,
             hover_data=["Lat", "Lon"],
             title="Shadow Alerts Over Time"
         )
@@ -232,6 +241,3 @@ if test_alert:
 if test_pushover:
     st.info("🔔 Sending test Pushover notification...")
     send_pushover("✈️ Test Push", "This is a test shadow alert.")
-
-# Render map
-st_folium(fmap, width=map_width, height=map_height)
