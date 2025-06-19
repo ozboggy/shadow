@@ -170,16 +170,29 @@ with st.sidebar.expander("Show details"):
 # Plot aircraft and trails with direction arrows
 for ac in aircraft_list:
     lat, lon, baro, vel, hdg, cs = ac['lat'], ac['lon'], ac['baro'], ac['vel'], ac['hdg'], ac['callsign']
-    # Aircraft icon and label
-    folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{cs}\nAlt:{baro}m\nSpd:{vel}m/s").add_to(fmap)
-    folium.map.Marker((lat,lon), icon=DivIcon(icon_size=(150,36), icon_anchor=(0,0), html=f'<div style="font-size:12px">{cs}</div>')).add_to(fmap)
+    # Aircraft icon rotated by heading
+    folium.map.Marker(
+        (lat, lon),
+        icon=DivIcon(
+            icon_size=(20,20),
+            icon_anchor=(10,10),
+            html=f'<i class="fa fa-plane" style="color:blue;transform:rotate({hdg}deg);font-size:20px"></i>'
+        ),
+        popup=f"{cs}\nAlt:{baro}m\nSpd:{vel}m/s"
+    ).add_to(fmap)
+    # Aircraft label
+    folium.map.Marker(
+        (lat, lon),
+        icon=DivIcon(
+            icon_size=(150,36), icon_anchor=(0,0),
+            html=f'<div style="font-size:12px">{cs}</div>'
+        )
+    ).add_to(fmap)
     # Shadow trail
     trail = calculate_trail(lat, lon, baro, vel, hdg)
     if trail:
-        # Add polyline
         line = folium.PolyLine(locations=trail, color="black", weight=shadow_width, opacity=0.6)
         line.add_to(fmap)
-        # Add directional arrows as a separate layer
         arrow = PolyLineTextPath(
             line,
             '▶',
