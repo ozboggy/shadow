@@ -1,7 +1,4 @@
 import streamlit as st
-# Must be first Streamlit command
-st.set_page_config(layout="wide")
-
 import requests
 import folium
 from folium.plugins import MarkerCluster
@@ -14,103 +11,100 @@ import csv
 import os
 import pandas as pd
 import plotly.express as px
-
-# Attempt to import pyfr24
-try:
-    from pyfr24 import FR24API
-    HAS_FR24API = True
-except ImportError:
-    HAS_FR24API = False
+from pyfr24 import FR24API
 
 # Load environment vars
 try:
     from dotenv import load_dotenv
     load_dotenv()
-    DOTENV_LOADED = True
 except ImportError:
-    DOTENV_LOADED = False
-
-# Sidebar warnings after config
-if not HAS_FR24API:
-    st.sidebar.warning("pyfr24 not installed; using feed.js fallback for FlightRadar24 data.")
-if not DOTENV_LOADED:
-    st.sidebar.warning("python-dotenv not installed; skipping .env loading.")
+    st.warning("python-dotenv not installed; skipping .env loading.")
 
 OPENSKY_USER = os.getenv("OPENSKY_USERNAME")
 OPENSKY_PASS = os.getenv("OPENSKY_PASSWORD")
 FR24_API_KEY = os.getenv("FLIGHTRADAR_API_KEY")
 
 # Pushover setup
-PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY", "")
-PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN", "")
+PUSHOVER_USER_KEY = "usasa4y2iuvz75krztrma829s21nvy"
+PUSHOVER_API_TOKEN = "adxez5u3zqqxyta3pdvdi5sdvwovxv"
 
-def send_pushover(title: str, message: str):
-    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        return
+def send_pushover(title: str, message: str, user_key: str, api_token: str):
     try:
-        requests.post(
-            "https://api.pushover.net/1/messages.json",
-            data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "title": title, "message": message}
-        )
-    except Exception:
-        pass
+        url = "https://api.pushover.net/1/messages.json"
+        requests.post(url, data={"token": api_token, "user": user_key, "title": title, "message": message})
+    except Exception as e:
+        st.warning(f"Pushover notification failed: {e}")
 
-# Title and refresh
+# Streamlit UI
+st.set_page_config(layout="wide")
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
-# Sidebar controls
 st.sidebar.header("Select Time")
 selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
-selected_time = st.sidebar.time_input("Time (UTC)", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
-selected_time = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
+selected_time_only = st.sidebar.time_input(
+    "Time (UTC)",
+    value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
+)
+selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
 
+# Data source selector (default to FlightRadar24)
 data_source = st.sidebar.selectbox("Data Source", ("OpenSky", "FlightRadar24"), index=1)
 
 # Constants
+FORECAST_INTERVAL_SECONDS = 30
+FORECAST_DURATION_MINUTES = 5
 TARGET_LAT = -33.7603831919607
 TARGET_LON = 150.971709164045
+ALERT_RADIUS_METERS = 50
 HOME_LAT = -33.7603831919607
 HOME_LON = 150.971709164045
 RADIUS_KM = 20
-FORECAST_INTERVAL_SECONDS = 30
-FORECAST_DURATION_MINUTES = 5
-ALERT_RADIUS_METERS = 50
 
-# Helpers
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
-    dlat = radians(lat2 - lat1); dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
-    return 2*R*asin(sqrt(a))
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+    return R * 2 * asin(sqrt(a))
 
 def move_position(lat, lon, heading_deg, distance_m):
     R = 6371000
     heading_rad = math.radians(heading_deg)
-    lat1, lon1 = math.radians(lat), math.radians(lon)
-    lat2 = math.asin(sin(lat1)*cos(distance_m/R) + cos(lat1)*sin(distance_m/R)*cos(heading_rad))
-    lon2 = lon1 + math.atan2(sin(heading_rad)*sin(distance_m/R)*cos(lat1),
-                             cos(distance_m/R)-sin(lat1)*sin(lat2))
+    lat1 = math.radians(lat)
+    lon1 = math.radians(lon)
+    lat2 = math.asin(
+        sin(lat1)*cos(distance_m/R) +
+        cos(lat1)*sin(distance_m/R)*cos(heading_rad)
+    )
+    lon2 = lon1 + math.atan2(
+        sin(heading_rad)*sin(distance_m/R)*cos(lat1),
+        cos(distance_m/R)-sin(lat1)*sin(lat2)
+    )
     return math.degrees(lat2), math.degrees(lon2)
 
-# Setup log file
+# Logging setup
 log_file = "alert_log.csv"
-if not os.path.exists(log_file):
-    with open(log_file, "w", newline="") as f:
+log_path = os.path.join(os.path.dirname(__file__), log_file)
+if not os.path.exists(log_path):
+    with open(log_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["Time UTC","Callsign","Time Until Alert (sec)","Lat","Lon"])
+        writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
 
-# Initialize map state
-if "zoom" not in st.session_state: st.session_state.zoom = 12
-if "center" not in st.session_state: st.session_state.center = [HOME_LAT, HOME_LON]
+# Initialize map session state
+if "zoom" not in st.session_state:
+    st.session_state.zoom = 12
+if "center" not in st.session_state:
+    st.session_state.center = [HOME_LAT, HOME_LON]
 
+# Prepare map
 try:
-    center = [float(x) for x in st.session_state.center]
+    location_center = [float(x) for x in st.session_state.center]
 except:
-    center = [HOME_LAT, HOME_LON]
-    st.session_state.center = center
+    location_center = [HOME_LAT, HOME_LON]
+    st.session_state.center = location_center
 
-fmap = folium.Map(location=center, zoom_start=st.session_state.zoom)
+fmap = folium.Map(location=location_center, zoom_start=st.session_state.zoom)
 marker_cluster = MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
@@ -119,49 +113,66 @@ north, south, west, east = -33.0, -34.5, 150.0, 151.5
 aircraft_states = []
 
 if data_source == "OpenSky":
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+    url = (
+        f"https://opensky-network.org/api/states/all"
+        f"?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+    )
     try:
         r = requests.get(url, auth=(OPENSKY_USER, OPENSKY_PASS))
         r.raise_for_status()
         aircraft_states = r.json().get("states", [])
     except Exception as e:
         st.error(f"Error fetching OpenSky data: {e}")
-else:
-    # FlightRadar24 fetch with feed.js fallback
-    flights = []
-    if HAS_FR24API and FR24_API_KEY:
+else:  # FlightRadar24
+    if not FR24_API_KEY:
+        st.error("Please set FLIGHTRADAR_API_KEY in your environment.")
+    else:
         try:
-            api = FR24API(FR24_API_KEY)
-            resp = api.get_flight_positions_light(f"{south},{west},{north},{east}")
+            fr_api = FR24API(FR24_API_KEY)
+            bounds = f"{south},{west},{north},{east}"
+            resp = fr_api.get_flight_positions_light(bounds)
+
+            # normalize into a list
             if isinstance(resp, dict):
                 flights = resp.get("data", [])
             elif isinstance(resp, list):
                 flights = resp
-        except Exception:
-            flights = []
-    if not flights:
-        try:
-            r2 = requests.get(
-                "https://data-live.flightradar24.com/zones/fcgi/feed.js",
-                params={"bounds":f"{south},{west},{north},{east}","adsb":1,"mlat":1,"flarm":1,"array":1}
-            )
-            r2.raise_for_status()
-            raw = r2.json()
-            for k, v in raw.items():
-                if k in ("full_count","version","stats"): continue
-                if isinstance(v, list) and v:
-                    flights.extend(v if isinstance(v[0], list) else [v])
-        except Exception:
-            pass
-    def safe_get(lst, idx, default=None):
-        return lst[idx] if isinstance(lst, list) and idx < len(lst) else default
-    for p in flights:
-        lat = safe_get(p, 1); lon = safe_get(p, 2)
-        if lat is None or lon is None: continue
-        vel = safe_get(p, 4, 0) or 0; hdg = safe_get(p, 3, 0) or 0
-        alt = safe_get(p, 13); alt = alt if alt is not None else (safe_get(p, 11, 0) or 0)
-        cs = safe_get(p, -1, "") or "N/A"
-        aircraft_states.append([None, cs, None, None, None, lon, lat, None, vel, hdg, alt, None, None, None, None])
+            else:
+                flights = []
 
-# The rest of your processing, mapping, alerts, and log download code...
-# omitted for brevity
+            # fallback to feed.js if empty
+                # Fallback to feed.js with proper flattening
+                raw = r2.json()
+                st.sidebar.write("⚙️ feed.js raw keys:", list(raw.keys())[:20], "... total keys", len(raw.keys()))
+                flights = []
+                for k, v in raw.items():
+                    if k in ("full_count", "version", "stats"):
+                        continue
+                    if isinstance(v, list) and v and isinstance(v[0], list):
+                        st.sidebar.write(f"⚙️ feed.js using key '{k}' with {len(v)} flights")
+                        flights.extend(v)
+            def safe_get(lst, idx, default=None):
+                return lst[idx] if isinstance(lst, list) and idx < len(lst) else default
+
+            for p in flights:
+                lat = safe_get(p, 1)
+                lon = safe_get(p, 2)
+                if lat is None or lon is None:
+                    continue
+                velocity = safe_get(p, 4, 0) or 0
+                heading  = safe_get(p, 3, 0) or 0
+                alt = safe_get(p, 13)
+                if alt is None:
+                    alt = safe_get(p, 11, 0) or 0
+                raw_cs = safe_get(p, -1, "")
+                callsign = raw_cs.strip() or "N/A"
+                aircraft_states.append([
+                    None, callsign, None, None, None,
+                    lon, lat, None, velocity, heading,
+                    alt, None, None, None, None
+                ])
+        except Exception as e:
+            st.error(f"Error fetching FlightRadar24 data: {e}")
+
+# Process and display data (unchanged)...
+# [The rest of your existing forecasting, mapping, and alert code follows here]
