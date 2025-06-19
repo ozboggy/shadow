@@ -188,39 +188,87 @@ for ac in aircraft_list:
     if trail:
         folium.PolyLine(locations=trail, color="red" if alert else "black", weight=shadow_width, opacity=0.6).add_to(fmap)
 
-# Alerts UI
-if alerts:
-    alist = ", ".join(alerts)
-    st.error(f"🚨 Shadow ALERT for: {alist}")
-    st.markdown(
-        """
-        <audio autoplay loop>
-          <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
-        </audio>
-        """, unsafe_allow_html=True
-    )
-    st.markdown(
-        """
-        <script>
-        function alertTerrain() {
-            var msg = new SpeechSynthesisUtterance('Terrain, Terrain');
-            msg.rate = 1;
-            window.speechSynthesis.speak(msg);
-        }
-        alertTerrain(); setTimeout(alertTerrain, 1000);
-        if (Notification.permission === 'granted') {
-            new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" });
-        } else {
-            Notification.requestPermission().then(p => { if (p === 'granted') new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" }); });
-        }
-        </script>
-        """, unsafe_allow_html=True
-    )
-    send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alist}")
-else:
-    st.success("✅ No forecast shadow paths intersect target area.")
+# Organize into tabs: Tracker view and History view
+tabs = st.tabs(["Tracker","History"])
 
-# Render map and preserve view
+with tabs[0]:  # Tracker tab
+    # Alerts UI
+    if alerts:
+        alist = ", ".join(alerts)
+        st.error(f"🚨 Shadow ALERT for: {alist}")
+        st.markdown(
+            """
+            <audio autoplay loop>
+              <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
+            </audio>
+            """, unsafe_allow_html=True
+        )
+        st.markdown(
+            """
+            <script>
+            function alertTerrain() {
+                var msg = new SpeechSynthesisUtterance('Terrain, Terrain');
+                msg.rate = 1;
+                window.speechSynthesis.speak(msg);
+            }
+            alertTerrain(); setTimeout(alertTerrain, 1000);
+            if (Notification.permission === 'granted') {
+                new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" });
+            } else {
+                Notification.requestPermission().then(p => { if (p === 'granted') new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" }); });
+            }
+            </script>
+            """, unsafe_allow_html=True
+        )
+        send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alist}")
+    else:
+        st.success("✅ No forecast shadow paths intersect target area.")
+
+    # Render map and preserve view
+    map_data = st_folium(
+        fmap,
+        width=map_width,
+        height=map_height,
+        returned_objects=['zoom', 'center'],
+        key='aircraft_map'
+    )
+    if map_data and 'zoom' in map_data and 'center' in map_data:
+        st.session_state.zoom = map_data['zoom']
+        st.session_state.center = map_data['center']
+
+with tabs[1]:  # History tab
+    st.markdown("### 📥 Download Log")
+    if os.path.exists(log_path):
+        with open(log_path, "rb") as f:
+            st.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
+        df_log = pd.read_csv(log_path)
+        if not df_log.empty:
+            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+            st.markdown("### 🕑 Recent Alerts Detail")
+            st.dataframe(
+                df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']]
+                    .sort_values('Time UTC', ascending=False)
+                    .head(10)
+            )
+            st.markdown("### 📊 Alert Timeline")
+            fig = px.scatter(
+                df_log,
+                x="Time UTC", y="Callsign",
+                size="Time Until Alert (sec)",
+                hover_data=["Lat", "Lon"],
+                title="Shadow Alerts Over Time"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("### 📷 Alert Location Density")
+            fig_density = px.density_mapbox(
+                df_log,
+                lat='Lat', lon='Lon', radius=20,
+                center={'lat': CENTER_LAT, 'lon': CENTER_LON}, zoom=zoom_level,
+                mapbox_style='open-street-map'
+            )
+            st.plotly_chart(fig_density, use_container_width=True)
+
 map_data = st_folium(
     fmap,
     width=map_width,
