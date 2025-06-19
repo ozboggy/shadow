@@ -200,7 +200,7 @@ if alerts:
 else:
     st.success("✅ No forecast shadow paths intersect target area.")
 
-# Logs
+# Logs: always show recent alerts and timeline
 if os.path.exists(log_path):
     st.markdown("### 📥 Download Log")
     with open(log_path, "rb") as f:
@@ -209,15 +209,20 @@ if os.path.exists(log_path):
     df_log = pd.read_csv(log_path)
     if not df_log.empty:
         df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-        # Show recent alerts on screen
         st.markdown("### 🕑 Recent Alerts Detail")
-        # Display timestamp and time until alert
-        st.dataframe(df_log[['Time UTC','Callsign','Time Until Alert (sec)']].sort_values('Time UTC', ascending=False).head(10))
+        st.dataframe(
+            df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']]
+            .sort_values('Time UTC', ascending=False)
+            .head(10)
+        )
 
         st.markdown("### 📊 Alert Timeline")
         fig = px.scatter(
-            df_log, x="Time UTC", y="Callsign", size="Time Until Alert (sec)",
-            hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time"
+            df_log,
+            x="Time UTC", y="Callsign",
+            size="Time Until Alert (sec)",
+            hover_data=["Lat", "Lon"],
+            title="Shadow Alerts Over Time"
         )
         st.plotly_chart(fig, use_container_width=True)
 
