@@ -186,7 +186,12 @@ if os.path.exists(log_path):
         st.markdown("### 📊 Recent Alerts")
         st.dataframe(df.tail(10))
         fig=px.scatter(df,x="Time UTC",y="Callsign",size="Time Until Alert (sec)",hover_data=["Lat","Lon"],title="Shadow Alerts Over Time")
-        st.plotly_chart(fig,use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
+        # Alert history chart: daily counts
+        df_count = df.groupby(df['Time UTC'].dt.date).size().reset_index(name='Count')
+        df_count.rename(columns={'Time UTC':'Date'}, inplace=True)
+        fig2 = px.bar(df_count, x='Date', y='Count', title='Daily Shadow Alert Counts')
+        st.plotly_chart(fig2, use_container_width=True)
 
 # Test buttons
 if test_alert:
