@@ -232,7 +232,7 @@ if map_data and 'zoom' in map_data and 'center' in map_data:
     st.session_state.zoom = map_data['zoom']
     st.session_state.center = map_data['center']
 
-# Render the map and preserve view
+# Render map and preserve view
 map_data = st_folium(
     fmap,
     width=map_width,
@@ -240,12 +240,13 @@ map_data = st_folium(
     returned_objects=['zoom', 'center'],
     key='aircraft_map'
 )
+# Update session state
 if map_data and 'zoom' in map_data and 'center' in map_data:
     st.session_state.zoom = map_data['zoom']
     st.session_state.center = map_data['center']
 
-# Alert History in expandable window
-with st.expander("🖼 Alert History"):
+# Alert History section below the map
+with st.expander("🖼 Alert History", expanded=True):
     if os.path.exists(log_path):
         st.markdown("### 📥 Download Log")
         with open(log_path, "rb") as f:
@@ -268,6 +269,7 @@ with st.expander("🖼 Alert History"):
                 title="Shadow Alerts Over Time"
             )
             st.plotly_chart(fig, use_container_width=True)
+
 # Test buttons
 if test_alert:
     st.error("🚨 Test Alert Triggered!")
