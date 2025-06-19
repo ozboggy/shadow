@@ -76,7 +76,6 @@ def move_position(lat: float, lon: float, heading: float, dist: float) -> tuple:
     return math.degrees(lat2), math.degrees(lon2)
 
 # Fetch from OpenSky
-
 def fetch_opensky(lat: float, lon: float, radius: float) -> list:
     dr = radius / 111.0
     south, north = lat - dr, lat + dr
@@ -189,7 +188,7 @@ for ac in aircraft_list:
             attributes={
                 'fill': 'blue',
                 'font-weight': 'bold',
-                'font-size': '14px'
+                'font-size': '10px'
             }
         )
         arrow.add_to(fmap)
