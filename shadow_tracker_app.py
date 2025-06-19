@@ -3,7 +3,7 @@ import requests
 import folium
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
-from datetime import datetime, time as dt_time, timezone, timedelta
+from datetime import datetime, timezone
 import math
 import csv
 import os
@@ -56,9 +56,8 @@ if not os.path.exists(log_path):
 st.set_page_config(layout="wide")
 st.title("✈️ Aircraft Shadow Tracker")
 
-selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
-selected_time_only = st.sidebar.time_input("Time (UTC)", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
-selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
+# Automatically use current UTC date/time
+selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 shadow_source = st.sidebar.radio("Shadow Source", ["Sun", "Moon"], horizontal=True)
 
 # Fetch aircraft (OpenSky fallback)
