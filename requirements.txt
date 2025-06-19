@@ -9,3 +9,4 @@ plotly
 skyfield
 pyfr24
 python-dotenv
+pysolar.solar
