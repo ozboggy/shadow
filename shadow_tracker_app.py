@@ -163,11 +163,11 @@ def fetch_adsb(lat, lon, radius):
     acs = []
     for ac in ac_list:
         try:
-            cs=(ac.get("flight")or ac.get("hex") or "").strip()
-            lat_f,lon_f=float(ac.get("lat")),float(ac.get("lon"))
-            baro=float(ac.get("alt_baro")or0)
-            vel=float(ac.get("gs")or ac.get("spd")or0)
-            hdg=float(ac.get("track")or ac.get("trak")or0)
+            cs = (ac.get("flight") or ac.get("hex") or "").strip()
+            lat_f, lon_f = float(ac.get("lat")), float(ac.get("lon"))
+            baro = float(ac.get("alt_baro") or 0)
+            vel = float(ac.get("gs") or ac.get("spd") or 0)
+            hdg = float(ac.get("track") or ac.get("trak") or 0)
         except Exception:
             continue
         acs.append({"lat":lat_f,"lon":lon_f,"baro":baro,"vel":vel,"hdg":hdg,"callsign":cs})
@@ -181,10 +181,11 @@ def calculate_trail(lat, lon, baro, vel, hdg):
         dist=vel*i
         f_lat,f_lon=move_position(lat,lon,hdg,dist)
         sun_alt=get_sun_altitude(f_lat,f_lon,ft)
-        if(track_sun and sun_alt>0)or(track_moon and sun_alt<=0)or override_trails:
+        if(track_sun and sun_alt>0) or (track_moon and sun_alt<=0) or override_trails:
             az=get_sun_azimuth(f_lat,f_lon,ft)
-        else: continue
-        angle=sun_alt if sun_alt>0 else1
+        else:
+            continue
+        angle=sun_alt if sun_alt>0 else 1
         sd=baro/math.tan(math.radians(angle))
         sh_lat=f_lat+(sd/111111)*math.cos(math.radians(az+180))
         sh_lon=f_lon+(sd/(111111*math.cos(math.radians(f_lat))))*math.sin(math.radians(az+180))
@@ -196,13 +197,13 @@ fmap=folium.Map(location=(TARGET_LAT,TARGET_LON),zoom_start=zoom_level,tiles=til
 folium.Marker((TARGET_LAT,TARGET_LON),icon=folium.Icon(color="red",icon="home",prefix="fa"),popup="Home").add_to(fmap)
 
 # Fetch data
-aircraft_list=fetch_opensky(TARGET_LAT,TARGET_LON,radius_km)if data_source=="OpenSky"else fetch_adsb(TARGET_LAT,TARGET_LON,radius_km)
+aircraft_list=fetch_opensky(TARGET_LAT,TARGET_LON,radius_km) if data_source=="OpenSky" else fetch_adsb(TARGET_LAT,TARGET_LON,radius_km)
 
 # Alert triggers
 if st.session_state.get('send_alert'):
     msg=f"{len(aircraft_list)} aircraft in range"
     if enable_pushover:
-        requests.post("https://api.pushover.net/1/messages.json", data={"user":PUSHOVER_USER_KEY,"token":PUSHOVER_APP_TOKEN,"message":msg})
+        requests.post("https://api.pushover.net/1/messages.json",data={"user":PUSHOVER_USER_KEY,"token":PUSHOVER_APP_TOKEN,"message":msg})
         st.sidebar.success("Alert sent.")
     st.session_state['send_alert']=False
 
@@ -211,12 +212,12 @@ home_alert=False
 
 # Plot
 for ac in aircraft_list:
-    lat,lon,baro,vel,hdg,cs=ac['lat'],ac['lon'],ac['baro'],ac['vel'],ac['hdg'],ac['callsign']
+    lat,lon,baro,vel,hdg,cs = ac['lat'],ac['lon'],ac['baro'],ac['vel'],ac['hdg'],ac['callsign']
     folium.Marker((lat,lon), icon=DivIcon(icon_size=(20,20),icon_anchor=(10,10),html=f'<i class="fa fa-plane" style="color:blue;transform:rotate({hdg-90}deg);transform-origin:center;font-size:20px"></i>'),popup=f"{cs}\nAlt:{baro}m\nSpd:{vel}m/s").add_to(fmap)
     folium.Marker((lat,lon), icon=DivIcon(icon_size=(150,36),icon_anchor=(0,0),html=f'<div style="font-size:12px">{cs}</div>')).add_to(fmap)
-    trail_pts=calculate_trail(lat,lon,baro,vel,hdg)
+    trail_pts = calculate_trail(lat,lon,baro,vel,hdg)
     if trail_pts:
-        line=folium.PolyLine(locations=trail_pts,color="black",weight=shadow_width,opacity=0.6)
+        line = folium.PolyLine(locations=trail_pts,color="black",weight=shadow_width,opacity=0.6)
         fmap.add_child(line)
         PolyLineTextPath(line,'▶',repeat=True,offset=10,attributes={'fill':'blue','font-weight':'bold','font-size':'6px'}).add_to(fmap)
         for s_lat,s_lon in trail_pts:
@@ -234,5 +235,5 @@ if home_alert:
 
 # Audio alert if condition met
 if enable_audio and home_alert:
-    beep=generate_beep()
+    beep = generate_beep()
     st.audio(beep, format='audio/wav')
