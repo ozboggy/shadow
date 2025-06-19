@@ -180,5 +180,10 @@ if alerts:
     st.error(f"🚨 Shadow ALERT for: {', '.join(alerts)}")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
 
+# Test alert button
+if test_alert:
+    st.error("🚨 Test Alert Triggered!")
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+
 # Render map
 st_folium(fmap, width=map_width, height=map_height)
