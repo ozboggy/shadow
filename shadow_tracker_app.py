@@ -67,9 +67,20 @@ with st.sidebar:
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
-# Folium map
-fmap = folium.Map(location=[CENTER_LAT, CENTER_LON], zoom_start=zoom_level, tiles=tile_style, control_scale=True)
-folium.Marker([CENTER_LAT, CENTER_LON], icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
+# Folium map using cached base map to reduce full reloads
+@st.cache(allow_output_mutation=True)
+def get_base_map(center, zoom, tile_style):
+    m = folium.Map(location=center, zoom_start=zoom, tiles=tile_style, control_scale=True)
+    folium.Marker(
+        [CENTER_LAT, CENTER_LON],
+        icon=folium.Icon(color="red", icon="home", prefix="fa"),
+        popup="Home"
+    ).add_to(m)
+    return m
+
+zoom = st.session_state.get('zoom', zoom_level)
+center = st.session_state.get('center', [CENTER_LAT, CENTER_LON])
+fmap = get_base_map(center, zoom, tile_style)
 shadow_width = DEFAULT_SHADOW_WIDTH
 
 # Helpers
@@ -208,8 +219,18 @@ if test_pushover:
     st.info("🔔 Sending test Pushover notification...")
     send_pushover("✈️ Test Push", "This is a test shadow alert.")
 
-# Render map
-st_folium(fmap, width=map_width, height=map_height)
+# Render map and preserve view
+map_data = st_folium(
+    fmap,
+    width=map_width,
+    height=map_height,
+    returned_objects=['zoom', 'center'],
+    key='aircraft_map'
+)
+# Update session state with current map view
+if map_data and 'zoom' in map_data and 'center' in map_data:
+    st.session_state.zoom = map_data['zoom']
+    st.session_state.center = map_data['center']
 
 # Logs: show recent alerts and timeline below map
 if os.path.exists(log_path):
