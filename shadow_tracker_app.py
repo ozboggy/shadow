@@ -4,6 +4,7 @@ load_dotenv()
 
 import streamlit as st
 import folium
+from folium.plugins import PolyLineTextPath
 from streamlit_folium import st_folium
 import math
 import requests
@@ -61,15 +62,11 @@ st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 
 def move_position(lat: float, lon: float, heading: float, dist: float) -> tuple:
-    """
-    Move a point from (lat, lon) by distance `dist` (meters) along bearing `heading` (degrees).
-    Returns new (latitude, longitude).
-    """
-    R = 6371000  # Earth radius in meters
+    R = 6371000
     try:
         hdr = math.radians(float(heading))
         lat1 = math.radians(float(lat)); lon1 = math.radians(float(lon))
-    except (ValueError, TypeError):
+    except:
         return lat, lon
     lat2 = math.asin(math.sin(lat1)*math.cos(dist/R) + math.cos(lat1)*math.sin(dist/R)*math.cos(hdr))
     lon2 = lon1 + math.atan2(
@@ -80,150 +77,106 @@ def move_position(lat: float, lon: float, heading: float, dist: float) -> tuple:
 
 
 def fetch_opensky(lat: float, lon: float, radius: float) -> list:
-    """
-    Fetch aircraft from OpenSky Network within `radius` km of (lat, lon).
-    """
     dr = radius / 111.0
-    south = lat - dr; north = lat + dr
+    south, north = lat - dr, lat + dr
     dlon = dr / math.cos(math.radians(lat))
-    west = lon - dlon; east = lon + dlon
+    west, east = lon - dlon, lon + dlon
     url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
     try:
-        r = requests.get(url)
-        r.raise_for_status()
-        if debug_mode:
-            st.write("OpenSky raw response:", r.text)
+        r = requests.get(url); r.raise_for_status()
+        if debug_mode: st.write("OpenSky raw:", r.text)
         states = r.json().get("states", [])
     except Exception as e:
         st.error(f"OpenSky error: {e}")
         return []
-
-    aircraft = []
+    acs = []
     for s in states:
-        if len(s) < 11:
-            continue
+        if len(s) < 11: continue
         try:
-            icao = s[0]; cs = s[1].strip() or icao
-            lon_f, lat_f = float(s[5]), float(s[6])
-            baro = float(s[7]) if s[7] is not None else 0.0
+            cs = s[1].strip() or s[0]
+            lat_f, lon_f = float(s[6]), float(s[5])
+            baro = float(s[7] or 0)
             vel, hdg = float(s[9]), float(s[10])
-        except (ValueError, TypeError):
+        except:
             continue
-        aircraft.append({"lat": lat_f, "lon": lon_f, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
-    return aircraft
+        acs.append({"lat": lat_f, "lon": lon_f, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
+    return acs
 
 
 def fetch_adsb(lat: float, lon: float, radius: float) -> list:
-    """
-    Fetch aircraft from ADS-B Exchange via RapidAPI within `radius` km of (lat, lon).
-    """
     api_key = os.getenv("RAPIDAPI_KEY")
     if not api_key:
-        st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
+        st.error("Set RAPIDAPI_KEY in .env")
         return []
-
     url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{lat}/lon/{lon}/dist/{radius}/"
     headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
     try:
-        r = requests.get(url, headers=headers)
-        r.raise_for_status()
-        if debug_mode:
-            st.write("ADS-B raw response:", r.text)
+        r = requests.get(url, headers=headers); r.raise_for_status()
+        if debug_mode: st.write("ADS-B raw:", r.text)
         ac_list = r.json().get("ac", [])
     except Exception as e:
-        st.error(f"ADS-B Exchange error: {e}")
+        st.error(f"ADS-B error: {e}")
         return []
-
-    aircraft = []
+    acs = []
     for ac in ac_list:
         try:
-            lat_f = float(ac.get("lat")); lon_f = float(ac.get("lon"))
+            cs = (ac.get("flight") or ac.get("hex") or "").strip()
+            lat_f, lon_f = float(ac.get("lat")), float(ac.get("lon"))
+            baro = float(ac.get("alt_baro") or 0)
             vel = float(ac.get("gs") or ac.get("spd") or 0)
             hdg = float(ac.get("track") or ac.get("trak") or 0)
-            baro = float(ac.get("alt_baro") or 0)
-            cs = (ac.get("flight") or ac.get("hex") or "").strip()
-        except (ValueError, TypeError):
+        except:
             continue
-        aircraft.append({"lat": lat_f, "lon": lon_f, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
-    return aircraft
+        acs.append({"lat": lat_f, "lon": lon_f, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
+    return acs
 
 
-def calculate_trail(lat: float, lon: float, baro: float, vel: float, hdg: float) -> list:
-    """
-    Calculate a shadow-trail polyline of points for a single aircraft.
-    """
-    points = []
-    for i in range(0, int(forecast_duration*60) + 1, forecast_interval):
+def calculate_trail(lat, lon, baro, vel, hdg) -> list:
+    pts = []
+    for i in range(0, int(forecast_duration*60)+1, forecast_interval):
         ft = selected_time + timedelta(seconds=i)
         dist = vel * i
         f_lat, f_lon = move_position(lat, lon, hdg, dist)
         sun_alt = get_sun_altitude(f_lat, f_lon, ft)
-        if track_sun and sun_alt > 0:
-            az = get_sun_azimuth(f_lat, f_lon, ft)
-        elif track_moon and sun_alt <= 0:
-            az = get_sun_azimuth(f_lat, f_lon, ft)
-        elif override_trails:
+        if (track_sun and sun_alt>0) or (track_moon and sun_alt<=0) or override_trails:
             az = get_sun_azimuth(f_lat, f_lon, ft)
         else:
             continue
-
-        # avoid zero or negative altitude
-        angle = sun_alt if sun_alt > 0 else 1
+        angle = sun_alt if sun_alt>0 else 1
         sd = baro / math.tan(math.radians(angle))
         sh_lat = f_lat + (sd/111111)*math.cos(math.radians(az+180))
         sh_lon = f_lon + (sd/(111111*math.cos(math.radians(f_lat))))*math.sin(math.radians(az+180))
-        points.append((sh_lat, sh_lon))
-    return points
+        pts.append((sh_lat, sh_lon))
+    return pts
 
-# Initialize map centered at constant target
+# Initialize map
 fmap = folium.Map(location=(TARGET_LAT, TARGET_LON), zoom_start=zoom_level, tiles=tile_style, control_scale=True)
-# Home marker
-folium.Marker(
-    location=(TARGET_LAT, TARGET_LON),
-    icon=folium.Icon(color="red", icon="home", prefix="fa"),
-    popup="Home"
-).add_to(fmap)
+folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
 
-# Fetch and plot aircraft
-if data_source == "OpenSky":
-    aircraft_list = fetch_opensky(TARGET_LAT, TARGET_LON, radius_km)
-else:
-    aircraft_list = fetch_adsb(TARGET_LAT, TARGET_LON, radius_km)
+# Fetch data
+aircraft_list = fetch_opensky(TARGET_LAT, TARGET_LON, radius_km) if data_source=="OpenSky" else fetch_adsb(TARGET_LAT, TARGET_LON, radius_km)
 
-# Indicate tracked aircraft count and expand option
+# Sidebar status
 st.sidebar.markdown("### Tracked Aircraft")
-count = len(aircraft_list)
-st.sidebar.write(f"{count} aircraft in range")
-with st.sidebar.expander("Show details", expanded=False):
-    if count > 0:
+cnt = len(aircraft_list)
+st.sidebar.write(f"{cnt} aircraft in range")
+with st.sidebar.expander("Show details"):
+    if cnt>0:
         for ac in aircraft_list:
             st.write(f"• {ac['callsign']} — Alt {ac['baro']} m, Spd {ac['vel']} m/s")
     else:
         st.write("No aircraft in range.")
 
+# Plot
 for ac in aircraft_list:
-    lat = ac["lat"]; lon = ac["lon"]; baro = ac["baro"]
-    vel = ac["vel"]; hdg = ac["hdg"]; cs = ac["callsign"]
-
-    # Aircraft icon
-    folium.Marker(
-        location=(lat, lon),
-        icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
-        popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
-    ).add_to(fmap)
-    # Permanent label
-    folium.map.Marker(
-        location=(lat, lon),
-        icon=DivIcon(
-            icon_size=(150,36), icon_anchor=(0,0),
-            html=f'<div style="font-size:12px; color:black">{cs}</div>'
-        )
-    ).add_to(fmap)
-
-    # Shadow trail
-    trail_pts = calculate_trail(lat, lon, baro, vel, hdg)
-    if trail_pts:
-        folium.PolyLine(locations=trail_pts, color="black", weight=shadow_width, opacity=0.6).add_to(fmap)
+    lat, lon, baro, vel, hdg, cs = ac['lat'], ac['lon'], ac['baro'], ac['vel'], ac['hdg'], ac['callsign']
+    folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{cs}\nAlt:{baro}m\nSpd:{vel}m/s").add_to(fmap)
+    folium.map.Marker((lat,lon), icon=DivIcon(icon_size=(150,36), icon_anchor=(0,0), html=f'<div style="font-size:12px">{cs}</div>')).add_to(fmap)
+    trail = calculate_trail(lat, lon, baro, vel, hdg)
+    if trail:
+        line = folium.PolyLine(locations=trail, weight=shadow_width, opacity=0.6)
+        fmap.add_child(line)
+        PolyLineTextPath(line, '►', repeat=True, offset=8, attributes={'fill':'black','font-weight':'bold','font-size':'12px'})
 
 # Render map
 st_folium(fmap, width=900, height=600)
