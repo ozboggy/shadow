@@ -10,8 +10,7 @@ from pysolar.solar import get_altitude, get_azimuth
 
 from math import radians, cos, sin, asin, sqrt
 import csv
-import pandas as pd
-import plotly.express as px
+
 
 # Pushover setup
 PUSHOVER_USER_KEY = "usasa4y2iuvz75krztrma829s21nvy"
