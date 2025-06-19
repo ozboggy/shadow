@@ -64,7 +64,8 @@ debug_mode = st.sidebar.checkbox("Debug raw response", False)
 refresh_interval = st.sidebar.number_input("Auto-refresh Interval (sec)", 0, 300, 0, 10)
 enable_pushover = st.sidebar.checkbox("Enable Pushover Alerts", False)
 enable_audio = st.sidebar.checkbox("Enable Audio Alert at Home", False)
-# Test on-screen alert\if st.sidebar.button("Send Test Home Alert"):
+# Test on-screen alert
+if st.sidebar.button("Send Test Home Alert"):
     st.session_state['test_home_alert'] = True
 
 if st.sidebar.button("Send Test Push"):
@@ -221,7 +222,9 @@ if st.session_state.get('test_home_alert'):
 # Plot
 for ac in aircraft_list:
     lat,lon,baro,vel,hdg,cs = ac['lat'],ac['lon'],ac['baro'],ac['vel'],ac['hdg'],ac['callsign']
-    folium.Marker((lat,lon), icon=DivIcon(icon_size=(20,20),icon_anchor=(10,10),html=f'<i class="fa fa-plane" style="color:blue;transform:rotate({hdg-90}deg);transform-origin:center;font-size:20px"></i>'),popup=f"{cs}\nAlt:{baro}m\nSpd:{vel}m/s").add_to(fmap)
+    folium.Marker((lat,lon), icon=DivIcon(icon_size=(20,20),icon_anchor=(10,10),html=f'<i class="fa fa-plane" style="color:blue;transform:rotate({hdg-90}deg);transform-origin:center;font-size:20px"></i>'),popup=f"{cs}
+Alt:{baro}m
+Spd:{vel}m/s").add_to(fmap)
     folium.Marker((lat,lon), icon=DivIcon(icon_size=(150,36),icon_anchor=(0,0),html=f'<div style="font-size:12px">{cs}</div>')).add_to(fmap)
     trail_pts = calculate_trail(lat,lon,baro,vel,hdg)
     if trail_pts:
@@ -235,6 +238,16 @@ for ac in aircraft_list:
                 home_alert=True
 
 # Render map
+st_folium(fmap,width=900,height=600)
+
+# On-screen alert for home proximity
+if home_alert:
+    st.warning("⚠️ Aircraft shadow over home!")
+
+# Audio alert if condition met
+if enable_audio and home_alert:
+    beep = generate_beep()
+    st.audio(beep, format='audio/wav')
 st_folium(fmap,width=900,height=600)
 
 # On-screen alert for home proximity
