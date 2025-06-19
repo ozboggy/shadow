@@ -31,6 +31,7 @@ with st.sidebar:
         index=0
     )
     radius_km = st.slider("Search Radius (km)", min_value=1, max_value=100, value=DEFAULT_RADIUS_KM)
+    st.markdown(f"**Search Radius:** {radius_km} km")
     shadow_width = st.slider("Shadow Line Width", min_value=1, max_value=10, value=DEFAULT_SHADOW_WIDTH)
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
@@ -130,6 +131,9 @@ elif data_source == "ADS-B Exchange":
             })
         except:
             continue
+
+# Display aircraft count
+st.sidebar.markdown(f"**Tracked Aircraft:** {len(aircraft_list)}")
 
 # Plot aircraft and shadows
 for ac in aircraft_list:
