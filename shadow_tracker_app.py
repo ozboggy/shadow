@@ -166,82 +166,41 @@ if alerts:
     alist = ", ".join(alerts)
     st.error(f"🚨 Shadow ALERT for: {alist}")
     # Continuous audio alert
-    st.markdown("""
-    <audio autoplay loop>
-      <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
-    </audio>
-    """, unsafe_allow_html=True)
-    # Text-to-speech 'Terrain Terrain' alert using Web Speech API
-    st.markdown("""
-    <script>
-    function alertTerrain() {
-        var msg = new SpeechSynthesisUtterance('Terrain, Terrain');
-        msg.rate = 1;
-        window.speechSynthesis.speak(msg);
-    }
-    alertTerrain();
-    setTimeout(alertTerrain, 1000);
-    </script>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <audio autoplay loop>
+          <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
+        </audio>
+        """, unsafe_allow_html=True)
+    # Text-to-speech 'Terrain Terrain'
+    st.markdown(
+        """
+        <script>
+        function alertTerrain() {
+            var msg = new SpeechSynthesisUtterance('Terrain, Terrain');
+            msg.rate = 1;
+            window.speechSynthesis.speak(msg);
+        }
+        alertTerrain();
+        setTimeout(alertTerrain, 1000);
+        </script>
+        """, unsafe_allow_html=True)
     # Desktop notification
-    st.markdown("""
-    <script>
-    if (Notification.permission === 'granted') {
-        new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" });
-    } else {
-        Notification.requestPermission().then(p => {
-            if (p === 'granted') {
-                new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" });
-            }
-        });
-    }
-    </script>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <script>
+        if (Notification.permission === 'granted') {
+            new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" });
+        } else {
+            Notification.requestPermission().then(p => { if (p === 'granted') new Notification("✈️ Shadow Alert", { body: "Aircraft shadow over target!" }); });
+        }
+        </script>
+        """, unsafe_allow_html=True)
     send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alist}")
 else:
-    # 🖼 Visual alert history when no active alerts
-    if os.path.exists(log_path):
-        st.sidebar.markdown("### 📥 Download Log")
-        with open(log_path, "rb") as f:
-            st.sidebar.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
-
-        df = pd.read_csv(log_path)
-        if not df.empty:
-            df['Time UTC'] = pd.to_datetime(df['Time UTC'])
-
-            st.markdown("### 📊 Recent Alerts")
-            st.dataframe(df.tail(10))
-
-            fig_time = px.scatter(
-                df, x="Time UTC", y="Callsign",
-                size="Time Until Alert (sec)", color="Source",
-                hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time"
-            )
-            st.plotly_chart(fig_time, use_container_width=True)
-
-            df_counts = (
-                df.set_index('Time UTC')
-                  .resample('D')
-                  .size()
-                  .reset_index(name='Count')
-            )
-            fig_daily = px.bar(
-                df_counts, x='Time UTC', y='Count',
-                title='Daily Shadow Alert Counts'
-            )
-            st.plotly_chart(fig_daily, use_container_width=True)
-
-            fig_density = px.density_mapbox(
-                df, lat='Lat', lon='Lon', radius=20,
-                center={'lat': CENTER_LAT, 'lon': CENTER_LON}, zoom=zoom_level,
-                mapbox_style='open-street-map', title='Alert Location Density'
-            )
-            st.plotly_chart(fig_density, use_container_width=True)
-
     st.success("✅ No forecast shadow paths intersect target area.")
 
-# Test buttons
-# 🖼 Include images or visual alert history
+# Logs
 if os.path.exists(log_path):
     st.sidebar.markdown("### 📥 Download Log")
     with open(log_path, "rb") as f:
@@ -249,25 +208,18 @@ if os.path.exists(log_path):
 
     df = pd.read_csv(log_path)
     if not df.empty:
-        # Prepare time column
         df['Time UTC'] = pd.to_datetime(df['Time UTC'])
 
-        # Recent alerts table
         st.markdown("### 📊 Recent Alerts")
         st.dataframe(df.tail(10))
 
-        # Scatter plot over time
         fig_time = px.scatter(
-            df,
-            x="Time UTC", y="Callsign",
-            size="Time Until Alert (sec)",
-            color="Source",
-            hover_data=["Lat", "Lon"],
-            title="Shadow Alerts Over Time"
+            df, x="Time UTC", y="Callsign",
+            size="Time Until Alert (sec)", color="Source",
+            hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time"
         )
         st.plotly_chart(fig_time, use_container_width=True)
 
-        # Daily alert counts
         df_counts = (
             df.set_index('Time UTC')
               .resample('D')
@@ -275,31 +227,25 @@ if os.path.exists(log_path):
               .reset_index(name='Count')
         )
         fig_daily = px.bar(
-            df_counts,
-            x='Time UTC', y='Count',
+            df_counts, x='Time UTC', y='Count',
             title='Daily Shadow Alert Counts'
         )
         st.plotly_chart(fig_daily, use_container_width=True)
 
-        # Geographic density map
         fig_density = px.density_mapbox(
-            df,
-            lat='Lat', lon='Lon',
-            radius=20,
-            center={'lat': CENTER_LAT, 'lon': CENTER_LON},
-            zoom=zoom_level,
-            mapbox_style='open-street-map',
-            title='Alert Location Density'
+            df, lat='Lat', lon='Lon', radius=20,
+            center={'lat': CENTER_LAT, 'lon': CENTER_LON}, zoom=zoom_level,
+            mapbox_style='open-street-map', title='Alert Location Density'
         )
         st.plotly_chart(fig_density, use_container_width=True)
 
 # Test buttons
 if test_alert:
     st.error("🚨 Test Alert Triggered!")
-    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg",autoplay=True)
+    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
 if test_pushover:
     st.info("🔔 Sending test Pushover notification...")
-    send_pushover("✈️ Test Push","This is a test shadow alert.")
+    send_pushover("✈️ Test Push", "This is a test shadow alert.")
 
 # Render map
-st_folium(fmap,width=map_width,height=map_height)
+st_folium(fmap, width=map_width, height=map_height)
