@@ -26,10 +26,12 @@ with st.sidebar:
         "Tile Style",
         ["OpenStreetMap", "CartoDB positron"],
         index=1
-    ),
-        index=1
     )
     data_source = st.selectbox(
+        "Data Source",
+        ["OpenSky", "ADS-B Exchange"],
+        index=0
+    )(
         "Data Source",
         ["OpenSky", "ADS-B Exchange"],
         index=0
