@@ -18,19 +18,26 @@ FORECAST_DURATION_MINUTES = 5
 DEFAULT_SHADOW_WIDTH = 3
 
 # Sidebar controls
-tile_style = st.sidebar.selectbox(
-    "Map Tile Style",
-    ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
-    index=1
-)
-data_source = st.sidebar.selectbox(
-    "Data Source",
-    ["OpenSky", "ADS-B Exchange"],
-    index=0
-)
-track_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
-track_moon = st.sidebar.checkbox("Show Moon Shadows", value=False)
-override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", value=False)
+with st.sidebar:
+    st.header("Map Options")
+    tile_style = st.selectbox(
+        "Tile Style",
+        ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
+        index=1
+    )
+    data_source = st.selectbox(
+        "Data Source",
+        ["OpenSky", "ADS-B Exchange"],
+        index=0
+    )
+    radius_km = st.slider("Search Radius (km)", min_value=1, max_value=100, value=DEFAULT_RADIUS_KM)
+    shadow_width = st.slider("Shadow Line Width", min_value=1, max_value=10, value=DEFAULT_SHADOW_WIDTH)
+    track_sun = st.checkbox("Show Sun Shadows", value=True)
+    track_moon = st.checkbox("Show Moon Shadows", value=False)
+    override_trails = st.checkbox("Show Trails Regardless of Sun/Moon", value=False)
+    st.header("Map Size")
+    map_width = st.number_input("Width (px)", min_value=400, max_value=2000, value=1200)
+    map_height = st.number_input("Height (px)", min_value=300, max_value=1500, value=800)
 
 # Use current UTC time for calculations
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -55,7 +62,7 @@ def move_position(lat, lon, heading, dist):
         return lat, lon
     lat2 = math.asin(math.sin(lat1)*math.cos(dist/R) + math.cos(lat1)*math.sin(dist/R)*math.cos(hdr))
     lon2 = lon1 + math.atan2(math.sin(hdr)*math.sin(dist/R)*math.cos(lat1), math.cos(dist/R)-math.sin(lat1)*math.sin(lat2))
-    return math.degrees(lat2), math.degrees(lon2)
+    return math.degrees(lat2), math.degrees(lat2)
 
 
 def hav(lat1, lon1, lat2, lon2):
@@ -69,7 +76,7 @@ def hav(lat1, lon1, lat2, lon2):
 aircraft_list = []
 
 if data_source == "OpenSky":
-    dr = DEFAULT_RADIUS_KM / 111.0
+    dr = radius_km / 111.0
     south = CENTER_LAT - dr; north = CENTER_LAT + dr
     dlon = dr / math.cos(math.radians(CENTER_LAT))
     west = CENTER_LON - dlon; east = CENTER_LON + dlon
@@ -99,7 +106,7 @@ elif data_source == "ADS-B Exchange":
         st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
         adsb = []
     else:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{DEFAULT_RADIUS_KM}/"
+        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
         headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
         try:
             r2 = requests.get(url, headers=headers); r2.raise_for_status()
@@ -152,7 +159,7 @@ for ac in aircraft_list:
             sh_lon = f_lon + (sd/(111111*math.cos(math.radians(f_lat))))*math.sin(math.radians(az+180))
             trail.append((sh_lat, sh_lon))
         if trail:
-            folium.PolyLine(locations=trail, color="black", weight=DEFAULT_SHADOW_WIDTH, opacity=0.6).add_to(fmap)
+            folium.PolyLine(locations=trail, color="black", weight=shadow_width, opacity=0.6).add_to(fmap)
 
 # Render map
-st_folium(fmap, width=1200, height=800)
+st_folium(fmap, width=map_width, height=map_height)
