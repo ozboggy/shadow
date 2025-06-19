@@ -311,5 +311,3 @@ if test_alert:
 if test_pushover:
     st.info("🔔 Sending test Pushover notification...")
     send_pushover("✈️ Test Push", "This is a test shadow alert.")
-
-
