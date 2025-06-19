@@ -33,46 +33,10 @@ def send_pushover(title, message, user_key, api_token):
 
 # Streamlit UI
 st.set_page_config(layout="wide")
-show_sidebar_controls = st.checkbox("🧭 Show Sidebar Controls", value=True)
-
-
-config_file = "map_config.json"
-default_center = [-33.7608864, 150.9709575]
-default_zoom = 14
-
-# Load saved zoom/center if available
-if os.path.exists(config_file):
-    try:
-        with open(config_file, "r") as f:
-            saved = json.load(f)
-            st.session_state.center = saved.get("center", default_center)
-            st.session_state.zoom = saved.get("zoom", default_zoom)
-    except:
-        st.session_state.center = default_center
-        st.session_state.zoom = default_zoom
-else:
-    st.session_state.center = default_center
-    st.session_state.zoom = default_zoom
-
-# Sidebar zoom control
-    zoom_lock = st.sidebar.checkbox("🔒 Lock Zoom to 3-Mile Radius from Home", value=True)
-
-# Sidebar home config
-    st.sidebar.markdown("### 📍 Set Home Location")
-    home_lat = st.sidebar.number_input("Home Latitude", value=st.session_state.center[0], format="%.7f")
-    home_lon = st.sidebar.number_input("Home Longitude", value=st.session_state.center[1], format="%.7f")
-    st.session_state.home = [home_lat, home_lon]
-
-
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
 
-
-zoom_lock = True  # Default if sidebar hidden
-
-if show_sidebar_controls:
-    st.sidebar.header("Select Time")
-
+st.sidebar.header("Select Time")
 selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
 selected_time_only = st.sidebar.time_input("Time (UTC)", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
 selected_time = datetime.combine(selected_date, selected_time_only).replace(tzinfo=timezone.utc)
@@ -125,21 +89,7 @@ except Exception as e:
     data = {}
 
 aircraft_states = data.get("states", [])
-
-if zoom_lock:
-    st.session_state.zoom = 12
-    st.session_state.center = [-33.7608864, 150.9709575]
-
-
-try:
-    location_center = [float(x) for x in st.session_state.center]
-except Exception:
-    location_center = [(north + south)/2, (east + west)/2]
-    st.session_state.center = location_center
-
-fmap = folium.Map(location=location_center, zoom_start=st.session_state.zoom)
-
-
+fmap = folium.Map(location=[(north + south)/2, (east + west)/2], zoom_start=9)
 marker_cluster = MarkerCluster().add_to(fmap)
 folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
 
@@ -241,17 +191,4 @@ if os.path.exists(log_path):
                          hover_data=["Lat", "Lon"], title="Shadow Alerts Over Time")
         st.plotly_chart(fig, use_container_width=True)
 
-
-
-map_data = st_folium(fmap, width=1000, height=700)
-
-if map_data and "zoom" in map_data and "center" in map_data:
-    if not zoom_lock:
-        st.session_state.zoom = map_data["zoom"]
-        st.session_state.center = map_data["center"]
-    with open(config_file, "w") as f:
-        json.dump({"zoom": st.session_state.zoom, "center": st.session_state.center}, f)
-
-    st.session_state.zoom = map_data["zoom"]
-    st.session_state.center = map_data["center"]
-
+st_folium(fmap, width=1000, height=700)
