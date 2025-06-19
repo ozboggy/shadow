@@ -7,7 +7,7 @@ import folium
 from streamlit_folium import st_folium
 import math
 import requests
-from datetime import datetime, time as dt_time, timezone, timedelta
+from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 from folium.features import DivIcon
 
@@ -46,16 +46,16 @@ debug_mode = st.sidebar.checkbox("Debug raw response", value=False)
 refresh_interval = st.sidebar.number_input("Auto-refresh Interval (sec)", min_value=0, max_value=300, value=0, step=10,
                                         help="0 = no auto-refresh; >0 to refresh")
 
-# Time selection (UTC)
-sel_date = st.sidebar.date_input("Date (UTC)", datetime.utcnow().date())
-sel_time = st.sidebar.time_input("Time (UTC)", dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
-selected_time = datetime.combine(sel_date, sel_time).replace(tzinfo=timezone.utc)
+# Time selection fixed to current UTC
+today = datetime.utcnow().replace(tzinfo=timezone.utc)
+selected_time = today
 
 # Auto-refresh via HTML meta
 if refresh_interval > 0:
     st.markdown(f'<meta http-equiv="refresh" content="{refresh_interval}">', unsafe_allow_html=True)
 
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
+
 
 def move_position(lat: float, lon: float, heading: float, dist: float) -> tuple:
     """
@@ -186,6 +186,14 @@ if data_source == "OpenSky":
     aircraft_list = fetch_opensky(TARGET_LAT, TARGET_LON, radius_km)
 else:
     aircraft_list = fetch_adsb(TARGET_LAT, TARGET_LON, radius_km)
+
+# Indicate tracked aircraft in sidebar
+st.sidebar.markdown("### Tracked Aircraft")
+if aircraft_list:
+    for ac in aircraft_list:
+        st.sidebar.write(f"• {ac['callsign']} — Alt {ac['baro']} m, Spd {ac['vel']} m/s")
+else:
+    st.sidebar.write("No aircraft in range.")
 
 for ac in aircraft_list:
     lat = ac["lat"]; lon = ac["lon"]; baro = ac["baro"]
