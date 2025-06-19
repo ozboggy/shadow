@@ -18,7 +18,7 @@ TARGET_LON = 150.9779155
 DEFAULT_RADIUS_KM = 20
 DEFAULT_INTERVAL_SEC = 30
 DEFAULT_DURATION_MIN = 5
-DEFAULT_SHADOW_WIDTH = 3
+DEFAULT_SHADOW_WIDTH = 1.5
 DEFAULT_ZOOM = 11
 
 # Sidebar controls
@@ -45,7 +45,7 @@ override_trails = st.sidebar.checkbox("Show Trails Regardless of Sun/Moon", valu
 radius_km = st.sidebar.slider("Search Radius (km)", min_value=1, max_value=100, value=DEFAULT_RADIUS_KM)
 forecast_interval = st.sidebar.slider("Forecast Interval (sec)", min_value=5, max_value=60, value=DEFAULT_INTERVAL_SEC, step=5)
 forecast_duration = st.sidebar.slider("Forecast Duration (min)", min_value=1, max_value=60, value=DEFAULT_DURATION_MIN, step=1)
-shadow_width = st.sidebar.slider("Shadow Width (px)", min_value=1, max_value=10, value=DEFAULT_SHADOW_WIDTH)
+shadow_width = st.sidebar.slider("Shadow Width (px)", min_value=0.5, max_value=10.0, value=DEFAULT_SHADOW_WIDTH, step=0.5)
 debug_mode = st.sidebar.checkbox("Debug raw response", value=False)
 refresh_interval = st.sidebar.number_input("Auto-refresh Interval (sec)", min_value=0, max_value=300, value=0, step=10,
                                         help="0 = no auto-refresh; >0 to refresh")
