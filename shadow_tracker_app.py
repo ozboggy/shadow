@@ -24,7 +24,9 @@ with st.sidebar:
     st.header("Map Options")
     tile_style = st.selectbox(
         "Tile Style",
-        ["OpenStreetMap", "CartoDB positron", "CartoDB dark_matter", "Stamen Terrain", "Stamen Toner"],
+        ["OpenStreetMap", "CartoDB positron"],
+        index=1
+    ),
         index=1
     )
     data_source = st.selectbox(
