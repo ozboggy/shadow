@@ -64,10 +64,14 @@ debug_mode = st.sidebar.checkbox("Debug raw response", False)
 refresh_interval = st.sidebar.number_input("Auto-refresh Interval (sec)", 0, 300, 0, 10)
 enable_pushover = st.sidebar.checkbox("Enable Pushover Alerts", False)
 enable_audio = st.sidebar.checkbox("Enable Audio Alert at Home", False)
-# Test on-screen alert
+
+# Test home alert button
+if 'test_home_alert' not in st.session_state:
+    st.session_state['test_home_alert'] = False
 if st.sidebar.button("Send Test Home Alert"):
     st.session_state['test_home_alert'] = True
 
+# Test push and audio buttons
 if st.sidebar.button("Send Test Push"):
     resp = requests.post(
         "https://api.pushover.net/1/messages.json",
@@ -86,6 +90,9 @@ if st.sidebar.button("Send Test Audio"):
     beep = generate_beep()
     st.sidebar.audio(beep, format='audio/wav')
 
+# Test push alert
+if 'send_alert' not in st.session_state:
+    st.session_state['send_alert'] = False
 if st.sidebar.button("Send Alert Push"):
     st.session_state['send_alert'] = True
 
@@ -93,6 +100,7 @@ if st.sidebar.button("Send Alert Push"):
 if refresh_interval > 0:
     st.markdown(f'<meta http-equiv="refresh" content="{refresh_interval}">', unsafe_allow_html=True)
 
+# Title and timestamp
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 
@@ -118,8 +126,8 @@ def fetch_opensky(lat, lon, radius):
     dlon = dr / math.cos(math.radians(lat))
     west, east = lon - dlon, lon + dlon
     url = (
-        f"https://opensky-network.org/api/states/all?"
-        f"lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+        f"https://opensky-network.org/api/states/all?lamin={south}&" +
+        f"lomin={west}&lamax={north}&lomax={east}"
     )
     try:
         r = requests.get(url)
@@ -142,7 +150,7 @@ def fetch_opensky(lat, lon, radius):
             hdg = float(s[10])
         except Exception:
             continue
-        acs.append({"lat":lat_f,"lon":lon_f,"baro":baro,"vel":vel,"hdg":hdg,"callsign":cs})
+        acs.append({"lat": lat_f, "lon": lon_f, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
     return acs
 
 
@@ -152,20 +160,20 @@ def fetch_adsb(lat, lon, radius):
         st.error("Set RAPIDAPI_KEY in .env for ADS-B Exchange")
         return []
     url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{lat}/lon/{lon}/dist/{radius}/"
-    headers = {"x-rapidapi-key":api_key,"x-rapidapi-host":"adsbexchange-com1.p.rapidapi.com"}
+    headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
     try:
-        r = requests.get(url,headers=headers)
+        r = requests.get(url, headers=headers)
         r.raise_for_status()
         if debug_mode:
             st.write("ADS-B raw response:\n", r.text)
-        ac_list = r.json().get("ac",[])
+        ac_list = r.json().get("ac", [])
     except Exception as e:
         st.error(f"ADS-B error: {e}")
         return []
     acs = []
     for ac in ac_list:
         try:
-            cs=(ac.get("flight") or ac.get("hex") or "").strip()
+            cs = (ac.get("flight") or ac.get("hex") or "").strip()
             lat_f, lon_f = float(ac.get("lat")), float(ac.get("lon"))
             baro_val = ac.get("alt_baro")
             baro = float(baro_val) if baro_val is not None else 0.0
@@ -173,65 +181,94 @@ def fetch_adsb(lat, lon, radius):
             hdg = float(ac.get("track") or ac.get("trak") or 0)
         except Exception:
             continue
-        acs.append({"lat":lat_f,"lon":lon_f,"baro":baro,"vel":vel,"hdg":hdg,"callsign":cs})
+        acs.append({"lat": lat_f, "lon": lon_f, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
     return acs
 
 
 def calculate_trail(lat, lon, baro, vel, hdg):
-    pts=[]
-    for i in range(0,int(forecast_duration*60)+1,forecast_interval):
-        ft=selected_time+timedelta(seconds=i)
-        dist=vel*i
-        f_lat,f_lon=move_position(lat,lon,hdg,dist)
-        sun_alt=get_sun_altitude(f_lat,f_lon,ft)
-        if(track_sun and sun_alt>0) or (track_moon and sun_alt<=0) or override_trails:
-            az=get_sun_azimuth(f_lat,f_lon,ft)
+    pts = []
+    for i in range(0, int(forecast_duration * 60) + 1, forecast_interval):
+        ft = selected_time + timedelta(seconds=i)
+        dist = vel * i
+        f_lat, f_lon = move_position(lat, lon, hdg, dist)
+        sun_alt = get_sun_altitude(f_lat, f_lon, ft)
+        if (track_sun and sun_alt > 0) or (track_moon and sun_alt <= 0) or override_trails:
+            az = get_sun_azimuth(f_lat, f_lon, ft)
         else:
             continue
-        angle=sun_alt if sun_alt>0 else 1
-        sd=baro/math.tan(math.radians(angle))
-        sh_lat=f_lat+(sd/111111)*math.cos(math.radians(az+180))
-        sh_lon=f_lon+(sd/(111111*math.cos(math.radians(f_lat))))*math.sin(math.radians(az+180))
-        pts.append((sh_lat,sh_lon))
+        angle = sun_alt if sun_alt > 0 else 1
+        sd = baro / math.tan(math.radians(angle))
+        sh_lat = f_lat + (sd / 111111) * math.cos(math.radians(az + 180))
+        sh_lon = f_lon + (sd / (111111 * math.cos(math.radians(f_lat)))) * math.sin(math.radians(az + 180))
+        pts.append((sh_lat, sh_lon))
     return pts
 
+# Fetch aircraft data
+aircraft_list = (
+    fetch_opensky(TARGET_LAT, TARGET_LON, radius_km)
+    if data_source == "OpenSky"
+    else fetch_adsb(TARGET_LAT, TARGET_LON, radius_km)
+)
+
 # Initialize map
-fmap=folium.Map(location=(TARGET_LAT,TARGET_LON),zoom_start=zoom_level,tiles=tile_style,control_scale=True)
-folium.Marker(
+fmap = folium.Map(location=(TARGET_LAT, TARGET_LON), zoom_start=zoom_level, tiles=tile_style, control_scale=True)
+folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red", icon="home", prefix="fa"), popup="Home").add_to(fmap)
+
+# Alert triggers
+if st.session_state.get('send_alert'):
+    msg = f"{len(aircraft_list)} aircraft in range"
+    if enable_pushover:
+        requests.post(
+            "https://api.pushover.net/1/messages.json",
+            data={"user": PUSHOVER_USER_KEY, "token": PUSHOVER_APP_TOKEN, "message": msg}
+        )
+        st.sidebar.success("Alert sent.")
+    st.session_state['send_alert'] = False
+
+# Track home-shadow condition
+home_alert = False
+
+# On-screen test alert
+if st.session_state.get('test_home_alert'):
+    st.warning("⚠️ Test: Aircraft shadow over home!")
+    home_alert = True
+    st.session_state['test_home_alert'] = False
+
+# Plot aircraft and trails
+for ac in aircraft_list:
+    lat, lon, baro, vel, hdg, cs = ac.values()
+    # Plane icon
+    folium.Marker(
         (lat, lon),
         icon=DivIcon(
-            icon_size=(20,20),
-            icon_anchor=(10,10),
+            icon_size=(20, 20), icon_anchor=(10, 10),
             html=f'<i class="fa fa-plane" style="color:blue;transform:rotate({hdg-90}deg);transform-origin:center;font-size:20px"></i>'
         ),
-        popup=f"{cs}
-Alt: {baro} m
-Spd: {vel} m/s"
+        popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
     ).add_to(fmap)
-    folium.Marker((lat,lon), icon=DivIcon(icon_size=(150,36),icon_anchor=(0,0),html=f'<div style="font-size:12px">{cs}</div>')).add_to(fmap)
-    trail_pts = calculate_trail(lat,lon,baro,vel,hdg)
+    # Callsign label
+    folium.Marker(
+        (lat, lon),
+        icon=DivIcon(
+            icon_size=(150, 36), icon_anchor=(0, 0),
+            html=f'<div style="font-size:12px">{cs}</div>'
+        )
+    ).add_to(fmap)
+    # Trail
+    trail_pts = calculate_trail(lat, lon, baro, vel, hdg)
     if trail_pts:
-        line = folium.PolyLine(locations=trail_pts,color="black",weight=shadow_width,opacity=0.6)
+        line = folium.PolyLine(locations=trail_pts, color="black", weight=shadow_width, opacity=0.6)
         fmap.add_child(line)
-        PolyLineTextPath(line,'▶',repeat=True,offset=10,attributes={'fill':'blue','font-weight':'bold','font-size':'6px'}).add_to(fmap)
-        for s_lat,s_lon in trail_pts:
-            d_lat=(s_lat-TARGET_LAT)*111111
-            d_lon=(s_lon-TARGET_LON)*111111*math.cos(math.radians(TARGET_LAT))
-            if math.hypot(d_lat,d_lon)<=HOME_ALERT_THRESHOLD_M:
-                home_alert=True
+        PolyLineTextPath(line, '▶', repeat=True, offset=10, attributes={'fill':'blue','font-weight':'bold','font-size':'6px'}).add_to(fmap)
+        # Home proximity check
+        for s_lat, s_lon in trail_pts:
+            d_lat = (s_lat - TARGET_LAT) * 111111
+            d_lon = (s_lon - TARGET_LON) * 111111 * math.cos(math.radians(TARGET_LAT))
+            if math.hypot(d_lat, d_lon) <= HOME_ALERT_THRESHOLD_M:
+                home_alert = True
 
 # Render map
-st_folium(fmap,width=900,height=600)
-
-# On-screen alert for home proximity
-if home_alert:
-    st.warning("⚠️ Aircraft shadow over home!")
-
-# Audio alert if condition met
-if enable_audio and home_alert:
-    beep = generate_beep()
-    st.audio(beep, format='audio/wav')
-st_folium(fmap,width=900,height=600)
+st_folium(fmap, width=900, height=600)
 
 # On-screen alert for home proximity
 if home_alert:
