@@ -217,6 +217,8 @@ if alerts:
     }
     </script>
     """, unsafe_allow_html=True)
+else:
+    st.success("✅ No forecast shadow paths intersect target area.")
 
 # Test alert button
 if test_alert:
