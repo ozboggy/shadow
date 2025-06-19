@@ -170,6 +170,7 @@ if data_source == "OpenSky":
         })
 elif data_source == "ADS-B Exchange":
     api_key = os.getenv("RAPIDAPI_KEY")
+    adsb = []
     if api_key:
         url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
         headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
@@ -179,46 +180,42 @@ elif data_source == "ADS-B Exchange":
             adsb = r2.json().get("ac", [])
         except Exception:
             adsb = []
-        for ac in adsb:
-            lat = ac.get("lat")
-            lon = ac.get("lon")
-            vel_raw = ac.get("gs") or ac.get("spd")
-            hdg_raw = ac.get("track") or ac.get("trak")
-            baro_raw = ac.get("alt_baro")
-            cs = ac.get("flight") or ac.get("hex")
-            aircraft_list.append({
-                "lat": float(lat),
-                "lon": float(lon),
-                "baro": float(baro_raw) if baro_raw is not None else 0.0,
-                "vel": float(vel_raw) if vel_raw is not None else 0.0,
-                "hdg": float(hdg_raw) if hdg_raw is not None else 0.0,
-                "callsign": cs.strip() if isinstance(cs, str) else None
-            })
-    api_key = os.getenv("RAPIDAPI_KEY")
-    if api_key:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-        headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
+    # Process ADS-B data
+    for ac in adsb:
+        # Raw values
+        lat_raw = ac.get("lat")
+        lon_raw = ac.get("lon")
+        vel_raw = ac.get("gs") or ac.get("spd")
+        hdg_raw = ac.get("track") or ac.get("trak")
+        baro_raw = ac.get("alt_baro")
+        cs_raw = ac.get("flight") or ac.get("hex")
+        # Safe parsing
         try:
-            r2 = requests.get(url, headers=headers)
-            r2.raise_for_status()
-            adsb = r2.json().get("ac", [])
+            lat = float(lat_raw)
+            lon = float(lon_raw)
         except Exception:
-            adsb = []
-        for ac in adsb:
-            lat = ac.get("lat")
-            lon = ac.get("lon")
-            vel_raw = ac.get("gs") or ac.get("spd")
-            hdg_raw = ac.get("track") or ac.get("trak")
-            baro_raw = ac.get("alt_baro")
-            cs = ac.get("flight") or ac.get("hex")
-            aircraft_list.append({
-                "lat": float(lat),
-                "lon": float(lon),
-                "baro": float(baro_raw) if baro_raw is not None else 0.0,
-                "vel": float(vel_raw) if vel_raw is not None else 0.0,
-                "hdg": float(hdg_raw) if hdg_raw is not None else 0.0,
-                "callsign": cs.strip() if isinstance(cs, str) else None
-            })
+            continue
+        try:
+            vel = float(vel_raw)
+        except Exception:
+            vel = 0.0
+        try:
+            hdg = float(hdg_raw)
+        except Exception:
+            hdg = 0.0
+        try:
+            baro = float(baro_raw)
+        except Exception:
+            baro = 0.0
+        cs = cs_raw.strip() if isinstance(cs_raw, str) else None
+        aircraft_list.append({
+            "lat": lat,
+            "lon": lon,
+            "baro": baro,
+            "vel": vel,
+            "hdg": hdg,
+            "callsign": cs
+        })
 
 # Sidebar count
 st.sidebar.markdown(f"✈️ **Tracked Aircraft:** {len(aircraft_list)}")
