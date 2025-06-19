@@ -5,5 +5,7 @@ streamlit-folium
 pysolar
 pandas
 dotenv
-plotly.express
 plotly
+skyfield
+pyfr24
+python-dotenv
