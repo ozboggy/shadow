@@ -61,7 +61,6 @@ if refresh_interval > 0:
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 # Helper to move position along bearing
-
 def move_position(lat: float, lon: float, heading: float, dist: float) -> tuple:
     R = 6371000
     try:
@@ -105,7 +104,6 @@ def fetch_opensky(lat: float, lon: float, radius: float) -> list:
     return acs
 
 # Fetch from ADS-B Exchange
-
 def fetch_adsb(lat: float, lon: float, radius: float) -> list:
     api_key = os.getenv("RAPIDAPI_KEY")
     if not api_key:
@@ -134,7 +132,6 @@ def fetch_adsb(lat: float, lon: float, radius: float) -> list:
     return acs
 
 # Calculate shadow trail
-
 def calculate_trail(lat, lon, baro, vel, hdg) -> list:
     pts = []
     for i in range(0, int(forecast_duration*60)+1, forecast_interval):
@@ -174,14 +171,28 @@ with st.sidebar.expander("Show details"):
 # Plot aircraft and trails with direction arrows
 for ac in aircraft_list:
     lat, lon, baro, vel, hdg, cs = ac['lat'], ac['lon'], ac['baro'], ac['vel'], ac['hdg'], ac['callsign']
+    # Aircraft icon and label
     folium.Marker((lat, lon), icon=folium.Icon(color="blue", icon="plane", prefix="fa"), popup=f"{cs}\nAlt:{baro}m\nSpd:{vel}m/s").add_to(fmap)
     folium.map.Marker((lat,lon), icon=DivIcon(icon_size=(150,36), icon_anchor=(0,0), html=f'<div style="font-size:12px">{cs}</div>')).add_to(fmap)
+    # Shadow trail
     trail = calculate_trail(lat, lon, baro, vel, hdg)
     if trail:
-        line = folium.PolyLine(locations=trail, weight=shadow_width, opacity=0.6)
-        fmap.add_child(line)
-        # Add red arrow symbols along the trail
-        PolyLineTextPath(line, '▶', repeat=True, offset=12, attributes={'fill':'red','font-weight':'bold','font-size':'16px'})
+        # Add polyline
+        line = folium.PolyLine(locations=trail, color="black", weight=shadow_width, opacity=0.6)
+        line.add_to(fmap)
+        # Add directional arrows as a separate layer
+        arrow = PolyLineTextPath(
+            line,
+            '▶',
+            repeat=True,
+            offset=10,
+            attributes={
+                'fill': 'blue',
+                'font-weight': 'bold',
+                'font-size': '14px'
+            }
+        )
+        arrow.add_to(fmap)
 
 # Render map
 st_folium(fmap, width=900, height=600)
