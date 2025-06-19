@@ -54,7 +54,7 @@ if not os.path.exists(log_path):
 
 # UI
 st.set_page_config(layout="wide")
-st.title("✈️ Aircraft Shadow Tracker")
+st.title("✈️ Aircraft Shadow Trackerv4")
 
 selected_date = datetime.utcnow().date()
 selected_time_only = dt_time(datetime.utcnow().hour, datetime.utcnow().minute)
