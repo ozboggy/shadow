@@ -10,3 +10,4 @@ pyfr24
 python-dotenv
 pydeck
 streamlit-autorefresh
+PyEphem
