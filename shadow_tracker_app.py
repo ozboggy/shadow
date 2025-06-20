@@ -64,6 +64,17 @@ FORECAST_DURATION_MIN = 5
 # Current UTC time
 now = datetime.now(timezone.utc)
 
+# Compute sun altitude at home
+sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now)
+
+# Compute moon altitude at home if available
+if ephem:
+    obs = ephem.Observer()
+    obs.lat, obs.lon, obs.date = str(CENTER_LAT), str(CENTER_LON), now
+    moon_alt = math.degrees(float(ephem.Moon(obs).alt))
+else:
+    moon_alt = None
+
 # Initialize in‐memory history log
 if 'history' not in st.session_state:
     st.session_state.history = []
@@ -71,6 +82,24 @@ if 'history' not in st.session_state:
 # Sidebar controls
 with st.sidebar:
     st.header("Map & Alert Settings")
+
+    # Sun altitude display
+    sun_color = "green" if sun_alt > 0 else "red"
+    st.markdown(
+        f"**Sun altitude:** <span style='color:{sun_color};'>{sun_alt:.1f}°</span>",
+        unsafe_allow_html=True
+    )
+
+    # Moon altitude display
+    if moon_alt is not None:
+        moon_color = "green" if moon_alt > 0 else "red"
+        st.markdown(
+            f"**Moon altitude:** <span style='color:{moon_color};'>{moon_alt:.1f}°</span>",
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown("**Moon altitude:** _(PyEphem not installed)_")
+
     radius_km           = st.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
     military_radius_km  = st.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
     track_sun           = st.checkbox("Show Sun Shadows", True)
