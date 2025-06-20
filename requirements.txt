@@ -1,12 +1,6 @@
 streamlit
-requests
 folium
 streamlit-folium
-pysolar
-pandas
-dotenv
-plotly
-skyfield
-pyfr24
-python-dotenv
-
+geopy
+astral
+requests
