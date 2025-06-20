@@ -114,20 +114,62 @@ df_sh = pd.DataFrame(shadows)
 df_sh = pd.DataFrame(shadows)
 df_sh = pd.DataFrame(shadows)
 
+# Build shadow path lines
+paths = []
+if track_sun and not df_ac.empty and not df_sh.empty:
+    for (i, ac_row), (_, sh_row) in zip(df_ac.iterrows(), df_sh.iterrows()):
+        paths.append({
+            "path": [(ac_row['lon'], ac_row['lat']), (sh_row['lon'], sh_row['lat'])],
+            "callsign": ac_row['callsign']
+        })
+    df_paths = pd.DataFrame(paths)
+
 # Pydeck layers
-view=pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=10)
-layers=[]
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=10)
+layers = []
 # Aircraft layer
 if not df_ac.empty:
     layers.append(
-        pdk.Layer("ScatterplotLayer", df_ac, get_position=["lon","lat"], get_color=[0,128,255,200], get_radius=200)
+        pdk.Layer(
+            "ScatterplotLayer", df_ac,
+            get_position=["lon","lat"],
+            get_color=[0,128,255,200],
+            get_radius=200,
+            pickable=True
+        )
     )
-# Shadow layer
+# Shadow scatter layer
 if track_sun and not df_sh.empty:
     layers.append(
-        pdk.Layer("ScatterplotLayer", df_sh, get_position=["lon","lat"], get_color=[0,0,0,150], get_radius=200)
+        pdk.Layer(
+            "ScatterplotLayer", df_sh,
+            get_position=["lon","lat"],
+            get_color=[0,0,0,150],
+            get_radius=200
+        )
+    )
+# Shadow path lines
+if track_sun and 'df_paths' in locals() and not df_paths.empty:
+    layers.append(
+        pdk.Layer(
+            "PathLayer", df_paths,
+            get_path="path",
+            get_color=[0,0,0,100],
+            width_scale=20,
+            width_min_pixels=2,
+            pickable=True
+        )
     )
 # Home marker
+layers.append(
+    pdk.Layer(
+        "ScatterplotLayer", pd.DataFrame([{"lon":CENTER_LON,"lat":CENTER_LAT}]),
+        get_position=["lon","lat"],
+        get_color=[255,0,0,200],
+        get_radius=400
+    )
+)
+
 layers.append(
     pdk.Layer("ScatterplotLayer", pd.DataFrame([{"lon":CENTER_LON,"lat":CENTER_LAT}]), get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=400)
 )
