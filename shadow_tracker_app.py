@@ -72,7 +72,7 @@ if 'history' not in st.session_state:
 with st.sidebar:
     st.header("Map & Alert Settings")
     radius_km           = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
-    military_radius_km  = st.slider("Military Alert Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
+    military_radius_km  = st.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
     track_sun           = st.checkbox("Show Sun Shadows", True)
     show_moon           = st.checkbox("Show Moon Shadows", False)
     alert_width         = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
@@ -108,7 +108,6 @@ with st.sidebar:
         else:
             st.warning("Onscreen alerts are disabled.")
 
-# Title
 st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 
 # Fetch live ADS-B Exchange data
@@ -135,7 +134,6 @@ else:
             mil   = bool(ac.get("mil", False))
         except (TypeError, ValueError):
             continue
-
         aircraft_list.append({
             "lat": lat, "lon": lon, "alt": alt,
             "angle": angle, "callsign": cs, "mil": mil
@@ -197,7 +195,6 @@ if not df_ac.empty:
     layers.append(pdk.Layer("IconLayer", icon_df,
                             get_icon="icon", get_position=["lon","lat"], get_angle="angle",
                             size_scale=15, pickable=True))
-
 if track_sun:
     layers.append(pdk.Layer("PathLayer", pd.DataFrame(trails_sun),
                             get_path="path", get_color=[255,215,0,150],
@@ -206,14 +203,9 @@ if show_moon:
     layers.append(pdk.Layer("PathLayer", pd.DataFrame(trails_moon),
                             get_path="path", get_color=[100,100,100,150],
                             width_scale=10, width_min_pixels=2))
-
-# Home marker sized by alert_width
 layers.append(pdk.Layer("ScatterplotLayer",
                         pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
-                        get_position=["lon","lat"],
-                        get_color=[255,0,0,200],
-                        get_radius=alert_width))
-
+                        get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=alert_width))
 st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
                 use_container_width=True)
 
