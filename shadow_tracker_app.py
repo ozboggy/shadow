@@ -31,6 +31,7 @@ if auto_refresh:
 PUSHOVER_USER_KEY  = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 ADSBEX_TOKEN       = os.getenv("ADSBEX_TOKEN")
+
 CENTER_LAT, CENTER_LON = -33.7602563, 150.9717434
 DEFAULT_RADIUS_KM     = 10
 FORECAST_INTERVAL_SEC = 30
@@ -43,12 +44,8 @@ def send_pushover(title, message):
     try:
         requests.post(
             "https://api.pushover.net/1/messages.json",
-            data={
-                "token":   PUSHOVER_API_TOKEN,
-                "user":    PUSHOVER_USER_KEY,
-                "title":   title,
-                "message": message
-            },
+            data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY,
+                  "title": title, "message": message},
             timeout=5
         )
     except Exception as e:
@@ -108,13 +105,12 @@ if ADSBEX_TOKEN:
             "x-rapidapi-key": ADSBEX_TOKEN,
             "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
         }
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        raw = resp.json().get("ac", [])
+        r = requests.get(url, headers=headers, timeout=10); r.raise_for_status()
+        raw = r.json().get("ac", [])
     except Exception as e:
         st.warning(f"ADS-B fetch failed: {e}")
 
-# Fallback to OpenSky if no ADS-B data
+# Fallback to OpenSky if ADS-B empty
 if not raw:
     dr = radius_km / 111
     south, north = CENTER_LAT - dr, CENTER_LAT + dr
@@ -129,12 +125,10 @@ if not raw:
         r2.raise_for_status()
         states = r2.json().get("states", [])
     except Exception as e:
-        st.warning(f"OpenSky fetch failed: {e}")
-        states = []
+        st.warning(f"OpenSky fetch failed: {e}"); states = []
     raw = [
         {"lat": s[6], "lon": s[5], "alt": s[13] or 0.0,
-         "track": s[10] or 0.0, "callsign": (s[1].strip() or s[0]),
-         "mil": False}
+         "track": s[10] or 0.0, "callsign": (s[1].strip() or s[0]), "mil": False}
         for s in states if len(s) >= 11
     ]
 
@@ -150,11 +144,7 @@ for ac in raw:
         mil   = bool(ac.get("mil", False))
     except:
         continue
-    ac_list.append({
-        "lat": lat, "lon": lon, "alt": alt,
-        "angle": angle, "callsign": cs.strip(),
-        "mil": mil
-    })
+    ac_list.append({"lat": lat, "lon": lon, "alt": alt, "angle": angle, "callsign": cs.strip(), "mil": mil})
 
 df = pd.DataFrame(ac_list)
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(df)}")
@@ -183,8 +173,7 @@ if track_moon and ephem:
         path = []
         for sec in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
             ft = now + timedelta(seconds=sec)
-            obs = ephem.Observer()
-            obs.lat, obs.lon, obs.date = str(r.lat), str(r.lon), ft
+            obs = ephem.Observer(); obs.lat, obs.lon, obs.date = str(r.lat), str(r.lon), ft
             m = ephem.Moon(obs)
             ma, mz = math.degrees(float(m.alt)), math.degrees(float(m.az))
             if ma > 0:
@@ -195,6 +184,7 @@ if track_moon and ephem:
         if path:
             trails_moon.append({"callsign": r.callsign, "path": path})
 
+# Debug trails
 if debug_trails:
     st.sidebar.write("Sun trails sample:", trails_sun[:2])
     st.sidebar.write("Moon trails sample:", trails_moon[:2])
@@ -212,7 +202,7 @@ df["will_shadow"] = df["callsign"].isin(alerts)
 df_safe = df[~df["will_shadow"]]
 df_warn = df[df["will_shadow"]]
 
-# Build PyDeck layers
+# Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
@@ -224,32 +214,28 @@ if not df_warn.empty:
     layers.append(pdk.Layer("ScatterplotLayer", df_warn,
                             get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=100))
 
-# Sun shadow paths (on top)
+# Sun shadow paths atop everything
 if track_sun and trails_sun:
-    df_ps = pd.DataFrame(trails_sun)
-    layers.append(pdk.Layer("PathLayer", df_ps,
+    layers.append(pdk.Layer("PathLayer", trails_sun,
                             get_path="path",
                             get_color=[255,215,0,255],
-                            width_scale=20,
-                            width_min_pixels=5))
+                            get_width=3,
+                            width_min_pixels=3))
 
 # Moon shadow paths
 if track_moon and trails_moon:
-    df_pm = pd.DataFrame(trails_moon)
-    layers.append(pdk.Layer("PathLayer", df_pm,
+    layers.append(pdk.Layer("PathLayer", trails_moon,
                             get_path="path",
                             get_color=[100,100,100,255],
-                            width_scale=20,
-                            width_min_pixels=5))
+                            get_width=3,
+                            width_min_pixels=3))
 
 # Home marker
 layers.append(pdk.Layer("ScatterplotLayer",
                         pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
-                        get_position=["lon","lat"],
-                        get_color=[255,0,0,200],
-                        get_radius=alert_width))
+                        get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=alert_width))
 
-# Render
+# Render map
 st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
                 use_container_width=True)
 
