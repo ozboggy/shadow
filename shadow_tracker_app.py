@@ -16,19 +16,21 @@ try:
 except ImportError:
     ephem = None
 
-# Ensure our history log exists
+# Ensure history list exists
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# Auto‐refresh toggle
+# Sidebar: auto‐refresh settings
+st.sidebar.header("Refresh Settings")
 auto_refresh = st.sidebar.checkbox("Auto Refresh Map", value=True)
+refresh_interval = st.sidebar.number_input("Refresh Interval (s)", min_value=1, max_value=60, value=10)
 if auto_refresh:
-    st_autorefresh(interval=1_000, key="datarefresh")
+    st_autorefresh(interval=refresh_interval * 1000, key="datarefresh")
 
 # Environment variables
-PUSHOVER_USER_KEY  = os.getenv("PUSHOVER_USER_KEY")
-PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
-ADSBEX_TOKEN       = os.getenv("ADSBEX_TOKEN")  # your RapidAPI key for ADS-B Exchange
+PUSHOVER_USER_KEY   = os.getenv("PUSHOVER_USER_KEY")
+PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
+ADSBEX_TOKEN        = os.getenv("ADSBEX_TOKEN")
 
 # Home location & defaults
 CENTER_LAT            = -33.7602563
@@ -57,7 +59,8 @@ def send_pushover(title: str, message: str):
 
 def hav(lat1, lon1, lat2, lon2) -> float:
     R = 6371000
-    dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
     a = (math.sin(dlat/2)**2 +
          math.cos(math.radians(lat1)) *
          math.cos(math.radians(lat2)) *
@@ -66,7 +69,7 @@ def hav(lat1, lon1, lat2, lon2) -> float:
 
 now = datetime.now(timezone.utc)
 
-# Compute sun & moon altitudes
+# Compute sun & moon altitudes at home
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now)
 if ephem:
     obs = ephem.Observer()
@@ -75,92 +78,78 @@ if ephem:
 else:
     moon_alt = None
 
-# Cache ADS-B fetch for 5min to prevent freeze on slider
-@st.cache_data(ttl=300)
-def fetch_adsb(radius: int):
-    url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius}/"
-    headers = {
-        "x-rapidapi-key": ADSBEX_TOKEN,
-        "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
-    }
-    resp = requests.get(url, headers=headers, timeout=10)
-    resp.raise_for_status()
-    return resp.json().get("ac", [])
+# Sidebar: map & alert settings
+st.sidebar.header("Map & Alert Settings")
+sun_color = "green" if sun_alt > 0 else "red"
+st.sidebar.markdown(f"**Sun altitude:** <span style='color:{sun_color};'>{sun_alt:.1f}°</span>", unsafe_allow_html=True)
+if moon_alt is not None:
+    moon_color = "green" if moon_alt > 0 else "red"
+    st.sidebar.markdown(f"**Moon altitude:** <span style='color:{moon_color};'>{moon_alt:.1f}°</span>", unsafe_allow_html=True)
+else:
+    st.sidebar.markdown("**Moon altitude:** _(PyEphem not installed)_")
 
-# Sidebar controls
-with st.sidebar:
-    st.header("Map & Alert Settings")
+radius_km           = st.sidebar.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM, step=1)
+military_radius_km  = st.sidebar.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM, step=1)
+track_sun           = st.sidebar.checkbox("Show Sun Shadows", True)
+show_moon           = st.sidebar.checkbox("Show Moon Shadows", False)
+alert_width         = st.sidebar.slider("Shadow Alert Width (m)", 0, 1000, 50, step=1)
+enable_onscreen     = st.sidebar.checkbox("Enable Onscreen Alert", True)
 
-    # Sun / Moon display
-    sc = "green" if sun_alt > 0 else "red"
-    st.markdown(f"**Sun altitude:** <span style='color:{sc};'>{sun_alt:.1f}°</span>", unsafe_allow_html=True)
-    if moon_alt is not None:
-        mc = "green" if moon_alt > 0 else "red"
-        st.markdown(f"**Moon altitude:** <span style='color:{mc};'>{moon_alt:.1f}°</span>", unsafe_allow_html=True)
+debug_raw = st.sidebar.checkbox("🔍 Debug raw ADS-B JSON", False)
+debug_df  = st.sidebar.checkbox("🔍 Debug processed DataFrame", False)
+
+if st.sidebar.button("Test Pushover"):
+    send_pushover("✈️ Test Alert", "This is a test notification.")
+    st.sidebar.success("Pushover test sent!")
+if st.sidebar.button("Test Onscreen"):
+    if enable_onscreen:
+        st.error("🚨 TEST ALERT!")
+        st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
     else:
-        st.markdown("**Moon altitude:** _(PyEphem not installed)_")
-
-    radius_km          = st.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM, step=10)
-    military_radius_km = st.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM, step=10)
-    track_sun          = st.checkbox("Show Sun Shadows", True)
-    show_moon          = st.checkbox("Show Moon Shadows", False)
-    alert_width        = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
-    enable_onscreen    = st.checkbox("Enable Onscreen Alert", True)
-
-    debug_raw = st.checkbox("🔍 Debug raw ADS-B JSON", False)
-    debug_df  = st.checkbox("🔍 Debug processed DataFrame", False)
-
-    if st.button("Test Pushover"):
-        send_pushover("✈️ Test Alert", "This is a test notification.")
-        st.success("Pushover test sent!")
-    if st.button("Test Onscreen"):
-        if enable_onscreen:
-            st.error("🚨 TEST ALERT!")
-            st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-        else:
-            st.warning("Onscreen alerts disabled.")
+        st.sidebar.warning("Onscreen alerts disabled.")
 
 st.title("✈️ Aircraft Shadow Tracker")
 
-# Fetch ADS-B data with spinner
-with st.spinner("Loading aircraft…"):
-    if ADSBEX_TOKEN:
-        try:
-            raw = fetch_adsb(radius_km)
-        except Exception as e:
-            st.warning(f"ADS-B fetch failed: {e}")
-            raw = []
-    else:
-        raw = []
+# Fetch ADS-B Exchange data (no caching)
+raw = []
+if ADSBEX_TOKEN:
+    try:
+        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
+        headers = {
+            "x-rapidapi-key": ADSBEX_TOKEN,
+            "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
+        }
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        raw = resp.json().get("ac", [])
+    except Exception as e:
+        st.warning(f"ADS-B fetch failed: {e}")
+else:
+    st.info("No ADS-B Exchange key; skipping ADS-B fetch.")
 
 if debug_raw:
     st.subheader("Raw ADS-B JSON")
     st.write(raw)
 
-# Fallback to OpenSky if ADS-B empty
-if not raw and ADSBEX_TOKEN:
+# Fallback to OpenSky if no ADS-B data
+if not raw:
     dr = radius_km / 111
     south, north = CENTER_LAT - dr, CENTER_LAT + dr
     dlon = dr / math.cos(math.radians(CENTER_LAT))
     west, east = CENTER_LON - dlon, CENTER_LON + dlon
     try:
-        r2 = requests.get(
-            f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}",
-            timeout=10
-        )
+        url = (f"https://opensky-network.org/api/states/all?"
+               f"lamin={south}&lomin={west}&lamax={north}&lomax={east}")
+        r2 = requests.get(url, timeout=10)
         r2.raise_for_status()
         states = r2.json().get("states", [])
     except Exception as e:
         st.warning(f"OpenSky fetch failed: {e}")
         states = []
     raw = [
-        {
-            "lat": s[6], "lon": s[5],
-            "alt_geo": s[13] or 0.0,
-            "track":  s[10] or 0.0,
-            "flight": (s[1].strip() or s[0]),
-            "mil":    False
-        }
+        {"lat": s[6], "lon": s[5], "alt_geo": s[13] or 0.0,
+         "track": s[10] or 0.0, "flight": (s[1].strip() or s[0]),
+         "mil": False}
         for s in states if len(s) >= 11
     ]
 
@@ -176,7 +165,9 @@ for ac in raw:
         mil   = bool(ac.get("mil", False))
     except:
         continue
-    aircraft.append({"lat": lat, "lon": lon, "alt": alt, "angle": angle, "callsign": cs.strip(), "mil": mil})
+    aircraft.append({"lat": lat, "lon": lon, "alt": alt,
+                     "angle": angle, "callsign": cs.strip(),
+                     "mil": mil})
 
 df = pd.DataFrame(aircraft)
 if debug_df:
@@ -187,14 +178,15 @@ st.sidebar.markdown(f"**Tracked Aircraft:** {len(df)}")
 if not df.empty:
     df["alt"] = pd.to_numeric(df["alt"], errors="coerce").fillna(0)
 
-# Forecast sun-shadow trails
+# Forecast sun‐shadow trails
 trails_sun = []
 if track_sun:
     for _, r in df.iterrows():
         path, times = [], []
         for s in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
             ft = now + timedelta(seconds=s)
-            sa, sz = get_altitude(r.lat, r.lon, ft), get_azimuth(r.lat, r.lon, ft)
+            sa = get_altitude(r.lat, r.lon, ft)
+            sz = get_azimuth(r.lat, r.lon, ft)
             if sa > 0:
                 d = r.alt / math.tan(math.radians(sa))
                 sh_lat = r.lat + (d / 111111) * math.cos(math.radians(sz + 180))
@@ -204,7 +196,7 @@ if track_sun:
         if path:
             trails_sun.append({"callsign": r.callsign, "path": path, "times": times})
 
-# Compute which aircraft will shadow home
+# Compute alerts & mark which will shadow
 alerts = []
 for tr in trails_sun:
     for (lon, lat), t in zip(tr["path"], tr["times"]):
@@ -213,13 +205,12 @@ for tr in trails_sun:
             send_pushover("✈️ Shadow Alert", f"{tr['callsign']} in ~{t}s")
             break
 
-# Split DataFrame for coloring
 shadow_calls = {cs for cs, _ in alerts}
 df["will_shadow"] = df["callsign"].isin(shadow_calls)
 df_safe  = df[~df["will_shadow"]]
 df_alert = df[df["will_shadow"]]
 
-# Render map
+# Render pydeck map
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 if not df_safe.empty:
@@ -234,28 +225,29 @@ if track_sun:
     layers.append(pdk.Layer("PathLayer", pd.DataFrame(trails_sun),
                             get_path="path", get_color=[255, 215, 0, 150],
                             width_scale=10, width_min_pixels=2))
-# Home marker
 layers.append(pdk.Layer("ScatterplotLayer",
                         pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
                         get_position=["lon", "lat"], get_color=[255, 0, 0, 200],
                         get_radius=alert_width))
 
-st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
+st.pydeck_chart(pdk.Deck(layers=layers,
+                        initial_view_state=view,
+                        map_style="light"),
                 use_container_width=True)
 
-# Onscreen & desktop notifications
+# Onscreen alerts
 if alerts and enable_onscreen:
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
 for cs, t in alerts:
     st.write(f"✈️ {cs} — in approx. {t} seconds")
 if not alerts:
-    st.success("✅ No shadow paths intersect target area.")
+    st.success("✅ No shadow paths intersect home area.")
 
-# Update and display history
+# Update & display history chart
 st.session_state.history.append({
-    "time":        now,
-    "tracked":     len(df),
+    "time":          now,
+    "tracked":       len(df),
     "shadow_events": len(alerts)
 })
 hist_df = pd.DataFrame(st.session_state.history).set_index("time")
