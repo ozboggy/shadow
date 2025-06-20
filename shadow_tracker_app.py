@@ -79,6 +79,7 @@ with st.sidebar:
 st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 time_now = datetime.now(timezone.utc)
 
+# Show warnings if needed
 if show_moon and ephem is None:
     st.warning("PyEphem not installed; moon shadows unavailable.")
 if not ADSBEX_TOKEN:
@@ -209,11 +210,13 @@ if show_moon and trails_moon:
         width_scale=10, width_min_pixels=2
     ))
 
-# Home marker
+# Home marker, size = alert_width (meters)
 layers.append(pdk.Layer(
     "ScatterplotLayer",
     pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
-    get_position=["lon", "lat"], get_color=[255, 0, 0, 200], get_radius=400
+    get_position=["lon", "lat"],
+    get_color=[255, 0, 0, 200],
+    get_radius=alert_width
 ))
 
 # Render map
