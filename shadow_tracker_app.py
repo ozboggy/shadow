@@ -27,10 +27,6 @@ PUSHOVER_USER_KEY   = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
 ADSBEX_TOKEN        = os.getenv("ADSBEX_TOKEN")
 
-# Initialize in‐memory log
-if 'history' not in st.session_state:
-    st.session_state.history = []
-
 def send_pushover(title, message):
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
         st.warning("Pushover credentials not set.")
@@ -39,9 +35,9 @@ def send_pushover(title, message):
         requests.post(
             "https://api.pushover.net/1/messages.json",
             data={
-                "token": PUSHOVER_API_TOKEN,
-                "user": PUSHOVER_USER_KEY,
-                "title": title,
+                "token":   PUSHOVER_API_TOKEN,
+                "user":    PUSHOVER_USER_KEY,
+                "title":   title,
                 "message": message
             }
         )
@@ -65,10 +61,14 @@ DEFAULT_RADIUS_KM     = 10
 FORECAST_INTERVAL_SEC = 30
 FORECAST_DURATION_MIN = 5
 
-# Current time
+# Current UTC time
 now = datetime.now(timezone.utc)
 
-# Sidebar: map options
+# Initialize in‐memory history log
+if 'history' not in st.session_state:
+    st.session_state.history = []
+
+# Sidebar controls
 with st.sidebar:
     st.header("Map Options")
     radius_km           = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
@@ -78,15 +78,12 @@ with st.sidebar:
     alert_width         = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert          = st.button("Test Alert")
     test_pushover       = st.button("Test Pushover")
-    st.markdown(f"**Tracked Aircraft:** _will appear below_")
 
 st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 
-# Fetch live ADS-B data
+# Fetch live ADS-B Exchange data
 aircraft_list = []
-if not ADSBEX_TOKEN:
-    st.warning("Please set ADSBEX_TOKEN in your environment.")
-else:
+if ADSBEX_TOKEN:
     try:
         url = f"https://adsbexchange.com/api/aircraft/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
         headers = {"api-auth": ADSBEX_TOKEN}
@@ -95,31 +92,34 @@ else:
     except Exception as e:
         st.warning(f"ADS-B fetch failed: {e}")
         data = []
+else:
+    st.warning("Please set ADSBEX_TOKEN in your environment.")
+    data = []
 
-    for ac in data:
-        try:
-            lat   = float(ac.get("lat"))
-            lon   = float(ac.get("lon"))
-            alt   = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
-            angle = float(ac.get("track") or ac.get("trk") or 0.0)
-            cs    = str(ac.get("flight") or ac.get("hex") or "").strip()
-            mil   = bool(ac.get("mil", False))
-        except:
-            continue
-        aircraft_list.append({
-            "lat": lat, "lon": lon, "alt": alt,
-            "angle": angle, "callsign": cs, "mil": mil
-        })
+for ac in data:
+    try:
+        lat   = float(ac.get("lat"))
+        lon   = float(ac.get("lon"))
+        alt   = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
+        angle = float(ac.get("track") or ac.get("trk") or 0.0)
+        cs    = str(ac.get("flight") or ac.get("hex") or "").strip()
+        mil   = bool(ac.get("mil", False))
+    except (TypeError, ValueError):
+        continue
+    aircraft_list.append({
+        "lat": lat, "lon": lon, "alt": alt,
+        "angle": angle, "callsign": cs, "mil": mil
+    })
 
-# Build DataFrame and update sidebar count
+# Build DataFrame & display count
 df_ac = pd.DataFrame(aircraft_list)
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(df_ac)}")
-if df_ac.empty:
-    st.warning("No aircraft data available.")
-else:
+if not df_ac.empty:
     df_ac["alt"] = pd.to_numeric(df_ac["alt"], errors="coerce").fillna(0)
+else:
+    st.warning("No aircraft data available.")
 
-# Forecast shadow trails
+# Forecast sun‐shadow and moon‐shadow trails
 trails_sun, trails_moon = [], []
 if track_sun and not df_ac.empty:
     for _, row in df_ac.iterrows():
@@ -130,8 +130,8 @@ if track_sun and not df_ac.empty:
             sun_z = get_azimuth(row["lat"], row["lon"], ft)
             if sun_a > 0:
                 dist   = row["alt"] / math.tan(math.radians(sun_a))
-                sh_lat = row["lat"] + (dist/111111)*math.cos(math.radians(sun_z+180))
-                sh_lon = row["lon"] + (dist/(111111*math.cos(math.radians(row["lat"]))))*math.sin(math.radians(sun_z+180))
+                sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(sun_z+180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * math.sin(math.radians(sun_z+180))
                 path.append((sh_lon, sh_lat)); times.append(i)
         if path:
             trails_sun.append({"callsign": row["callsign"], "path": path, "times": times})
@@ -146,28 +146,27 @@ if show_moon and ephem and not df_ac.empty:
             m_alt = math.degrees(float(m.alt)); m_az = math.degrees(float(m.az))
             if m_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(m_alt))
-                sh_lat = row["lat"] + (dist/111111)*math.cos(math.radians(m_az+180))
-                sh_lon = row["lon"] + (dist/(111111*math.cos(math.radians(row["lat"]))))*math.sin(math.radians(m_az+180))
+                sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(m_az+180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * math.sin(math.radians(m_az+180))
                 path.append((sh_lon, sh_lat)); times.append(i)
         if path:
             trails_moon.append({"callsign": row["callsign"], "path": path, "times": times})
 
-# Build icon & path layers
+# Build Deck.gl layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
-
 if not df_ac.empty:
     icon_df = pd.DataFrame([{
-        "lon":r["lon"], "lat":r["lat"],
-        "icon":{
-          "url":"https://img.icons8.com/ios-filled/50/000000/airplane-take-off.png",
-          "width":128,"height":128,"anchorX":64,"anchorY":64},
-        "angle":r["angle"]
-    } for _,r in df_ac.iterrows()])
+        "lon": r["lon"], "lat": r["lat"],
+        "icon": {
+            "url":    "https://img.icons8.com/ios-filled/50/000000/airplane-take-off.png",
+            "width":  128, "height": 128, "anchorX": 64, "anchorY": 64
+        },
+        "angle": r["angle"]
+    } for _, r in df_ac.iterrows()])
     layers.append(pdk.Layer("IconLayer", icon_df,
-                            get_icon="icon", get_position=["lon","lat"],
-                            get_angle="angle", size_scale=15, pickable=True))
-
+                            get_icon="icon", get_position=["lon","lat"], get_angle="angle",
+                            size_scale=15, pickable=True))
 if track_sun:
     layers.append(pdk.Layer("PathLayer", pd.DataFrame(trails_sun),
                             get_path="path", get_color=[255,215,0,150],
@@ -176,43 +175,62 @@ if show_moon:
     layers.append(pdk.Layer("PathLayer", pd.DataFrame(trails_moon),
                             get_path="path", get_color=[100,100,100,150],
                             width_scale=10, width_min_pixels=2))
-
-# Home marker
 layers.append(pdk.Layer("ScatterplotLayer",
-                        pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
+                        pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
                         get_position=["lon","lat"],
                         get_color=[255,0,0,200],
                         get_radius=alert_width))
-
-# Render map
-deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
-st.pydeck_chart(deck, use_container_width=True)
+st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
+                use_container_width=True)
 
 # Collect alerts
 alerts_triggered = []
 for tr in trails_sun:
-    for (lon,lat),t in zip(tr["path"],tr["times"]):
-        if hav(lat,lon,CENTER_LAT,CENTER_LON) <= alert_width:
-            alerts_triggered.append((tr["callsign"],t))
+    for (lon, lat), t in zip(tr["path"], tr["times"]):
+        if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
+            alerts_triggered.append((tr["callsign"], t))
             send_pushover("✈️ Shadow Alert", f"{tr['callsign']} in ~{t}s")
             break
 if show_moon:
     for tr in trails_moon:
-        for (lon,lat),t in zip(tr["path"],tr["times"]):
-            if hav(lat,lon,CENTER_LAT,CENTER_LON) <= alert_width:
-                alerts_triggered.append((tr["callsign"],t))
+        for (lon, lat), t in zip(tr["path"], tr["times"]):
+            if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
+                alerts_triggered.append((tr["callsign"], t))
                 send_pushover("🌑 Moon Shadow Alert", f"{tr['callsign']} in ~{t}s")
                 break
-for _,row in df_ac.iterrows():
+for _, row in df_ac.iterrows():
     if row["mil"]:
-        dist = hav(row["lat"],row["lon"],CENTER_LAT,CENTER_LON)
-        if dist <= military_radius_km*1000:
-            alerts_triggered.append((row["callsign"],0))
-            send_pushover("✈️ Military Alert",f"{row['callsign']} nearby")
+        dist_m = hav(row["lat"], row["lon"], CENTER_LAT, CENTER_LON)
+        if dist_m <= military_radius_km * 1000:
+            alerts_triggered.append((row["callsign"], 0))
+            send_pushover("✈️ Military Alert", f"{row['callsign']} within {military_radius_km}km")
             break
 
 # Update history log
 st.session_state.history.append({
     "time": now,
     "tracked": len(df_ac),
-    "shadow
+    "shadow_events": len(alerts_triggered)
+})
+
+# Display timeline
+hist_df = pd.DataFrame(st.session_state.history)
+hist_df["time"] = pd.to_datetime(hist_df["time"])
+hist_df = hist_df.set_index("time")
+st.subheader("📈 Tracked vs Shadow Events Over Time")
+st.line_chart(hist_df)
+
+# Alert status summary
+if alerts_triggered:
+    st.error("🚨 Shadow ALERT!")
+    for cs, t in alerts_triggered:
+        st.write(f"✈️ {cs} — in approx. {t} seconds")
+else:
+    st.success("✅ No shadow paths intersect area.")
+
+# Test buttons
+if test_alert:
+    st.error(f"🚨 Test Shadow Alert within {alert_width} m!")
+if test_pushover:
+    send_pushover("✈️ Test Shadow Alert", f"Test within {alert_width} m")
+    st.info("Test Pushover sent")
