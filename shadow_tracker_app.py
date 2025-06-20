@@ -32,6 +32,15 @@ def send_pushover(title, message):
         st.warning(f"Pushover notification failed: {e}")
 
 # Defaults
+
+def hav(lat1, lon1, lat2, lon2):
+    R = 6371000
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
+
+CENTER_LAT = -33.7602563
 CENTER_LAT = -33.7602563
 CENTER_LON = 150.9717434
 DEFAULT_RADIUS_KM = 10
