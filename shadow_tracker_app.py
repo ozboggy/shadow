@@ -2,17 +2,14 @@ import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
 import os
-import folium
-from folium.features import DivIcon
-from streamlit_folium import st_folium
-from datetime import datetime, timezone, timedelta
 import math
 import requests
 import pandas as pd
-import plotly.express as px
+import pydeck as pdk
+from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 
-# Pushover configuration (set these in your .env)
+# Pushover configuration
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 
@@ -41,10 +38,9 @@ CENTER_LON = 150.9717434
 DEFAULT_RADIUS_KM = 10
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
-DEFAULT_SHADOW_WIDTH = 2
 DEFAULT_ZOOM = 11
 
-# Sidebar
+# Sidebar controls
 with st.sidebar:
     st.header("Map Options")
     tile_style = st.selectbox("Tile Style", ["OpenStreetMap", "CartoDB positron"], index=0)
@@ -62,170 +58,87 @@ with st.sidebar:
     zoom_level = st.slider("Initial Zoom Level", 1, 18, DEFAULT_ZOOM)
     map_width = st.number_input("Width (px)", 400, 2000, 600)
     map_height = st.number_input("Height (px)", 300, 1500, 600)
-    
-        # Alert History in sidebar
     st.markdown("---")
     st.markdown("### 📥 Download Log")
     if os.path.exists(log_path):
-        with open(log_path, "rb") as log_file_obj:
-            st.download_button(
-                "Download alert_log.csv",
-                log_file_obj,
-                file_name="alert_log.csv",
-                mime="text/csv"
-            )
+        with open(log_path, "rb") as f:
+            st.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
         df_log = pd.read_csv(log_path)
         if not df_log.empty:
             df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
             st.markdown("### 🕑 Recent Alerts")
-            recent = (
+            st.dataframe(
                 df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']]
-                .sort_values('Time UTC', ascending=False)
-                .head(5)
+                    .sort_values('Time UTC', ascending=False)
+                    .head(5)
             )
-            st.dataframe(recent)
-    st.markdown("---")
-    st.markdown("### 🕑 Recent Alerts")
-    if os.path.exists(log_path):
-        df_log = pd.read_csv(log_path)
-        if not df_log.empty:
-            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-            recent = df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']].sort_values('Time UTC', ascending=False).head(5)
-            st.dataframe(recent)
-    st.markdown("---")
-# Current UTC time"
+
+# Current time
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 
-# Title
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
-# Build aircraft DataFrame for Pydeck
-# Ensure aircraft_list is defined first (after fetching)
+# Fetch aircraft data
+aircraft_list = []
+if data_source == "OpenSky":
+    dr = radius_km / 111.0
+    south, north = CENTER_LAT - dr, CENTER_LAT + dr
+    dlon = dr / math.cos(math.radians(CENTER_LAT))
+    west, east = CENTER_LON - dlon, CENTER_LON + dlon
+    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+    try:
+        r = requests.get(url); r.raise_for_status(); states = r.json().get("states", [])
+    except:
+        states = []
+    for s in states:
+        if len(s) < 11: continue
+        cs = s[1].strip() if s[1] else s[0]
+        lat, lon = s[6], s[5]
+        baro = s[7] or 0.0
+        vel = s[9] or 0.0
+        hdg = s[10] or 0.0
+        aircraft_list.append({"lat": lat, "lon": lon, "callsign": cs})
+elif data_source == "ADS-B Exchange":
+    api_key = os.getenv("RAPIDAPI_KEY")
+    adsb = []
+    if api_key:
+        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
+        headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
+        try:
+            r2 = requests.get(url, headers=headers); r2.raise_for_status(); adsb = r2.json().get("ac", [])
+        except:
+            adsb = []
+    for ac in adsb:
+        try:
+            lat = float(ac.get("lat")); lon = float(ac.get("lon"))
+        except:
+            continue
+        cs = ac.get("flight") or ac.get("hex")
+        aircraft_list.append({"lat": lat, "lon": lon, "callsign": cs.strip() if cs else None})
+
+# Build DataFrame for Pydeck
 df_ac = pd.DataFrame(aircraft_list)
 
-# Pydeck map with incremental aircraft updates
-import pydeck as pdk
-
-view_state = pdk.ViewState(
-    latitude=CENTER_LAT,
-    longitude=CENTER_LON,
-    zoom=zoom_level,
-    pitch=0
-)
-
-# Icon data: use a plane icon URL
+# Pydeck map
+view_state = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=zoom_level, pitch=0)
 if not df_ac.empty:
-    df_ac['icon_data'] = df_ac.apply(lambda ac: {
-        "url": "https://raw.githubusercontent.com/Concept211/Google-Maps-Markers/master/images/marker_plane.png",
-        "width": 128,
-        "height": 128,
-        "anchorY": 128
-    }, axis=1)
-
-icon_layer = pdk.Layer(
-    "IconLayer",
-    df_ac,
-    get_icon="icon_data",
-    get_size=4,
-    size_scale=15,
-    get_position=["lon", "lat"],
-    pickable=True
-)
-
-# Scatter layer for current positions
-trail_points = []
-for ac in aircraft_list:
-    trail_points.append({"lat": ac['lat'], "lon": ac['lon'], "callsign": ac['callsign']})
-df_trail = pd.DataFrame(trail_points)
-trail_layer = pdk.Layer(
-    "ScatterplotLayer",
-    df_trail,
-    get_position=["lon", "lat"],
-    get_color=[0, 0, 255, 160],
-    get_radius=50
-)
-
-deck = pdk.Deck(
-    layers=[icon_layer, trail_layer],
-    initial_view_state=view_state,
-    tooltip={"text": "{callsign}"}
-)
-
-st.pydeck_chart(deck)
-
-# Continue with alert UI and Folium if needed
-
-# Alerts UI will follow
-alerts = []
-for ac in aircraft_list:
-    lat, lon, baro, vel, hdg, cs = ac.values()
-    alert = False; trail = []
-    for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
-        ft = selected_time + timedelta(seconds=i)
-        f_lat, f_lon = move_position(lat, lon, hdg, vel * i)
-        sun_alt = get_sun_altitude(f_lat, f_lon, ft)
-        if (track_sun and sun_alt > 0) or (track_moon and sun_alt <= 0) or override_trails:
-            az = get_sun_azimuth(f_lat, f_lon, ft)
-            sd = baro / math.tan(math.radians(sun_alt if sun_alt>0 else 1))
-            sh_lat = f_lat + (sd/111111) * math.cos(math.radians(az+180))
-            sh_lon = f_lon + (sd/(111111*math.cos(math.radians(f_lat)))) * math.sin(math.radians(az+180))
-            trail.append((sh_lat, sh_lon))
-            if hav(sh_lat, sh_lon, CENTER_LAT, CENTER_LON) <= alert_radius_m:
-                alert = True
-    if alert: alerts.append(cs)
-    folium.Marker(
-        location=(lat, lon),
-        icon=DivIcon(
-            icon_size=(30,30), icon_anchor=(15,15),
-            html=(
-                f"<i class='fa fa-plane' style='transform:rotate({hdg-90}deg); "
-                f"color:{'red' if alert else 'blue'}; font-size:24px;'></i>"
-            )
-        ),
-        popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
-    ).add_to(fmap)
-    if trail:
-        folium.PolyLine(locations=trail, color="red" if alert else "black", weight=shadow_width, opacity=0.6).add_to(fmap)
-
-# Alerts UI
-if alerts:
-    alist = ", ".join(alerts)
-    st.error(f"🚨 Shadow ALERT for: {alist}")
-    st.markdown(
-        """
-        <audio autoplay loop>
-          <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
-        </audio>
-        """, unsafe_allow_html=True
+    df_ac['icon_data'] = df_ac.apply(lambda r: {"url": "https://raw.githubusercontent.com/Concept211/Google-Maps-Markers/master/images/marker_plane.png", "width":128, "height":128, "anchorY":128}, axis=1)
+    icon_layer = pdk.Layer(
+        "IconLayer", df_ac, get_icon="icon_data",
+        size_scale=15, get_size=4, get_position=["lon","lat"], pickable=True
     )
-    send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alist}")
+    scatter_layer = pdk.Layer(
+        "ScatterplotLayer", df_ac, get_position=["lon","lat"], get_color=[0,0,255,160], get_radius=50
+    )
+    deck = pdk.Deck(layers=[icon_layer, scatter_layer], initial_view_state=view_state, tooltip={"text":"{callsign}"})
+    st.pydeck_chart(deck)
 else:
-    st.success("✅ No forecast shadow paths intersect target area.")
-
-# Render map and preserve view
-map_data = st_folium(
-    fmap,
-    width=map_width,
-    height=map_height,
-    returned_objects=['zoom', 'center'],
-    key='aircraft_map'
-)
-if map_data and 'zoom' in map_data and 'center' in map_data:
-    st.session_state.zoom = map_data['zoom']
-    st.session_state.center = map_data['center']
-
-# Remove expander block (history now in sidebar)
+    st.write("No aircraft data available")
 
 # Test buttons
 if test_alert:
-    st.error("🚨 Test Alert Triggered!")
-    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
+    st.success("Test alert triggered")
+    send_pushover("✈️ Test Alert", "This is a test shadow alert.")
 if test_pushover:
-    st.info("🔔 Sending test Pushover notification...")
-    send_pushover("✈️ Test Push", "This is a test shadow alert.")
-if test_alert:
-    st.error("🚨 Test Alert Triggered!")
-    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-if test_pushover:
-    st.info("🔔 Sending test Pushover notification...")
+    st.info("Sending test Pushover notification...")
     send_pushover("✈️ Test Push", "This is a test shadow alert.")
