@@ -86,11 +86,7 @@ elif data_source == "ADS-B Exchange":
 # Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
 
-# Compute shadow points
-shadows=[]
-if track_sun and not df_ac.empty:
-    from pysolar.solar import get_altitude, get_azimuth
-    # Compute shadow points using iterrows to safely access altitude
+# Compute shadow points using safe loop
 shadows = []
 if track_sun and not df_ac.empty:
     from pysolar.solar import get_altitude, get_azimuth
@@ -101,10 +97,11 @@ if track_sun and not df_ac.empty:
             sun_az = get_azimuth(row['lat'], row['lon'], selected_time)
             if sun_alt > 0:
                 dist = alt_m / math.tan(math.radians(sun_alt))
-                sh_lat = row['lat'] + (dist/111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = row['lon'] + (dist/(111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(sun_az + 180))
-                shadows.append({"lat": sh_lat, "lon": sh_lon})
+                sh_lat = row['lat'] + (dist / 111111) * math.cos(math.radians(sun_az + 180))
+                sh_lon = row['lon'] + (dist / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(sun_az + 180))
+                shadows.append({"lat": sh_lat, "lon": sh_lon, "callsign": row['callsign']})
 # Build shadow DataFrame
+df_sh = pd.DataFrame(shadows)
 df_sh = pd.DataFrame(shadows)
 
 # Pydeck layers
