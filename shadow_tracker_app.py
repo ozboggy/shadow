@@ -8,7 +8,10 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 # Auto-refresh every second
 from streamlit_autorefresh import st_autorefresh
-st_autorefresh(interval=1_000, key="datarefresh")
+try:
+    st_autorefresh(interval=1_000, key="datarefresh")
+except Exception:
+    pass  # ignore duplicate key errors
 
 # Pushover configuration
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
