@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 import os
 import math
+import time
 import requests
 import pandas as pd
 import pydeck as pdk
@@ -79,7 +80,6 @@ with st.sidebar:
 st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 time_now = datetime.now(timezone.utc)
 
-# Show warnings if needed
 if show_moon and ephem is None:
     st.warning("PyEphem not installed; moon shadows unavailable.")
 if not ADSBEX_TOKEN:
@@ -114,18 +114,16 @@ for ac in data:
         "callsign": cs, "angle": heading
     })
 
-# Build DataFrame
+# Build DataFrame & show count
 df_ac = pd.DataFrame(aircraft_list)
-# Display total count in sidebar
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(df_ac)}")
-
 if df_ac.empty:
     st.warning("No aircraft data available.")
 else:
     df_ac["alt"] = pd.to_numeric(df_ac["alt"], errors="coerce").fillna(0)
 
-# Forecast sun‐shadow trails
-trails_sun = []
+# Forecast trails (sun & moon)
+trails_sun, trails_moon = [], []
 if track_sun and not df_ac.empty:
     for _, row in df_ac.iterrows():
         path = []
@@ -136,94 +134,60 @@ if track_sun and not df_ac.empty:
             if sun_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(sun_alt))
                 sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * \
-                         math.sin(math.radians(sun_az + 180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) \
+                         * math.sin(math.radians(sun_az + 180))
                 path.append((sh_lon, sh_lat))
-        if path:
-            trails_sun.append({"path": path, "callsign": row["callsign"]})
+        if path: trails_sun.append({"path": path, "callsign": row["callsign"]})
 
-# Forecast moon‐shadow trails
-trails_moon = []
 if show_moon and ephem and not df_ac.empty:
     for _, row in df_ac.iterrows():
         path = []
         for i in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
             ft = time_now + timedelta(seconds=i)
-            obs = ephem.Observer()
-            obs.lat  = str(row["lat"])
-            obs.lon  = str(row["lon"])
-            obs.date = ft
+            obs = ephem.Observer(); obs.lat, obs.lon, obs.date = str(row["lat"]), str(row["lon"]), ft
             m = ephem.Moon(obs)
-            moon_alt = math.degrees(float(m.alt))
-            moon_az  = math.degrees(float(m.az))
+            moon_alt, moon_az = math.degrees(float(m.alt)), math.degrees(float(m.az))
             if moon_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(moon_alt))
                 sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(moon_az + 180))
-                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * \
-                         math.sin(math.radians(moon_az + 180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) \
+                         * math.sin(math.radians(moon_az + 180))
                 path.append((sh_lon, sh_lat))
-        if path:
-            trails_moon.append({"path": path, "callsign": row["callsign"]})
+        if path: trails_moon.append({"path": path, "callsign": row["callsign"]})
 
-# Prepare IconLayer data
-icon_df = pd.DataFrame([])
-if not df_ac.empty:
-    icon_df = pd.DataFrame([
-        {
-            "lon": row["lon"],
-            "lat": row["lat"],
-            "icon": {
-                "url":    "https://img.icons8.com/ios-filled/50/000000/airplane-take-off.png",
-                "width":  128, "height": 128,
-                "anchorX": 64,  "anchorY": 64
-            },
-            "angle": row["angle"]
-        }
-        for _, row in df_ac.iterrows()
-    ])
+# Prepare IconLayer
+icon_df = pd.DataFrame([
+    {
+        "lon": row["lon"], "lat": row["lat"],
+        "icon": {
+            "url": "https://img.icons8.com/ios-filled/50/000000/airplane-take-off.png",
+            "width": 128, "height": 128, "anchorX": 64, "anchorY": 64
+        },
+        "angle": row["angle"]
+    }
+    for _, row in df_ac.iterrows()
+]) if not df_ac.empty else pd.DataFrame()
 
-# Build Deck.gl layers
+# Build map layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
-
-# Aircraft icons
 if not icon_df.empty:
-    layers.append(pdk.Layer(
-        "IconLayer", icon_df,
-        get_icon="icon", get_position=["lon", "lat"], get_angle="angle",
-        size_scale=15, pickable=True
-    ))
-
-# Sun‐shadow paths
+    layers.append(pdk.Layer("IconLayer", icon_df, get_icon="icon", get_position=["lon","lat"], get_angle="angle",
+                            size_scale=15, pickable=True))
 if track_sun and trails_sun:
-    layers.append(pdk.Layer(
-        "PathLayer", pd.DataFrame(trails_sun),
-        get_path="path", get_color=[255, 215, 0, 150],
-        width_scale=10, width_min_pixels=2
-    ))
-
-# Moon‐shadow paths
+    layers.append(pdk.Layer("PathLayer", pd.DataFrame(trails_sun), get_path="path", get_color=[255,215,0,150],
+                            width_scale=10, width_min_pixels=2))
 if show_moon and trails_moon:
-    layers.append(pdk.Layer(
-        "PathLayer", pd.DataFrame(trails_moon),
-        get_path="path", get_color=[100, 100, 100, 150],
-        width_scale=10, width_min_pixels=2
-    ))
+    layers.append(pdk.Layer("PathLayer", pd.DataFrame(trails_moon), get_path="path", get_color=[100,100,100,150],
+                            width_scale=10, width_min_pixels=2))
+# Home marker size = alert_width
+layers.append(pdk.Layer("ScatterplotLayer", pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
+                        get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=alert_width))
 
-# Home marker, size = alert_width (meters)
-layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
-    get_position=["lon", "lat"],
-    get_color=[255, 0, 0, 200],
-    get_radius=alert_width
-))
-
-# Render map
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
 st.pydeck_chart(deck, use_container_width=True)
 
-# Alerts: sun‐shadow over home
+# Real alerts
 if track_sun and trails_sun:
     for tr in trails_sun:
         for lon, lat in tr["path"]:
@@ -231,8 +195,6 @@ if track_sun and trails_sun:
                 st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
                 send_pushover("✈️ Sun Shadow Alert", f"{tr['callsign']} sun shadow at home")
                 break
-
-# Alerts: moon‐shadow over home
 if show_moon and trails_moon:
     for tr in trails_moon:
         for lon, lat in tr["path"]:
@@ -241,9 +203,21 @@ if show_moon and trails_moon:
                 send_pushover("✈️ Moon Shadow Alert", f"{tr['callsign']} moon shadow at home")
                 break
 
-# Test buttons
+# Test buttons with audible + 5s display
 if test_alert:
-    st.error(f"🚨 Test Shadow Alert: aircraft shadow within {alert_width} m of home!")
+    placeholder = st.empty()
+    with placeholder:
+        st.error(f"🚨 Test Shadow Alert: aircraft shadow within {alert_width} m of home!")
+        st.markdown(
+            """
+            <audio autoplay>
+              <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
+            </audio>
+            """,
+            unsafe_allow_html=True
+        )
+    time.sleep(5)
+    placeholder.empty()
 
 if test_pushover:
     sent = send_pushover(
