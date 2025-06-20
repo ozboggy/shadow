@@ -7,6 +7,7 @@ import requests
 import pandas as pd
 import pydeck as pdk
 from datetime import datetime, timezone, timedelta
+from pysolar.solar import get_altitude, get_azimuth
 # Auto-refresh every second
 from streamlit_autorefresh import st_autorefresh
 try:
@@ -34,29 +35,21 @@ def send_pushover(title, message):
 CENTER_LAT = -33.7602563
 CENTER_LON = 150.9717434
 DEFAULT_RADIUS_KM = 10
+FORECAST_INTERVAL_SECONDS = 30
+FORECAST_DURATION_MINUTES = 5
 
-# Sidebar
+# Sidebar controls
 with st.sidebar:
     st.header("Map Options")
     data_source = st.selectbox("Data Source", ["OpenSky", "ADS-B Exchange"], index=0)
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", True)
-    # New: shadow alert width
     alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
 
-# Helpers
-def hav(lat1, lon1, lat2, lon2):
-    R = 6371000
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
-    return R * 2 * math.asin(math.sqrt(a))
-
-# Current UTC time
-selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
-
+# Current time
+time_now = datetime.now(timezone.utc)
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
 # Fetch aircraft
@@ -79,123 +72,76 @@ if data_source == "OpenSky":
         aircraft_list.append({"lat": lat, "lon": lon, "alt": alt, "callsign": cs})
 elif data_source == "ADS-B Exchange":
     api_key = os.getenv("RAPIDAPI_KEY")
+    adsb = []
     if api_key:
         url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-        headers={"x-rapidapi-key":api_key,"x-rapidapi-host":"adsbexchange-com1.p.rapidapi.com"}
+        headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
         try:
-            r2 = requests.get(url, headers=headers); r2.raise_for_status(); adsb = r2.json().get("ac",[])
+            r2 = requests.get(url, headers=headers); r2.raise_for_status(); adsb = r2.json().get("ac", [])
         except:
             adsb = []
-        for ac in adsb:
-            try: lat=float(ac.get("lat")); lon=float(ac.get("lon"))
-            except: continue
-            cs = ac.get("flight") or ac.get("hex") or ""
-            alt = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
-            aircraft_list.append({"lat": lat, "lon": lon, "alt": alt, "callsign": cs.strip()})
+    for ac in adsb:
+        try:
+            lat = float(ac.get("lat")); lon = float(ac.get("lon"))
+        except:
+            continue
+        cs = ac.get("flight") or ac.get("hex") or ""
+        alt = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
+        aircraft_list.append({"lat": lat, "lon": lon, "alt": float(alt), "callsign": cs.strip()})
 
-# Build DataFrame
+# DataFrame and altitude type
 df_ac = pd.DataFrame(aircraft_list)
-# Ensure altitude is numeric
-if 'alt' in df_ac.columns:
-    df_ac['alt'] = pd.to_numeric(df_ac['alt'], errors='coerce').fillna(0.0)
+if df_ac.empty:
+    st.warning("No aircraft data available.")
 else:
-    df_ac['alt'] = 0.0
+    df_ac['alt'] = pd.to_numeric(df_ac['alt'], errors='coerce').fillna(0)
 
-# Forecast shadow trail over next few minutes
+# Forecast shadow trail for each aircraft
 trails = []
 if track_sun and not df_ac.empty:
-    from pysolar.solar import get_altitude, get_azimuth
     for _, row in df_ac.iterrows():
         cs = row['callsign']
-        trail = []
+        path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
-            ft = selected_time + timedelta(seconds=i)
-            # Move plane roughly: ignoring velocity, using fixed location
-            lat, lon, alt_m = row['lat'], row['lon'], row['alt']
-            sun_alt = get_altitude(lat, lon, ft)
-            sun_az = get_azimuth(lat, lon, ft)
+            ft = time_now + timedelta(seconds=i)
+            sun_alt = get_altitude(row['lat'], row['lon'], ft)
+            sun_az = get_azimuth(row['lat'], row['lon'], ft)
             if sun_alt > 0:
-                dist = alt_m / math.tan(math.radians(sun_alt))
-                sh_lat = lat + (dist / 111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = lon + (dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
-                trail.append((sh_lon, sh_lat))
-        if trail:
-            trails.append({'path': trail, 'callsign': cs})
-# Build trails DataFrame
-# Build shadow trail DataFrame
-if not trails:
-    df_trails = pd.DataFrame(columns=["path","callsign"])
-else:
-    df_trails = pd.DataFrame(trails)
+                dist = row['alt'] / math.tan(math.radians(sun_alt))
+                sh_lat = row['lat'] + (dist/111111)*math.cos(math.radians(sun_az+180))
+                sh_lon = row['lon'] + (dist/(111111*math.cos(math.radians(row['lat']))))*math.sin(math.radians(sun_az+180))
+                path.append((sh_lon, sh_lat))
+        if path:
+            trails.append({'path': path, 'callsign': cs})
 
-# Remove old single shadow points (df_sh) and direct paths
-
-# Pydeck layers remains unchanged
-paths = []
-if track_sun and not df_ac.empty and not df_sh.empty:
-    for (i, ac_row), (_, sh_row) in zip(df_ac.iterrows(), df_sh.iterrows()):
-        paths.append({
-            "path": [(ac_row['lon'], ac_row['lat']), (sh_row['lon'], sh_row['lat'])],
-            "callsign": ac_row['callsign']
-        })
-    df_paths = pd.DataFrame(paths)
-
-# Pydeck layers
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=10)
+# Layers for map
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
-# Aircraft layer represented by small blue dots
 if not df_ac.empty:
-    layers.append(
-        pdk.Layer(
-            "ScatterplotLayer",
-            df_ac,
-            get_position=["lon", "lat"],
-            get_color=[0, 128, 255, 200],
-            get_radius=100,  # smaller dot for plane
-            pickable=True
-        )
-    )
-# Shadow scatter layer
-if track_sun and not df_sh.empty:
-    layers.append(
-        pdk.Layer(
-            "ScatterplotLayer", df_sh,
-            get_position=["lon","lat"],
-            get_color=[0,0,0,150],
-            get_radius=200
-        )
-    )
-# Shadow path lines
-if track_sun and 'df_paths' in locals() and not df_paths.empty:
-    layers.append(
-        pdk.Layer(
-            "PathLayer", df_paths,
-            get_path="path",
-            get_color=[0,0,0,100],
-            width_scale=20,
-            width_min_pixels=2,
-            pickable=True
-        )
-    )
+    layers.append(pdk.Layer("ScatterplotLayer", df_ac, get_position=["lon","lat"], get_color=[0,128,255,200], get_radius=100))
+if track_sun and trails:
+    df_trails = pd.DataFrame(trails)
+    layers.append(pdk.Layer("PathLayer", df_trails, get_path="path", get_color=[0,0,0,150], width_scale=10, width_min_pixels=2))
 # Home marker
-layers.append(
-    pdk.Layer(
-        "ScatterplotLayer", pd.DataFrame([{"lon":CENTER_LON,"lat":CENTER_LAT}]),
-        get_position=["lon","lat"],
-        get_color=[255,0,0,200],
-        get_radius=400
-    )
-)
+layers.append(pdk.Layer("ScatterplotLayer", pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]), get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=400))
 
-layers.append(
-    pdk.Layer("ScatterplotLayer", pd.DataFrame([{"lon":CENTER_LON,"lat":CENTER_LAT}]), get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=400)
-)
+# Render
+deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
+st.pydeck_chart(deck, use_container_width=True)
 
-deck=pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
-st.pydeck_chart(deck)
+# Alerts: shadow passing home
+if track_sun and trails:
+    for trail in trails:
+        # check each shadow point against home
+        for lon, lat in trail['path']:
+            if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
+                st.error(f"🚨 Shadow of {trail['callsign']} over home!")
+                send_pushover("✈️ Shadow Alert", f"{trail['callsign']} shadow at home")
+                break
 
-# Test alerts
+# Test
 if test_alert:
     st.success("Test alert triggered")
 if test_pushover:
     st.info("Sending test Pushover")
+
