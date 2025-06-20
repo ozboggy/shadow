@@ -1,167 +1,169 @@
-import streamlit as st
-# Must be first Streamlit command
-st.set_page_config(layout="wide")
-
-import requests
-import folium
-from folium.plugins import MarkerCluster
-from streamlit_folium import st_folium
-from datetime import datetime, time as dt_time, timezone, timedelta
-import math
-from pysolar.solar import get_altitude, get_azimuth
-from math import radians, sin, cos, asin, sqrt
-import csv
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
+import streamlit as st
+import requests
+import pydeck as pdk
 import pandas as pd
-import plotly.express as px
+import numpy as np
+import time
+from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
+# For moon position; requires astral (pip install astral)
+from astral import moon
 
-# Attempt to import pyfr24
-try:
-    from pyfr24 import FR24API
-    HAS_FR24API = True
-except ImportError:
-    HAS_FR24API = False
+# Load API credentials from .env
+ADSBEX_USER = os.getenv("ADSBEXCHANGE_API_USER")
+ADSBEX_TOKEN = os.getenv("ADSBEXCHANGE_API_TOKEN")
+PUSH_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
+PUSH_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 
-# Load environment vars
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-    DOTENV_LOADED = True
-except ImportError:
-    DOTENV_LOADED = False
+# Fixed home location
+HOME_LAT, HOME_LON = -33.7605327, 150.9715184
 
-# Sidebar warnings after config
-if not HAS_FR24API:
-    st.sidebar.warning("pyfr24 not installed; using feed.js fallback for FlightRadar24 data.")
-if not DOTENV_LOADED:
-    st.sidebar.warning("python-dotenv not installed; skipping .env loading.")
-
-OPENSKY_USER = os.getenv("OPENSKY_USERNAME")
-OPENSKY_PASS = os.getenv("OPENSKY_PASSWORD")
-FR24_API_KEY = os.getenv("FLIGHTRADAR_API_KEY")
-
-# Pushover setup
-PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY", "")
-PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN", "")
-
-def send_pushover(title: str, message: str):
-    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        return
-    try:
-        requests.post(
-            "https://api.pushover.net/1/messages.json",
-            data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "title": title, "message": message}
-        )
-    except Exception:
-        pass
-
-# Title and refresh
-st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
-st.title("✈️ Aircraft Shadow Forecast")
+# Streamlit page config
+st.set_page_config(page_title="Aircraft Shadow Forecast", layout="wide")
 
 # Sidebar controls
-st.sidebar.header("Select Time")
-selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
-selected_time = st.sidebar.time_input("Time (UTC)", value=dt_time(datetime.utcnow().hour, datetime.utcnow().minute))
-selected_time = datetime.combine(selected_date, selected_time).replace(tzinfo=timezone.utc)
+st.sidebar.title("Controls")
+search_radius_km = st.sidebar.slider("Search Radius (km)", 10, 200, 50)
+alert_radius_m = st.sidebar.slider("Alert Radius (meters)", 100, 5000, 1000)
+show_sun = st.sidebar.checkbox("Sun Shadows", value=True)
+show_moon = st.sidebar.checkbox("Moon Shadows", value=False)
+refresh_sec = st.sidebar.slider("Refresh Interval (seconds)", 1, 60, 5)
 
-data_source = st.sidebar.selectbox("Data Source", ("OpenSky", "FlightRadar24"), index=1)
+st.sidebar.markdown("---")
+if st.sidebar.button("Test On-Screen Alert"):
+    st.warning("🔔 This is a test on-screen alert")
 
-# Constants
-TARGET_LAT = -33.7603831919607
-TARGET_LON = 150.971709164045
-HOME_LAT = -33.7603831919607
-HOME_LON = 150.971709164045
-RADIUS_KM = 20
-FORECAST_INTERVAL_SECONDS = 30
-FORECAST_DURATION_MINUTES = 5
-ALERT_RADIUS_METERS = 50
+if st.sidebar.button("Test Pushover Alert"):
+    def send_pushover(title, message):
+        payload = {
+            "token": PUSH_API_TOKEN,
+            "user": PUSH_USER_KEY,
+            "title": title,
+            "message": message
+        }
+        requests.post("https://api.pushover.net/1/messages.json", data=payload)
+    send_pushover("Test Alert", "This is a test pushover message.")
+    st.success("Pushover test sent!")
 
-# Helpers
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000
-    dlat = radians(lat2 - lat1); dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
-    return 2*R*asin(sqrt(a))
+debug = st.sidebar.checkbox("Debug Raw Data")
 
-def move_position(lat, lon, heading_deg, distance_m):
-    R = 6371000
-    heading_rad = math.radians(heading_deg)
-    lat1, lon1 = math.radians(lat), math.radians(lon)
-    lat2 = math.asin(sin(lat1)*cos(distance_m/R) + cos(lat1)*sin(distance_m/R)*cos(heading_rad))
-    lon2 = lon1 + math.atan2(sin(heading_rad)*sin(distance_m/R)*cos(lat1),
-                             cos(distance_m/R)-sin(lat1)*sin(lat2))
-    return math.degrees(lat2), math.degrees(lon2)
+# Placeholder for the map / chart
+map_placeholder = st.empty()
 
-# Setup log file
-log_file = "alert_log.csv"
-if not os.path.exists(log_file):
-    with open(log_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Time UTC","Callsign","Time Until Alert (sec)","Lat","Lon"])
+# Sidebar status
+status_placeholder = st.sidebar.empty()
 
-# Initialize map state
-if "zoom" not in st.session_state: st.session_state.zoom = 12
-if "center" not in st.session_state: st.session_state.center = [HOME_LAT, HOME_LON]
+# Function to fetch live aircraft from ADSB-Exchange
+@st.cache_data(ttl=refresh_sec)
+def fetch_aircraft(lat, lon, radius_km):
+    # Example endpoint; adjust per your ADSB-Exchange API
+    url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
+    params = {
+        "lat": lat,
+        "lng": lon,
+        "fDstL": 0,
+        "fDstU": radius_km
+    }
+    # If your API requires auth, include it here
+    resp = requests.get(url, params=params, auth=(ADSBEX_USER, ADSBEX_TOKEN))
+    resp.raise_for_status()
+    data = resp.json().get('acList', [])
+    return data
 
-try:
-    center = [float(x) for x in st.session_state.center]
-except:
-    center = [HOME_LAT, HOME_LON]
-    st.session_state.center = center
+# Main loop (single-run; auto-refresh by cache invalidation)
+def main():
+    # Fetch data
+    raw = fetch_aircraft(HOME_LAT, HOME_LON, search_radius_km)
+    if debug:
+        st.sidebar.json(raw)
 
-fmap = folium.Map(location=center, zoom_start=st.session_state.zoom)
-marker_cluster = MarkerCluster().add_to(fmap)
-folium.Marker((TARGET_LAT, TARGET_LON), icon=folium.Icon(color="red"), popup="Target").add_to(fmap)
+    # Parse into DataFrame
+    df = pd.DataFrame([{
+        'lat': ac.get('Lat'),
+        'lon': ac.get('Long'),
+        'alt': ac.get('Alt'),
+        'track': ac.get('Trak'),
+        'callsign': ac.get('Call')
+    } for ac in raw])
 
-# Fetch aircraft data
-north, south, west, east = -33.0, -34.5, 150.0, 151.5
-aircraft_states = []
+    # Compute shadows
+    shadows = []
+    now = pd.Timestamp.utcnow()
+    for _, row in df.iterrows():
+        lat, lon, alt = row['lat'], row['lon'], row['alt']
+        # Sun
+        if show_sun:
+            solar_elev = get_sun_altitude(HOME_LAT, HOME_LON, now)
+            solar_azi = get_sun_azimuth(HOME_LAT, HOME_LON, now)
+            if solar_elev > 0:
+                d = alt / np.tan(np.radians(solar_elev))
+                # compute shadow end via simple bearing offset
+                bearing = solar_azi - 180
+                end_lat = lat + (d/111320) * np.cos(np.radians(bearing))
+                end_lon = lon + (d/(40075000*np.cos(np.radians(lat))/360)) * np.sin(np.radians(bearing))
+                shadows.append({'start_lat': lat, 'start_lon': lon,
+                                'end_lat': end_lat, 'end_lon': end_lon,
+                                'color': [212,175,55], 'type': 'sun'})
+        # Moon (placeholder, requires proper moon position calc)
+        if show_moon:
+            moon_azi = moon.azimuth(now, HOME_LAT, HOME_LON)
+            moon_elev = moon.altitude(now, HOME_LAT, HOME_LON)
+            if moon_elev > 0:
+                d = alt / np.tan(np.radians(moon_elev))
+                bearing = moon_azi - 180
+                end_lat = lat + (d/111320) * np.cos(np.radians(bearing))
+                end_lon = lon + (d/(40075000*np.cos(np.radians(lat))/360)) * np.sin(np.radians(bearing))
+                shadows.append({'start_lat': lat, 'start_lon': lon,
+                                'end_lat': end_lat, 'end_lon': end_lon,
+                                'color': [128,128,128], 'type': 'moon'})
 
-if data_source == "OpenSky":
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
-    try:
-        r = requests.get(url, auth=(OPENSKY_USER, OPENSKY_PASS))
-        r.raise_for_status()
-        aircraft_states = r.json().get("states", [])
-    except Exception as e:
-        st.error(f"Error fetching OpenSky data: {e}")
-else:
-    # FlightRadar24 fetch with feed.js fallback
-    flights = []
-    if HAS_FR24API and FR24_API_KEY:
-        try:
-            api = FR24API(FR24_API_KEY)
-            resp = api.get_flight_positions_light(f"{south},{west},{north},{east}")
-            if isinstance(resp, dict):
-                flights = resp.get("data", [])
-            elif isinstance(resp, list):
-                flights = resp
-        except Exception:
-            flights = []
-    if not flights:
-        try:
-            r2 = requests.get(
-                "https://data-live.flightradar24.com/zones/fcgi/feed.js",
-                params={"bounds":f"{south},{west},{north},{east}","adsb":1,"mlat":1,"flarm":1,"array":1}
-            )
-            r2.raise_for_status()
-            raw = r2.json()
-            for k, v in raw.items():
-                if k in ("full_count","version","stats"): continue
-                if isinstance(v, list) and v:
-                    flights.extend(v if isinstance(v[0], list) else [v])
-        except Exception:
-            pass
-    def safe_get(lst, idx, default=None):
-        return lst[idx] if isinstance(lst, list) and idx < len(lst) else default
-    for p in flights:
-        lat = safe_get(p, 1); lon = safe_get(p, 2)
-        if lat is None or lon is None: continue
-        vel = safe_get(p, 4, 0) or 0; hdg = safe_get(p, 3, 0) or 0
-        alt = safe_get(p, 13); alt = alt if alt is not None else (safe_get(p, 11, 0) or 0)
-        cs = safe_get(p, -1, "") or "N/A"
-        aircraft_states.append([None, cs, None, None, None, lon, lat, None, vel, hdg, alt, None, None, None, None])
+    df_shadows = pd.DataFrame(shadows)
 
-# The rest of your processing, mapping, alerts, and log download code...
-# omitted for brevity
+    # Build PyDeck layers
+    layers = []
+    # House
+    layers.append(pdk.Layer(
+        "ScatterplotLayer",
+        data=pd.DataFrame([{'lat': HOME_LAT, 'lon': HOME_LON}]),
+        get_position='[lon, lat]',
+        get_radius=alert_radius_m,
+        radius_units='meters',
+        get_fill_color=[255, 0, 0],
+        pickable=False
+    ))
+    # Aircraft
+    layers.append(pdk.Layer(
+        "ScatterplotLayer",
+        data=df,
+        get_position='[lon, lat]',
+        get_radius=50,
+        radius_units='meters',
+        get_fill_color=[0, 0, 255],
+        pickable=True,
+        auto_highlight=True,
+        tooltip=True
+    ))
+    # Shadows
+    if not df_shadows.empty:
+        layers.append(pdk.Layer(
+            "LineLayer",
+            data=df_shadows,
+            get_source_position='[start_lon, start_lat]',
+            get_target_position='[end_lon, end_lat]',
+            get_color='color',
+            get_width=2,
+        ))
+
+    # Render map
+    view_state = pdk.ViewState(latitude=HOME_LAT, longitude=HOME_LON, zoom=12)
+    deck = pdk.Deck(layers=layers, initial_view_state=view_state, map_style='mapbox://styles/mapbox/light-v9')
+    map_placeholder.pydeck_chart(deck, use_container_width=False, width=600, height=600)
+
+    # Sidebar status
+    status_placeholder.markdown(f"**Tracked Aircraft:** {len(df)}")
+
+# Run repeatedly via auto-refresh
+main()
