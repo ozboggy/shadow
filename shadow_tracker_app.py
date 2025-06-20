@@ -22,7 +22,7 @@ PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 
 def send_pushover(title, message):
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        st.warning("Pushover credentials not set in environment.")
+        st.warning("Pushover credentials not set.")
         return
     try:
         requests.post(
@@ -30,10 +30,9 @@ def send_pushover(title, message):
             data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "title": title, "message": message}
         )
     except Exception as e:
-        st.warning(f"Pushover notification failed: {e}")
+        st.warning(f"Pushover failed: {e}")
 
 def hav(lat1, lon1, lat2, lon2):
-    """Haversine distance in meters."""
     R = 6371000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -47,7 +46,7 @@ DEFAULT_RADIUS_KM = 10
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 
-# Sidebar controls
+# Sidebar
 with st.sidebar:
     st.header("Map Options")
     data_source = st.selectbox("Data Source", ["OpenSky", "ADS-B Exchange"], index=0)
@@ -57,13 +56,10 @@ with st.sidebar:
     test_alert = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
 
-# Page title
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
-
-# Current UTC time
 time_now = datetime.now(timezone.utc)
 
-# Fetch aircraft data
+# Fetch aircraft
 aircraft_list = []
 if data_source == "OpenSky":
     dr = radius_km / 111
@@ -81,8 +77,12 @@ if data_source == "OpenSky":
         cs = (s[1] or "").strip() or s[0]
         lat, lon = s[6], s[5]
         alt = s[13] or s[7] or 0.0
-        aircraft_list.append({"lat": lat, "lon": lon, "alt": alt, "callsign": cs})
-else:  # ADS-B Exchange
+        heading = s[10] or 0.0
+        aircraft_list.append({
+            "lat": lat, "lon": lon, "alt": alt,
+            "callsign": cs, "angle": heading
+        })
+else:
     api_key = os.getenv("RAPIDAPI_KEY")
     adsb = []
     if api_key:
@@ -106,18 +106,23 @@ else:  # ADS-B Exchange
             alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
         except:
             alt_val = 0.0
-        aircraft_list.append({"lat": lat, "lon": lon, "alt": alt_val, "callsign": cs})
+        try:
+            heading = float(ac.get("track") or ac.get("trk") or 0.0)
+        except:
+            heading = 0.0
+        aircraft_list.append({
+            "lat": lat, "lon": lon, "alt": alt_val,
+            "callsign": cs, "angle": heading
+        })
 
-# Build DataFrame
+# DataFrame
 df_ac = pd.DataFrame(aircraft_list)
-
 if df_ac.empty:
     st.warning("No aircraft data available.")
 else:
-    # Normalize altitude
     df_ac['alt'] = pd.to_numeric(df_ac['alt'], errors='coerce').fillna(0)
 
-# Forecast shadow trails
+# Shadow trails
 trails = []
 if track_sun and not df_ac.empty:
     for _, row in df_ac.iterrows():
@@ -128,13 +133,13 @@ if track_sun and not df_ac.empty:
             sun_az = get_azimuth(row['lat'], row['lon'], ft)
             if sun_alt > 0:
                 dist = row['alt'] / math.tan(math.radians(sun_alt))
-                sh_lat = row['lat'] + (dist/111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = row['lon'] + (dist/(111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(sun_az + 180))
+                sh_lat = row['lat'] + (dist/111111)*math.cos(math.radians(sun_az+180))
+                sh_lon = row['lon'] + (dist/(111111*math.cos(math.radians(row['lat']))))*math.sin(math.radians(sun_az+180))
                 path.append((sh_lon, sh_lat))
         if path:
             trails.append({"path": path, "callsign": row['callsign']})
 
-# Prepare icon layer data
+# IconLayer data
 icon_df = pd.DataFrame([])
 if not df_ac.empty:
     icon_data = []
@@ -146,12 +151,14 @@ if not df_ac.empty:
                 "url": "https://img.icons8.com/ios-filled/50/000000/airplane-take-off.png",
                 "width": 128,
                 "height": 128,
-                "anchorY": 128
-            }
+                "anchorX": 64,
+                "anchorY": 64
+            },
+            "angle": row["angle"]  # heading
         })
     icon_df = pd.DataFrame(icon_data)
 
-# Build Deck layers
+# Build layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
@@ -161,6 +168,7 @@ if not icon_df.empty:
         icon_df,
         get_icon="icon",
         get_position=["lon", "lat"],
+        get_angle="angle",      # ← face the direction of flight
         size_scale=15,
         pickable=True
     ))
@@ -189,7 +197,7 @@ layers.append(pdk.Layer(
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
 st.pydeck_chart(deck, use_container_width=True)
 
-# Alerts for shadows over home
+# Shadow‐over‐home alerts
 if track_sun and trails:
     for tr in trails:
         for lon, lat in tr["path"]:
