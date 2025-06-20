@@ -119,29 +119,19 @@ elif data_source == "ADS-B Exchange":
 # Build DataFrame for Pydeck
 df_ac = pd.DataFrame(aircraft_list)
 
-# Pydeck map (simplified scatter)
-# Debug: show DataFrame
-st.write("**Aircraft DataFrame**", df_ac)
-
-view_state = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=zoom_level, pitch=0)
-
+# Simple map display using Streamlit's built-in st.map
+# This will show aircraft positions on an OpenStreetMap background without flicker
 if not df_ac.empty:
-    scatter_layer = pdk.Layer(
-        "ScatterplotLayer",
-        df_ac,
-        get_position=["lon", "lat"],  # [longitude, latitude]
-        get_color=[255, 0, 0, 200],
-        get_radius=5000,  # radius in meters
-        pickable=True
-    )
-    deck = pdk.Deck(
-        layers=[scatter_layer],
-        initial_view_state=view_state,
-        tooltip={"text": "{callsign}"},
-        map_style="open-street-map"
-    )
-    st.pydeck_chart(deck, use_container_width=True)
+    # st.map expects columns 'latitude' and 'longitude'
+    df_map = df_ac.rename(columns={"lat": "latitude", "lon": "longitude"})
+    st.map(df_map[['latitude', 'longitude']])
 else:
     st.warning("No aircraft data available")
 
 # Continue to Test buttons
+if test_alert:
+    st.success("Test alert triggered")
+    send_pushover("✈️ Test Alert", "This is a test shadow alert.")
+if test_pushover:
+    st.info("Sending test Pushover notification...")
+    send_pushover("✈️ Test Push", "This is a test shadow alert.")
