@@ -122,12 +122,15 @@ if track_sun and not df_ac.empty:
         if trail:
             trails.append({'path': trail, 'callsign': cs})
 # Build trails DataFrame
-df_trails = pd.DataFrame(trails)
-df_sh = pd.DataFrame(shadows)
-df_sh = pd.DataFrame(shadows)
-df_sh = pd.DataFrame(shadows)
+# Build shadow trail DataFrame
+if not trails:
+    df_trails = pd.DataFrame(columns=["path","callsign"])
+else:
+    df_trails = pd.DataFrame(trails)
 
-# Build shadow path lines
+# Remove old single shadow points (df_sh) and direct paths
+
+# Pydeck layers remains unchanged
 paths = []
 if track_sun and not df_ac.empty and not df_sh.empty:
     for (i, ac_row), (_, sh_row) in zip(df_ac.iterrows(), df_sh.iterrows()):
