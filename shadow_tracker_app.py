@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 # Auto-refresh every second
 from streamlit_autorefresh import st_autorefresh
 st_autorefresh(interval=1_000, key="datarefresh")
+# (Removed duplicate auto-refresh)
 st_autorefresh(interval=10_000, key="datarefresh")
 
 # Pushover configuration
@@ -99,11 +100,18 @@ elif data_source == "ADS-B Exchange":
         cs = ac.get("flight") or ac.get("hex") or ""
         aircraft_list.append({"latitude": lat, "longitude": lon, "callsign": cs.strip()})
 
-# Display on map with st.map
-df_map = pd.DataFrame(aircraft_list)
+# Display on map with home centering
 if not df_map.empty:
-    st.map(df_map)
+    # Add home marker to center map and label it
+    home_entry = {"latitude": CENTER_LAT, "longitude": CENTER_LON, "callsign": "Home"}
+    df_map_plot = pd.DataFrame([home_entry])
+    df_map_plot = pd.concat([df_map_plot, df_map], ignore_index=True)
+    st.markdown(f"📍 **Home Location:** {CENTER_LAT}, {CENTER_LON}")
+    st.map(df_map_plot)
 else:
+    st.warning("No aircraft data available, but home is shown.")
+    # Show home only
+    st.map(pd.DataFrame([{"latitude": CENTER_LAT, "longitude": CENTER_LON}]))
     st.warning("No aircraft data available")
 
 # Test alerts
