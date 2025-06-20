@@ -20,26 +20,23 @@ except ImportError:
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# Sidebar: auto-refresh settings
+# Sidebar: auto-refresh
 st.sidebar.header("Refresh Settings")
 auto_refresh     = st.sidebar.checkbox("Auto Refresh Map", True)
 refresh_interval = st.sidebar.number_input("Refresh Interval (s)", 1, 60, 1)
 if auto_refresh:
     st_autorefresh(interval=refresh_interval * 1000, key="datarefresh")
 
-# Environment variables
-PUSHOVER_USER_KEY   = os.getenv("PUSHOVER_USER_KEY")
-PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
-ADSBEX_TOKEN        = os.getenv("ADSBEX_TOKEN")
-
-# Home location & defaults
-CENTER_LAT            = -33.7602563
-CENTER_LON            = 150.9717434
+# Env & constants
+PUSHOVER_USER_KEY  = os.getenv("PUSHOVER_USER_KEY")
+PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+ADSBEX_TOKEN       = os.getenv("ADSBEX_TOKEN")
+CENTER_LAT, CENTER_LON = -33.7602563, 150.9717434
 DEFAULT_RADIUS_KM     = 10
 FORECAST_INTERVAL_SEC = 30
 FORECAST_DURATION_MIN = 5
 
-def send_pushover(title: str, message: str):
+def send_pushover(title, message):
     if not (PUSHOVER_USER_KEY and PUSHOVER_API_TOKEN):
         st.warning("🔒 Missing Pushover credentials")
         return
@@ -57,7 +54,7 @@ def send_pushover(title: str, message: str):
     except Exception as e:
         st.warning(f"Pushover failed: {e}")
 
-def hav(lat1, lon1, lat2, lon2) -> float:
+def hav(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -69,7 +66,7 @@ def hav(lat1, lon1, lat2, lon2) -> float:
 
 now = datetime.now(timezone.utc)
 
-# Compute sun & moon altitudes at home
+# Compute Sun/Moon altitude
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now)
 if ephem:
     obs = ephem.Observer()
@@ -80,22 +77,15 @@ else:
 
 # Sidebar: map & alert settings
 st.sidebar.header("Map & Alert Settings")
-sc = "green" if sun_alt > 0 else "red"
-st.sidebar.markdown(f"**Sun altitude:** <span style='color:{sc};'>{sun_alt:.1f}°</span>",
-                    unsafe_allow_html=True)
+st.sidebar.markdown(f"**Sun altitude:** {sun_alt:.1f}°", unsafe_allow_html=True)
 if moon_alt is not None:
-    mc = "green" if moon_alt > 0 else "red"
-    st.sidebar.markdown(f"**Moon altitude:** <span style='color:{mc};'>{moon_alt:.1f}°</span>",
-                        unsafe_allow_html=True)
-else:
-    st.sidebar.markdown("**Moon altitude:** _(PyEphem not installed)_")
-
-radius_km           = st.sidebar.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
-military_radius_km  = st.sidebar.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
-track_sun           = st.sidebar.checkbox("Show Sun Shadows", True)
-track_moon          = st.sidebar.checkbox("Show Moon Shadows", False)
-alert_width         = st.sidebar.slider("Shadow Alert Width (m)", 0, 1000, 50)
-enable_onscreen     = st.sidebar.checkbox("Enable Onscreen Alert", True)
+    st.sidebar.markdown(f"**Moon altitude:** {moon_alt:.1f}°", unsafe_allow_html=True)
+radius_km          = st.sidebar.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
+military_radius_km = st.sidebar.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
+track_sun          = st.sidebar.checkbox("Show Sun Shadows", True)
+track_moon         = st.sidebar.checkbox("Show Moon Shadows", False)
+alert_width        = st.sidebar.slider("Shadow Alert Width (m)", 0, 1000, 50)
+enable_onscreen    = st.sidebar.checkbox("Enable Onscreen Alert", True)
 
 if st.sidebar.button("Test Pushover"):
     send_pushover("✈️ Test Alert", "This is a test notification.")
@@ -104,8 +94,6 @@ if st.sidebar.button("Test Onscreen"):
     if enable_onscreen:
         st.error("🚨 TEST ALERT!")
         st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-    else:
-        st.sidebar.warning("Onscreen alerts disabled.")
 
 st.title("✈️ Aircraft Shadow Tracker")
 
@@ -118,15 +106,12 @@ if ADSBEX_TOKEN:
             "x-rapidapi-key": ADSBEX_TOKEN,
             "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
         }
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        raw = resp.json().get("ac", [])
+        r = requests.get(url, headers=headers, timeout=10); r.raise_for_status()
+        raw = r.json().get("ac", [])
     except Exception as e:
         st.warning(f"ADS-B fetch failed: {e}")
-else:
-    st.info("No ADS-B key; skipping fetch.")
 
-# Fallback to OpenSky if no ADS-B data
+# Fallback to OpenSky if none
 if not raw:
     dr = radius_km / 111
     south, north = CENTER_LAT - dr, CENTER_LAT + dr
@@ -134,14 +119,14 @@ if not raw:
     west, east = CENTER_LON - dlon, CENTER_LON + dlon
     try:
         r2 = requests.get(
-            f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}",
+            f"https://opensky-network.org/api/states/all?"
+            f"lamin={south}&lomin={west}&lamax={north}&lomax={east}",
             timeout=10
         )
         r2.raise_for_status()
         states = r2.json().get("states", [])
     except Exception as e:
-        st.warning(f"OpenSky fetch failed: {e}")
-        states = []
+        st.warning(f"OpenSky fetch failed: {e}"); states = []
     raw = [
         {"lat": s[6], "lon": s[5], "alt": s[13] or 0.0,
          "track": s[10] or 0.0, "callsign": (s[1].strip() or s[0]),
@@ -149,8 +134,8 @@ if not raw:
         for s in states if len(s) >= 11
     ]
 
-# Process into DataFrame
-aircraft = []
+# Build DataFrame
+ac_list = []
 for ac in raw:
     try:
         lat   = float(ac.get("lat") or ac.get("Lat") or 0)
@@ -161,41 +146,37 @@ for ac in raw:
         mil   = bool(ac.get("mil", False))
     except:
         continue
-    aircraft.append({
-        "lat": lat, "lon": lon, "alt": alt,
-        "angle": angle, "callsign": cs.strip(), "mil": mil
-    })
+    ac_list.append({"lat": lat, "lon": lon, "alt": alt,
+                    "angle": angle, "callsign": cs.strip(),
+                    "mil": mil})
 
-df = pd.DataFrame(aircraft)
+df = pd.DataFrame(ac_list)
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(df)}")
-st.sidebar.markdown(f"**Tracked Military Aircraft:** {int(df['mil'].sum())}")
+st.sidebar.markdown(f"**Tracked Military:** {int(df['mil'].sum())}")
 if not df.empty:
     df["alt"] = pd.to_numeric(df["alt"], errors="coerce").fillna(0)
 
-# Forecast shadow trails
+# Forecast trails
 trails_sun, trails_moon = [], []
 if track_sun:
     for _, r in df.iterrows():
         path, times = [], []
-        for s in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
-            ft = now + timedelta(seconds=s)
+        for sec in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
+            ft = now + timedelta(seconds=sec)
             sa, az = get_altitude(r.lat, r.lon, ft), get_azimuth(r.lat, r.lon, ft)
             if sa > 0:
                 d = r.alt / math.tan(math.radians(sa))
                 sh_lat = r.lat + (d / 111111) * math.cos(math.radians(az + 180))
                 sh_lon = r.lon + (d / (111111 * math.cos(math.radians(r.lat)))) * math.sin(math.radians(az + 180))
-                path.append((sh_lon, sh_lat))
-                times.append(s)
+                path.append((sh_lon, sh_lat)); times.append(sec)
         if path:
-            trails_sun.append({"callsign": r.callsign, "path": path, "times": times})
-
+            trails_sun.append({"callsign": r.callsign, "path": path})
 if track_moon and ephem:
     for _, r in df.iterrows():
-        path, times = [], []
-        for s in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
-            ft = now + timedelta(seconds=s)
-            obs = ephem.Observer()
-            obs.lat, obs.lon, obs.date = str(r.lat), str(r.lon), ft
+        path = []
+        for sec in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
+            ft = now + timedelta(seconds=sec)
+            obs = ephem.Observer(); obs.lat, obs.lon, obs.date = str(r.lat), str(r.lon), ft
             m = ephem.Moon(obs)
             ma, mz = math.degrees(float(m.alt)), math.degrees(float(m.az))
             if ma > 0:
@@ -203,25 +184,22 @@ if track_moon and ephem:
                 sh_lat = r.lat + (d / 111111) * math.cos(math.radians(mz + 180))
                 sh_lon = r.lon + (d / (111111 * math.cos(math.radians(r.lat)))) * math.sin(math.radians(mz + 180))
                 path.append((sh_lon, sh_lat))
-                times.append(s)
         if path:
-            trails_moon.append({"callsign": r.callsign, "path": path, "times": times})
+            trails_moon.append({"callsign": r.callsign, "path": path})
 
-# Compute alerts
+# Determine who will shadow
 alerts = []
 for tr in trails_sun:
-    for (lon, lat), t in zip(tr["path"], tr["times"]):
+    for lon, lat in tr["path"]:
         if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
-            alerts.append((tr["callsign"], t))
-            send_pushover("✈️ Shadow Alert", f"{tr['callsign']} in ~{t}s")
+            alerts.append(tr["callsign"])
             break
 
-shadow_calls = {cs for cs, _ in alerts}
-df["will_shadow"] = df["callsign"].isin(shadow_calls)
-df_safe  = df[~df["will_shadow"]]
-df_alert = df[df["will_shadow"]]
+df["will_shadow"] = df["callsign"].isin(alerts)
+df_safe = df[~df["will_shadow"]]
+df_warn = df[df["will_shadow"]]
 
-# Render map with shadow paths
+# Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
@@ -229,60 +207,60 @@ layers = []
 if not df_safe.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_safe,
-        get_position=["lon", "lat"], get_color=[0, 0, 255, 200],
-        get_radius=100
+        get_position=["lon","lat"], get_color=[0,0,255,200], get_radius=100
     ))
-if not df_alert.empty:
+if not df_warn.empty:
     layers.append(pdk.Layer(
-        "ScatterplotLayer", df_alert,
-        get_position=["lon", "lat"], get_color=[255, 0, 0, 200],
-        get_radius=100
+        "ScatterplotLayer", df_warn,
+        get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=100
     ))
 
-# Sun shadow trails
-if track_sun:
+# Sun shadow paths
+if track_sun and trails_sun:
+    df_paths = pd.DataFrame(trails_sun)
     layers.append(pdk.Layer(
-        "PathLayer", pd.DataFrame(trails_sun),
-        get_path="path", get_color=[255, 215, 0, 180],
-        get_width=4, width_min_pixels=3
+        "PathLayer", df_paths,
+        get_path="path",
+        get_color=[255,215,0,180],
+        width_scale=10,
+        width_min_pixels=2
     ))
 
-# Moon shadow trails
-if track_moon:
+# Moon shadow paths
+if track_moon and trails_moon:
+    df_mp = pd.DataFrame(trails_moon)
     layers.append(pdk.Layer(
-        "PathLayer", pd.DataFrame(trails_moon),
-        get_path="path", get_color=[100, 100, 100, 180],
-        get_width=4, width_min_pixels=3
+        "PathLayer", df_mp,
+        get_path="path",
+        get_color=[100,100,100,180],
+        width_scale=6,
+        width_min_pixels=2
     ))
 
 # Home marker
 layers.append(pdk.Layer(
     "ScatterplotLayer",
-    pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
-    get_position=["lon", "lat"], get_color=[255, 0, 0, 200],
-    get_radius=alert_width
+    pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
+    get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=alert_width
 ))
 
-st.pydeck_chart(
-    pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
-    use_container_width=True
-)
+# Render
+st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
+                use_container_width=True)
 
-# Onscreen alerts
+# Alerts
 if alerts and enable_onscreen:
     st.error("🚨 Shadow ALERT!")
     st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-for cs, t in alerts:
-    st.write(f"✈️ {cs} — in approx. {t} seconds")
+for cs in alerts:
+    st.write(f"✈️ {cs} — shadow predicted")
 if not alerts:
-    st.success("✅ No shadow paths intersect target area.")
+    st.success("✅ No shadows predicted.")
 
-# Update & display history
+# History chart
 st.session_state.history.append({
-    "time":         now,
-    "tracked":      len(df),
-    "shadow_events": len(alerts)
+    "time": now, "tracked": len(df), "shadow_events": len(alerts)
 })
-hist_df = pd.DataFrame(st.session_state.history).set_index("time")
+hist = pd.DataFrame(st.session_state.history).set_index("time")
 st.subheader("📈 Tracked vs Shadow Events Over Time")
-st.line_chart(hist_df)
+st.line_chart(hist)
