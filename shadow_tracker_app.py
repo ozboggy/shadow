@@ -28,23 +28,33 @@ PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
 ADSBEX_TOKEN        = os.getenv("ADSBEX_TOKEN")
 
 def send_pushover(title, message):
+    # Verify creds are loaded
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        st.warning("Pushover credentials not set in environment.")
+        st.error("🔒 Missing PUSHOVER_USER_KEY or PUSHOVER_API_TOKEN in environment")
         return False
+
+    payload = {
+        "token": PUSHOVER_API_TOKEN,
+        "user":  PUSHOVER_USER_KEY,
+        "title": title,
+        "message": message
+    }
+    # Debug output (masked)
+    st.write("→ Pushover payload:", {
+        "token": f"{PUSHOVER_API_TOKEN[:4]}…",
+        "user":  f"{PUSHOVER_USER_KEY[:4]}…",
+        "title": title,
+        "message": message
+    })
+
     try:
-        resp = requests.post(
-            "https://api.pushover.net/1/messages.json",
-            data={
-                "token": PUSHOVER_API_TOKEN,
-                "user":  PUSHOVER_USER_KEY,
-                "title": title,
-                "message": message
-            }
-        )
+        resp = requests.post("https://api.pushover.net/1/messages.json", data=payload)
+        st.write(f"→ HTTP {resp.status_code}")
+        st.write("→ Response body:", resp.text)
         resp.raise_for_status()
         return True
     except Exception as e:
-        st.error(f"Pushover failed: {e}")
+        st.error(f"Pushover request exception: {e}")
         return False
 
 def hav(lat1, lon1, lat2, lon2):
@@ -127,12 +137,12 @@ else:
 
     for ac in data:
         try:
-            lat     = float(ac.get("lat"))
-            lon     = float(ac.get("lon"))
-            alt     = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
-            angle   = float(ac.get("track")  or ac.get("trk")      or 0.0)
-            cs      = str(ac.get("flight") or ac.get("hex") or "").strip()
-            mil     = bool(ac.get("mil", False))
+            lat   = float(ac.get("lat"))
+            lon   = float(ac.get("lon"))
+            alt   = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
+            angle = float(ac.get("track")  or ac.get("trk")      or 0.0)
+            cs    = str(ac.get("flight") or ac.get("hex") or "").strip()
+            mil   = bool(ac.get("mil", False))
         except (TypeError, ValueError):
             continue
         aircraft_list.append({
@@ -274,4 +284,7 @@ if test_alert:
     st.error(f"🚨 Test Shadow Alert: within {alert_width} m!")
 if test_pushover:
     ok = send_pushover("✈️ Test Shadow Alert", f"Test within {alert_width} m")
-    st.info("✅ Test Pushover sent" if ok else "❌ Test Pushover failed")
+    if ok:
+        st.success("✅ Pushover test succeeded")
+    else:
+        st.error("❌ Pushover test failed — see debug logs above")
