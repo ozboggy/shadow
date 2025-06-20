@@ -16,14 +16,15 @@ try:
 except ImportError:
     ephem = None
 
-# Ensure history list exists
+# Make sure our history log exists
 if "history" not in st.session_state:
     st.session_state.history = []
 
 # Sidebar: auto‐refresh settings
 st.sidebar.header("Refresh Settings")
-auto_refresh = st.sidebar.checkbox("Auto Refresh Map", value=True)
-refresh_interval = st.sidebar.number_input("Refresh Interval (s)", min_value=1, max_value=60, value=10)
+auto_refresh     = st.sidebar.checkbox("Auto Refresh Map", value=True)
+# Default to 1 second now
+refresh_interval = st.sidebar.number_input("Refresh Interval (s)", min_value=1, max_value=60, value=1)
 if auto_refresh:
     st_autorefresh(interval=refresh_interval * 1000, key="datarefresh")
 
@@ -80,19 +81,19 @@ else:
 
 # Sidebar: map & alert settings
 st.sidebar.header("Map & Alert Settings")
-sun_color = "green" if sun_alt > 0 else "red"
-st.sidebar.markdown(f"**Sun altitude:** <span style='color:{sun_color};'>{sun_alt:.1f}°</span>", unsafe_allow_html=True)
+sc = "green" if sun_alt > 0 else "red"
+st.sidebar.markdown(f"**Sun altitude:** <span style='color:{sc};'>{sun_alt:.1f}°</span>", unsafe_allow_html=True)
 if moon_alt is not None:
-    moon_color = "green" if moon_alt > 0 else "red"
-    st.sidebar.markdown(f"**Moon altitude:** <span style='color:{moon_color};'>{moon_alt:.1f}°</span>", unsafe_allow_html=True)
+    mc = "green" if moon_alt > 0 else "red"
+    st.sidebar.markdown(f"**Moon altitude:** <span style='color:{mc};'>{moon_alt:.1f}°</span>", unsafe_allow_html=True)
 else:
     st.sidebar.markdown("**Moon altitude:** _(PyEphem not installed)_")
 
-radius_km           = st.sidebar.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM, step=1)
-military_radius_km  = st.sidebar.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM, step=1)
+radius_km           = st.sidebar.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
+military_radius_km  = st.sidebar.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
 track_sun           = st.sidebar.checkbox("Show Sun Shadows", True)
 show_moon           = st.sidebar.checkbox("Show Moon Shadows", False)
-alert_width         = st.sidebar.slider("Shadow Alert Width (m)", 0, 1000, 50, step=1)
+alert_width         = st.sidebar.slider("Shadow Alert Width (m)", 0, 1000, 50)
 enable_onscreen     = st.sidebar.checkbox("Enable Onscreen Alert", True)
 
 debug_raw = st.sidebar.checkbox("🔍 Debug raw ADS-B JSON", False)
@@ -110,7 +111,7 @@ if st.sidebar.button("Test Onscreen"):
 
 st.title("✈️ Aircraft Shadow Tracker")
 
-# Fetch ADS-B Exchange data (no caching)
+# Fetch ADS-B Exchange data
 raw = []
 if ADSBEX_TOKEN:
     try:
@@ -125,24 +126,25 @@ if ADSBEX_TOKEN:
     except Exception as e:
         st.warning(f"ADS-B fetch failed: {e}")
 else:
-    st.info("No ADS-B Exchange key; skipping ADS-B fetch.")
+    st.info("No ADS-B key; skipping fetch.")
 
 if debug_raw:
     st.subheader("Raw ADS-B JSON")
     st.write(raw)
 
-# Fallback to OpenSky if no ADS-B data
+# Fallback to OpenSky if ADS-B empty
 if not raw:
     dr = radius_km / 111
     south, north = CENTER_LAT - dr, CENTER_LAT + dr
     dlon = dr / math.cos(math.radians(CENTER_LAT))
     west, east = CENTER_LON - dlon, CENTER_LON + dlon
     try:
-        url = (f"https://opensky-network.org/api/states/all?"
-               f"lamin={south}&lomin={west}&lamax={north}&lomax={east}")
-        r2 = requests.get(url, timeout=10)
-        r2.raise_for_status()
-        states = r2.json().get("states", [])
+        opensky = requests.get(
+            f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}",
+            timeout=10
+        )
+        opensky.raise_for_status()
+        states = opensky.json().get("states", [])
     except Exception as e:
         st.warning(f"OpenSky fetch failed: {e}")
         states = []
@@ -165,9 +167,8 @@ for ac in raw:
         mil   = bool(ac.get("mil", False))
     except:
         continue
-    aircraft.append({"lat": lat, "lon": lon, "alt": alt,
-                     "angle": angle, "callsign": cs.strip(),
-                     "mil": mil})
+    aircraft.append({"lat": lat, "lon": lon, "alt": alt, "angle": angle,
+                     "callsign": cs.strip(), "mil": mil})
 
 df = pd.DataFrame(aircraft)
 if debug_df:
@@ -191,8 +192,7 @@ if track_sun:
                 d = r.alt / math.tan(math.radians(sa))
                 sh_lat = r.lat + (d / 111111) * math.cos(math.radians(sz + 180))
                 sh_lon = r.lon + (d / (111111 * math.cos(math.radians(r.lat)))) * math.sin(math.radians(sz + 180))
-                path.append((sh_lon, sh_lat))
-                times.append(s)
+                path.append((sh_lon, sh_lat)); times.append(s)
         if path:
             trails_sun.append({"callsign": r.callsign, "path": path, "times": times})
 
@@ -211,7 +211,7 @@ df_safe  = df[~df["will_shadow"]]
 df_alert = df[df["will_shadow"]]
 
 # Render pydeck map
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
+view   = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 if not df_safe.empty:
     layers.append(pdk.Layer("ScatterplotLayer", df_safe,
@@ -242,7 +242,7 @@ if alerts and enable_onscreen:
 for cs, t in alerts:
     st.write(f"✈️ {cs} — in approx. {t} seconds")
 if not alerts:
-    st.success("✅ No shadow paths intersect home area.")
+    st.success("✅ No shadow paths intersect target area.")
 
 # Update & display history chart
 st.session_state.history.append({
