@@ -101,25 +101,28 @@ if 'alt' in df_ac.columns:
 else:
     df_ac['alt'] = 0.0
 
-# Compute shadow points using safe loop
-shadows = []
+# Forecast shadow trail over next few minutes
+trails = []
 if track_sun and not df_ac.empty:
     from pysolar.solar import get_altitude, get_azimuth
     for _, row in df_ac.iterrows():
-        # Safely parse altitude
-        try:
-            alt_m = float(row['alt'])
-        except Exception:
-            continue
-        if alt_m > 0:
-            sun_alt = get_altitude(row['lat'], row['lon'], selected_time)
-            sun_az = get_azimuth(row['lat'], row['lon'], selected_time)
+        cs = row['callsign']
+        trail = []
+        for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
+            ft = selected_time + timedelta(seconds=i)
+            # Move plane roughly: ignoring velocity, using fixed location
+            lat, lon, alt_m = row['lat'], row['lon'], row['alt']
+            sun_alt = get_altitude(lat, lon, ft)
+            sun_az = get_azimuth(lat, lon, ft)
             if sun_alt > 0:
                 dist = alt_m / math.tan(math.radians(sun_alt))
-                sh_lat = row['lat'] + (dist / 111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = row['lon'] + (dist / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(sun_az + 180))
-                shadows.append({"lat": sh_lat, "lon": sh_lon, "callsign": row['callsign']})
-# Build shadow DataFrame
+                sh_lat = lat + (dist / 111111) * math.cos(math.radians(sun_az + 180))
+                sh_lon = lon + (dist / (111111 * math.cos(math.radians(lat)))) * math.sin(math.radians(sun_az + 180))
+                trail.append((sh_lon, sh_lat))
+        if trail:
+            trails.append({'path': trail, 'callsign': cs})
+# Build trails DataFrame
+df_trails = pd.DataFrame(trails)
 df_sh = pd.DataFrame(shadows)
 df_sh = pd.DataFrame(shadows)
 df_sh = pd.DataFrame(shadows)
