@@ -90,16 +90,22 @@ df_ac = pd.DataFrame(aircraft_list)
 shadows=[]
 if track_sun and not df_ac.empty:
     from pysolar.solar import get_altitude, get_azimuth
-    for row in df_ac.itertuples():
-        if row.alt>0:
-            sun_alt=get_altitude(row.lat,row.lon,selected_time)
-            sun_az=get_azimuth(row.lat,row.lon,selected_time)
-            if sun_alt>0:
-                dist=row.alt/math.tan(math.radians(sun_alt))
-                sh_lat=row.lat+(dist/111111)*math.cos(math.radians(sun_az+180))
-                sh_lon=row.lon+(dist/(111111*math.cos(math.radians(row.lat))))*math.sin(math.radians(sun_az+180))
-                shadows.append({"lat":sh_lat,"lon":sh_lon})
-df_sh=pd.DataFrame(shadows)
+    # Compute shadow points using iterrows to safely access altitude
+shadows = []
+if track_sun and not df_ac.empty:
+    from pysolar.solar import get_altitude, get_azimuth
+    for _, row in df_ac.iterrows():
+        alt_m = row.get('alt', 0.0)
+        if alt_m > 0:
+            sun_alt = get_altitude(row['lat'], row['lon'], selected_time)
+            sun_az = get_azimuth(row['lat'], row['lon'], selected_time)
+            if sun_alt > 0:
+                dist = alt_m / math.tan(math.radians(sun_alt))
+                sh_lat = row['lat'] + (dist/111111) * math.cos(math.radians(sun_az + 180))
+                sh_lon = row['lon'] + (dist/(111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(sun_az + 180))
+                shadows.append({"lat": sh_lat, "lon": sh_lon})
+# Build shadow DataFrame
+df_sh = pd.DataFrame(shadows)
 
 # Pydeck layers
 view=pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=10)
