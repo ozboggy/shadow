@@ -76,7 +76,7 @@ with st.sidebar:
 # Auto-refresh every 30 seconds to update aircraft positions
 from streamlit_autorefresh import st_autorefresh
 # interval in milliseconds
-st_autorefresh(interval=10_000, key="datarefresh")  # refresh every 10 seconds
+st_autorefresh(interval=1_000, key="datarefresh")  # refresh every 10 seconds
 
 # Current time
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
