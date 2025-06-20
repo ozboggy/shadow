@@ -1,4 +1,7 @@
-import streamlit as st from dotenv import load_dotenv load_dotenv() import os import math import requests import pandas as pd import pydeck as pdk from datetime import datetime, timezone, timedelta from pysolar.solar import get_altitude, get_azimuth
+import streamlit as st from dotenv 
+import load_dotenv load_dotenv() import os import math import requests import pandas as pd import pydeck as pdk from datetime import datetime, timezone, timedelta from pysolar.solar import get_altitude, get_azimuth
+
+
 
 Auto-refresh helper
 
