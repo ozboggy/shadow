@@ -137,14 +137,15 @@ if track_sun and not df_ac.empty and not df_sh.empty:
 # Pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=10)
 layers = []
-# Aircraft layer
+# Aircraft layer represented by small blue dots
 if not df_ac.empty:
     layers.append(
         pdk.Layer(
-            "ScatterplotLayer", df_ac,
-            get_position=["lon","lat"],
-            get_color=[0,128,255,200],
-            get_radius=200,
+            "ScatterplotLayer",
+            df_ac,
+            get_position=["lon", "lat"],
+            get_color=[0, 128, 255, 200],
+            get_radius=100,  # smaller dot for plane
             pickable=True
         )
     )
