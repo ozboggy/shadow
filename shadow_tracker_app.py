@@ -91,7 +91,11 @@ shadows = []
 if track_sun and not df_ac.empty:
     from pysolar.solar import get_altitude, get_azimuth
     for _, row in df_ac.iterrows():
-        alt_m = row.get('alt', 0.0)
+        # Safely parse altitude
+        try:
+            alt_m = float(row['alt'])
+        except Exception:
+            continue
         if alt_m > 0:
             sun_alt = get_altitude(row['lat'], row['lon'], selected_time)
             sun_az = get_azimuth(row['lat'], row['lon'], selected_time)
@@ -101,6 +105,7 @@ if track_sun and not df_ac.empty:
                 sh_lon = row['lon'] + (dist / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(sun_az + 180))
                 shadows.append({"lat": sh_lat, "lon": sh_lon, "callsign": row['callsign']})
 # Build shadow DataFrame
+df_sh = pd.DataFrame(shadows)
 df_sh = pd.DataFrame(shadows)
 df_sh = pd.DataFrame(shadows)
 
