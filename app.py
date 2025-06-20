@@ -1,265 +1,104 @@
 import streamlit as st
-from dotenv import load_dotenv
-load_dotenv()
-import os
-import folium
-from folium.features import DivIcon
-from streamlit_folium import st_folium
-from datetime import datetime, timezone, timedelta
-import math
 import requests
-import pandas as pd
-import plotly.express as px
-from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
+from datetime import datetime
+from math import tan, radians, cos
+from geopy.distance import distance
+from geopy import Point
+import folium
+from streamlit_folium import st_folium
+from astral import LocationInfo
+from astral.location import Location
 
-# Pushover configuration (set these in your .env)
-PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
-PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+st.set_page_config(layout="wide")
+st.title("Live Aircraft Shadow Tracker ✈️ with Labels and Manual Refresh")
 
-def send_pushover(title, message):
-    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        st.warning("Pushover credentials not set in environment.")
-        return
+# Sidebar configuration
+st.sidebar.header("🔍 Filter Settings")
+center_lat = st.sidebar.number_input("Center Latitude", value=35.6895)
+center_lon = st.sidebar.number_input("Center Longitude", value=139.6917)
+radius_km = st.sidebar.slider("Search Radius (km)", 10, 300, 100)
+min_altitude = st.sidebar.number_input("Minimum Altitude (m)", value=500)
+max_aircraft = st.sidebar.slider("Max Aircraft to Show", 1, 25, 5)
+callsign_filter = st.sidebar.text_input("Filter by Callsign (optional)")
+manual_refresh = st.sidebar.button("🔄 Refresh Data")
+
+now = datetime.utcnow()
+st.write(f"🕒 **Current UTC Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
+
+# Bounding box
+lat_margin = radius_km / 111
+lon_margin = radius_km / (111 * abs(cos(radians(center_lat))))
+min_lat = center_lat - lat_margin
+max_lat = center_lat + lat_margin
+min_lon = center_lon - lon_margin
+max_lon = center_lon + lon_margin
+
+@st.cache_data(ttl=30, show_spinner=True)
+def fetch_opensky():
+    url = "https://opensky-network.org/api/states/all"
+    params = {
+        "lamin": min_lat,
+        "lamax": max_lat,
+        "lomin": min_lon,
+        "lomax": max_lon
+    }
     try:
-        requests.post(
-            "https://api.pushover.net/1/messages.json",
-            data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "title": title, "message": message}
-        )
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        return r.json().get("states", [])
     except Exception as e:
-        st.warning(f"Pushover notification failed: {e}")
+        st.error(f"OpenSky API error: {e}")
+        return []
 
-# Log file setup
-log_file = "alert_log.csv"
-log_path = os.path.join(os.path.dirname(__file__), log_file)
-if not os.path.exists(log_path):
-    with open(log_path, "w", newline="") as f:
-        f.write("Time UTC,Callsign,Time Until Alert (sec),Lat,Lon,Source\n")
+# Optionally clear cache if button is pressed
+if manual_refresh:
+    fetch_opensky.clear()
 
-# Defaults
-CENTER_LAT = -33.7602563
-CENTER_LON = 150.9717434
-DEFAULT_RADIUS_KM = 10
-FORECAST_INTERVAL_SECONDS = 30
-FORECAST_DURATION_MINUTES = 5
-DEFAULT_SHADOW_WIDTH = 2
-DEFAULT_ZOOM = 11
+aircraft_data = fetch_opensky()
 
-# Sidebar
-with st.sidebar:
-    st.header("Map Options")
-    tile_style = st.selectbox("Tile Style", ["OpenStreetMap", "CartoDB positron"], index=0)
-    data_source = st.selectbox("Data Source", ["OpenSky", "ADS-B Exchange"], index=0)
-    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
-    st.markdown(f"**Search Radius:** {radius_km} km")
-    alert_radius_m = st.slider("Shadow Alert Radius (m)", 1, 10000, 50)
-    st.markdown(f"**Shadow Alert Radius:** {alert_radius_m} m")
-    track_sun = st.checkbox("Show Sun Shadows", True)
-    track_moon = st.checkbox("Show Moon Shadows", False)
-    override_trails = st.checkbox("Show Trails Regardless of Sun/Moon", False)
-    test_alert = st.button("Test Alert")
-    test_pushover = st.button("Test Pushover")
-    st.header("Map Settings")
-    zoom_level = st.slider("Initial Zoom Level", 1, 18, DEFAULT_ZOOM)
-    map_width = st.number_input("Width (px)", 400, 2000, 600)
-    map_height = st.number_input("Height (px)", 300, 1500, 600)
-    
-    # Alert History in sidebar
-    st.markdown("---")
-    st.markdown("### 🕑 Recent Alerts")
-    if os.path.exists(log_path):
-        df_log = pd.read_csv(log_path)
-        if not df_log.empty:
-            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-            recent = df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']].sort_values('Time UTC', ascending=False).head(5)
-            st.dataframe(recent)
-    st.markdown("---")
-# Current UTC time"
-selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
+m = folium.Map(location=[center_lat, center_lon], zoom_start=7)
+count = 0
 
-# Title
-st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
-
-# Create map and preserve view
-if 'zoom' not in st.session_state:
-    st.session_state.zoom = zoom_level
-if 'center' not in st.session_state:
-    st.session_state.center = [CENTER_LAT, CENTER_LON]
-
-fmap = folium.Map(
-    location=st.session_state.center,
-    zoom_start=st.session_state.zoom,
-    tiles=tile_style,
-    control_scale=True
-)
-folium.Marker(
-    [CENTER_LAT, CENTER_LON],
-    icon=folium.Icon(color="red", icon="home", prefix="fa"),
-    popup="Home"
-).add_to(fmap)
-shadow_width = DEFAULT_SHADOW_WIDTH
-
-# Helpers
-
-def move_position(lat, lon, heading, dist):
-    R = 6371000
+for ac in aircraft_data:
     try:
-        hdr = math.radians(float(heading))
+        icao, callsign, origin_country, _, _, lon, lat, geo_alt, _, heading = ac[:10]
+        if not all([lat, lon, geo_alt]) or geo_alt < min_altitude:
+            continue
+        if callsign_filter and callsign_filter.upper() not in (callsign or ""):
+            continue
+
+        # Sun position
+        location = LocationInfo(latitude=lat, longitude=lon)
+        loc = Location(location)
+        loc.timezone = 'UTC'
+        elev_angle = loc.solar_elevation(now, observer_elevation=0)
+        az_angle = loc.solar_azimuth(now, observer_elevation=0)
+        if elev_angle <= 0:
+            continue
+
+        # Shadow point
+        shadow_dist = geo_alt / tan(radians(elev_angle))
+        aircraft_pt = Point(lat, lon)
+        shadow_pt = distance(meters=shadow_dist).destination(aircraft_pt, az_angle)
+
+        # Heading animation (trail)
+        trail_points = []
+        for d in range(1000, 6000, 1000):
+            next_point = distance(meters=d).destination(aircraft_pt, heading or 0)
+            trail_points.append((next_point.latitude, next_point.longitude))
+
+        # Markers and lines
+        label = f"{callsign.strip() if callsign else 'N/A'} ({origin_country})\nAlt: {int(geo_alt)} m"
+        folium.Marker([lat, lon], popup=label, icon=folium.DivIcon(html=f"<b>{callsign.strip() if callsign else '✈️'}</b>")).add_to(m)
+        folium.Marker([shadow_pt.latitude, shadow_pt.longitude], popup="Shadow", icon=folium.Icon(color="black")).add_to(m)
+        folium.PolyLine([(lat, lon), (shadow_pt.latitude, shadow_pt.longitude)], color="gray").add_to(m)
+        folium.PolyLine([(lat, lon)] + trail_points, color="green", dash_array="5").add_to(m)
+
+        count += 1
+        if count >= max_aircraft:
+            break
     except:
-        hdr = 0.0
-    try:
-        lat1, lon1 = math.radians(lat), math.radians(lon)
-    except:
-        return lat, lon
-    lat2 = math.asin(math.sin(lat1)*math.cos(dist/R) + math.cos(lat1)*math.sin(dist/R)*math.cos(hdr))
-    lon2 = lon1 + math.atan2(math.sin(hdr)*math.sin(dist/R)*math.cos(lat1), math.cos(dist/R)-math.sin(lat1)*math.sin(lat2))
-    return math.degrees(lat2), math.degrees(lon2)
+        continue
 
-def hav(lat1, lon1, lat2, lon2):
-    R = 6371000
-    dlat = math.radians(lat2-lat1)
-    dlon = math.radians(lon2-lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
-    return R * 2 * math.asin(math.sqrt(a))
-
-# Fetch aircraft
-aircraft_list = []
-if data_source == "OpenSky":
-    dr = radius_km/111.0
-    south, north = CENTER_LAT-dr, CENTER_LAT+dr
-    dlon = dr/math.cos(math.radians(CENTER_LAT))
-    west, east = CENTER_LON-dlon, CENTER_LON+dlon
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
-    try:
-        r = requests.get(url); r.raise_for_status(); states = r.json().get("states", [])
-    except:
-        states = []
-    for s in states:
-        if len(s) < 11: continue
-        icao, cs_raw, lon, lat, baro_raw, vel_raw, hdg_raw = s[0], s[1], s[5], s[6], s[7], s[9], s[10]
-        cs = cs_raw.strip() if isinstance(cs_raw, str) else icao
-        try: baro = float(baro_raw)
-        except: baro = 0.0
-        try: vel = float(vel_raw)
-        except: vel = 0.0
-        try: hdg = float(hdg_raw)
-        except: hdg = 0.0
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
-elif data_source == "ADS-B Exchange":
-    api_key = os.getenv("RAPIDAPI_KEY"); adsb = []
-    if api_key:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-        headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
-        try: r2 = requests.get(url, headers=headers); r2.raise_for_status(); adsb = r2.json().get("ac", [])
-        except:
-            adsb = []
-    for ac in adsb:
-        lat_raw, lon_raw = ac.get("lat"), ac.get("lon")
-        try: lat = float(lat_raw); lon = float(lon_raw)
-        except: continue
-        try: vel = float(ac.get("gs") or ac.get("spd"))
-        except: vel = 0.0
-        try: hdg = float(ac.get("track") or ac.get("trak"))
-        except: hdg = 0.0
-        try: baro = float(ac.get("alt_baro"))
-        except: baro = 0.0
-        cs = ac.get("flight") or ac.get("hex")
-        cs = cs.strip() if isinstance(cs, str) else None
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
-
-# Plot aircraft and trails
-alerts = []
-for ac in aircraft_list:
-    lat, lon, baro, vel, hdg, cs = ac.values()
-    alert = False; trail = []
-    for i in range(0, FORECAST_DURATION_MINUTES*60+1, FORECAST_INTERVAL_SECONDS):
-        ft = selected_time + timedelta(seconds=i)
-        f_lat, f_lon = move_position(lat, lon, hdg, vel * i)
-        sun_alt = get_sun_altitude(f_lat, f_lon, ft)
-        if (track_sun and sun_alt > 0) or (track_moon and sun_alt <= 0) or override_trails:
-            az = get_sun_azimuth(f_lat, f_lon, ft)
-            sd = baro / math.tan(math.radians(sun_alt if sun_alt>0 else 1))
-            sh_lat = f_lat + (sd/111111) * math.cos(math.radians(az+180))
-            sh_lon = f_lon + (sd/(111111*math.cos(math.radians(f_lat)))) * math.sin(math.radians(az+180))
-            trail.append((sh_lat, sh_lon))
-            if hav(sh_lat, sh_lon, CENTER_LAT, CENTER_LON) <= alert_radius_m:
-                alert = True
-    if alert: alerts.append(cs)
-    folium.Marker(
-        location=(lat, lon),
-        icon=DivIcon(
-            icon_size=(30,30), icon_anchor=(15,15),
-            html=(
-                f"<i class='fa fa-plane' style='transform:rotate({hdg-90}deg); "
-                f"color:{'red' if alert else 'blue'}; font-size:24px;'></i>"
-            )
-        ),
-        popup=f"{cs}\nAlt: {baro} m\nSpd: {vel} m/s"
-    ).add_to(fmap)
-    if trail:
-        folium.PolyLine(locations=trail, color="red" if alert else "black", weight=shadow_width, opacity=0.6).add_to(fmap)
-
-# Alerts UI
-if alerts:
-    alist = ", ".join(alerts)
-    st.error(f"🚨 Shadow ALERT for: {alist}")
-    st.markdown(
-        """
-        <audio autoplay loop>
-          <source src='https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' type='audio/ogg'>
-        </audio>
-        """, unsafe_allow_html=True
-    )
-    send_pushover("✈️ Shadow ALERT", f"Shadows detected for: {alist}")
-else:
-    st.success("✅ No forecast shadow paths intersect target area.")
-
-# Render map and preserve view
-map_data = st_folium(
-    fmap,
-    width=map_width,
-    height=map_height,
-    returned_objects=['zoom', 'center'],
-    key='aircraft_map'
-)
-if map_data and 'zoom' in map_data and 'center' in map_data:
-    st.session_state.zoom = map_data['zoom']
-    st.session_state.center = map_data['center']
-
-# Alert History Expander below map
-with st.expander("🖼 Alert History", expanded=True):
-    if os.path.exists(log_path):
-        st.markdown("### 📥 Download Log")
-        with open(log_path, "rb") as f:
-            st.download_button("Download alert_log.csv", f, file_name="alert_log.csv", mime="text/csv")
-        df_log = pd.read_csv(log_path)
-        if not df_log.empty:
-            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-            st.markdown("### 🕑 Recent Alerts Detail")
-            st.dataframe(
-                df_log[['Time UTC', 'Callsign', 'Time Until Alert (sec)']]
-                    .sort_values('Time UTC', ascending=False)
-                    .head(10)
-            )
-            st.markdown("### 📊 Alert Timeline")
-            fig = px.scatter(
-                df_log,
-                x="Time UTC", y="Callsign",
-                size="Time Until Alert (sec)",
-                hover_data=["Lat", "Lon"],
-                title="Shadow Alerts Over Time"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-# Test buttons
-if test_alert:
-    st.error("🚨 Test Alert Triggered!")
-    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-if test_pushover:
-    st.info("🔔 Sending test Pushover notification...")
-    send_pushover("✈️ Test Push", "This is a test shadow alert.")
-if test_alert:
-    st.error("🚨 Test Alert Triggered!")
-    st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg", autoplay=True)
-if test_pushover:
-    st.info("🔔 Sending test Pushover notification...")
-    send_pushover("✈️ Test Push", "This is a test shadow alert.")
+st.success(f"🛩️ Displaying {count} aircraft with shadows and trails")
+st_folium(m, width=1000, height=600)
