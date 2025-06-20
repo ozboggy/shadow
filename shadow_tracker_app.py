@@ -157,3 +157,4 @@ if track_sun and trails:
 # test
 if test_alert: st.success("Test alert triggered")
 if test_pushover: st.info("Sending test Pushover")
+
