@@ -22,17 +22,17 @@ try:
 except:
     pass
 
-# Pushover configuration
+# Environment variables
 PUSHOVER_USER_KEY   = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
 ADSBEX_TOKEN        = os.getenv("ADSBEX_TOKEN")  # your ADS-B Exchange API key
 
 def send_pushover(title, message):
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        st.warning("Pushover credentials not set.")
-        return
+        st.error("🔒 Pushover credentials not set in environment.")
+        return False
     try:
-        requests.post(
+        resp = requests.post(
             "https://api.pushover.net/1/messages.json",
             data={
                 "token": PUSHOVER_API_TOKEN,
@@ -41,8 +41,13 @@ def send_pushover(title, message):
                 "message": message
             }
         )
+        st.write(f"Pushover HTTP {resp.status_code}")
+        st.write(resp.text)
+        resp.raise_for_status()
+        return True
     except Exception as e:
-        st.warning(f"Pushover failed: {e}")
+        st.error(f"Pushover request failed: {e}")
+        return False
 
 def hav(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -76,10 +81,10 @@ time_now = datetime.now(timezone.utc)
 
 if show_moon and ephem is None:
     st.warning("PyEphem not installed; moon shadows unavailable.")
-
-# === LIVE ADS-B EXCHANGE FETCH ===
 if not ADSBEX_TOKEN:
     st.warning("Please set ADSBEX_TOKEN in your environment.")
+
+# === LIVE ADS-B EXCHANGE FETCH ===
 aircraft_list = []
 try:
     url = (
@@ -127,8 +132,7 @@ if track_sun and not df_ac.empty:
             if sun_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(sun_alt))
                 sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * \
-                         math.sin(math.radians(sun_az + 180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * math.sin(math.radians(sun_az + 180))
                 path.append((sh_lon, sh_lat))
         if path:
             trails_sun.append({"path": path, "callsign": row["callsign"]})
@@ -150,8 +154,7 @@ if show_moon and ephem and not df_ac.empty:
             if moon_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(moon_alt))
                 sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(moon_az + 180))
-                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * \
-                         math.sin(math.radians(moon_az + 180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * math.sin(math.radians(moon_az + 180))
                 path.append((sh_lon, sh_lat))
         if path:
             trails_moon.append({"path": path, "callsign": row["callsign"]})
@@ -235,8 +238,11 @@ if test_alert:
     st.error(f"🚨 Test Shadow Alert: aircraft shadow within {alert_width} m of home!")
 
 if test_pushover:
-    send_pushover(
+    sent = send_pushover(
         "✈️ Test Shadow Alert",
         f"Test: aircraft shadow within {alert_width} m of home"
     )
-    st.info("Test Pushover sent")
+    if sent:
+        st.success("✅ Test Pushover sent successfully")
+    else:
+        st.error("❌ Test Pushover failed – check logs above")
