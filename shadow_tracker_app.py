@@ -34,8 +34,12 @@ def send_pushover(title, message):
     try:
         requests.post(
             "https://api.pushover.net/1/messages.json",
-            data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY,
-                  "title": title, "message": message}
+            data={
+                "token": PUSHOVER_API_TOKEN,
+                "user": PUSHOVER_USER_KEY,
+                "title": title,
+                "message": message
+            }
         )
     except Exception as e:
         st.warning(f"Pushover failed: {e}")
@@ -44,8 +48,10 @@ def hav(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) \
-        * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    a = (math.sin(dlat/2)**2 +
+         math.cos(math.radians(lat1)) *
+         math.cos(math.radians(lat2)) *
+         math.sin(dlon/2)**2)
     return R * 2 * math.asin(math.sqrt(a))
 
 # Constants
@@ -121,7 +127,8 @@ if track_sun and not df_ac.empty:
             if sun_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(sun_alt))
                 sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * math.sin(math.radians(sun_az + 180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * \
+                         math.sin(math.radians(sun_az + 180))
                 path.append((sh_lon, sh_lat))
         if path:
             trails_sun.append({"path": path, "callsign": row["callsign"]})
@@ -133,7 +140,6 @@ if show_moon and ephem and not df_ac.empty:
         path = []
         for i in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
             ft = time_now + timedelta(seconds=i)
-            # set up observer for this aircraft/time
             obs = ephem.Observer()
             obs.lat  = str(row["lat"])
             obs.lon  = str(row["lon"])
@@ -144,7 +150,8 @@ if show_moon and ephem and not df_ac.empty:
             if moon_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(moon_alt))
                 sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(moon_az + 180))
-                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * math.sin(math.radians(moon_az + 180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * \
+                         math.sin(math.radians(moon_az + 180))
                 path.append((sh_lon, sh_lat))
         if path:
             trails_moon.append({"path": path, "callsign": row["callsign"]})
@@ -182,7 +189,7 @@ if not icon_df.empty:
 if track_sun and trails_sun:
     layers.append(pdk.Layer(
         "PathLayer", pd.DataFrame(trails_sun),
-        get_path="path", get_color=[255, 215, 0, 150],  # gold-ish
+        get_path="path", get_color=[255, 215, 0, 150],
         width_scale=10, width_min_pixels=2
     ))
 
@@ -190,7 +197,7 @@ if track_sun and trails_sun:
 if show_moon and trails_moon:
     layers.append(pdk.Layer(
         "PathLayer", pd.DataFrame(trails_moon),
-        get_path="path", get_color=[100, 100, 100, 150],  # grey-ish
+        get_path="path", get_color=[100, 100, 100, 150],
         width_scale=10, width_min_pixels=2
     ))
 
@@ -225,6 +232,11 @@ if show_moon and trails_moon:
 
 # Test buttons
 if test_alert:
-    st.success("Test alert triggered")
+    st.error(f"🚨 Test Shadow Alert: aircraft shadow within {alert_width} m of home!")
+
 if test_pushover:
+    send_pushover(
+        "✈️ Test Shadow Alert",
+        f"Test: aircraft shadow within {alert_width} m of home"
+    )
     st.info("Test Pushover sent")
