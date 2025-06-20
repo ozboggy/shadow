@@ -9,10 +9,6 @@ from datetime import datetime, timezone, timedelta
 # Auto-refresh every second
 from streamlit_autorefresh import st_autorefresh
 st_autorefresh(interval=1_000, key="datarefresh")
-# Removed duplicate auto-refresh call
-st_autorefresh(interval=1_000, key="datarefresh")
-# (Removed duplicate auto-refresh)
-st_autorefresh(interval=10_000, key="datarefresh")
 
 # Pushover configuration
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
