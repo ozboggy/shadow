@@ -9,6 +9,8 @@ from datetime import datetime, timezone, timedelta
 # Auto-refresh every second
 from streamlit_autorefresh import st_autorefresh
 st_autorefresh(interval=1_000, key="datarefresh")
+# Removed duplicate auto-refresh call
+st_autorefresh(interval=1_000, key="datarefresh")
 # (Removed duplicate auto-refresh)
 st_autorefresh(interval=10_000, key="datarefresh")
 
@@ -99,6 +101,11 @@ elif data_source == "ADS-B Exchange":
             continue
         cs = ac.get("flight") or ac.get("hex") or ""
         aircraft_list.append({"latitude": lat, "longitude": lon, "callsign": cs.strip()})
+
+# Prepare DataFrame for mapping
+import pandas as pd  # ensure pandas imported here
+
+df_map = pd.DataFrame(aircraft_list)
 
 # Display on map with home centering
 if not df_map.empty:
