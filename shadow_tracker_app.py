@@ -41,8 +41,18 @@ with st.sidebar:
     data_source = st.selectbox("Data Source", ["OpenSky", "ADS-B Exchange"], index=0)
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", True)
+    # New: shadow alert width
+    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
+
+# Helpers
+def hav(lat1, lon1, lat2, lon2):
+    R = 6371000
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
 
 # Current UTC time
 selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
