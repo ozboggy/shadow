@@ -9,8 +9,14 @@ import pandas as pd
 import numpy as np
 import time
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
-# For moon position; requires astral (pip install astral)
-from astral import moon
+
+# Attempt to import astral for moon calculations
+try:
+    from astral import moon
+    MOON_AVAILABLE = True
+except ImportError:
+    MOON_AVAILABLE = False
+    moon = None
 
 # Load API credentials from .env
 ADSBEX_USER = os.getenv("ADSBEXCHANGE_API_USER")
@@ -29,7 +35,9 @@ st.sidebar.title("Controls")
 search_radius_km = st.sidebar.slider("Search Radius (km)", 10, 200, 50)
 alert_radius_m = st.sidebar.slider("Alert Radius (meters)", 100, 5000, 1000)
 show_sun = st.sidebar.checkbox("Sun Shadows", value=True)
-show_moon = st.sidebar.checkbox("Moon Shadows", value=False)
+show_moon = st.sidebar.checkbox("Moon Shadows", value=False, disabled=not MOON_AVAILABLE)
+if not MOON_AVAILABLE and show_moon:
+    st.sidebar.warning("Astral library not installed: Moon shadows disabled.")
 refresh_sec = st.sidebar.slider("Refresh Interval (seconds)", 1, 60, 5)
 
 st.sidebar.markdown("---")
@@ -52,63 +60,45 @@ debug = st.sidebar.checkbox("Debug Raw Data")
 
 # Placeholder for the map / chart
 map_placeholder = st.empty()
-
 # Sidebar status
 status_placeholder = st.sidebar.empty()
 
 # Function to fetch live aircraft from ADSB-Exchange
 @st.cache_data(ttl=refresh_sec)
 def fetch_aircraft(lat, lon, radius_km):
-    # Example endpoint; adjust per your ADSB-Exchange API
     url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
-    params = {
-        "lat": lat,
-        "lng": lon,
-        "fDstL": 0,
-        "fDstU": radius_km
-    }
-    # If your API requires auth, include it here
+    params = {"lat": lat, "lng": lon, "fDstL": 0, "fDstU": radius_km}
     resp = requests.get(url, params=params, auth=(ADSBEX_USER, ADSBEX_TOKEN))
     resp.raise_for_status()
-    data = resp.json().get('acList', [])
-    return data
+    return resp.json().get('acList', [])
 
-# Main loop (single-run; auto-refresh by cache invalidation)
+# Main rendering
 def main():
-    # Fetch data
     raw = fetch_aircraft(HOME_LAT, HOME_LON, search_radius_km)
     if debug:
         st.sidebar.json(raw)
 
-    # Parse into DataFrame
-    df = pd.DataFrame([{
-        'lat': ac.get('Lat'),
-        'lon': ac.get('Long'),
-        'alt': ac.get('Alt'),
-        'track': ac.get('Trak'),
-        'callsign': ac.get('Call')
-    } for ac in raw])
+    df = pd.DataFrame([{ 'lat': ac.get('Lat'), 'lon': ac.get('Long'), 'alt': ac.get('Alt'),
+                         'track': ac.get('Trak'), 'callsign': ac.get('Call') } for ac in raw])
 
-    # Compute shadows
     shadows = []
     now = pd.Timestamp.utcnow()
     for _, row in df.iterrows():
         lat, lon, alt = row['lat'], row['lon'], row['alt']
-        # Sun
+        # Sun shadow
         if show_sun:
             solar_elev = get_sun_altitude(HOME_LAT, HOME_LON, now)
             solar_azi = get_sun_azimuth(HOME_LAT, HOME_LON, now)
             if solar_elev > 0:
                 d = alt / np.tan(np.radians(solar_elev))
-                # compute shadow end via simple bearing offset
                 bearing = solar_azi - 180
                 end_lat = lat + (d/111320) * np.cos(np.radians(bearing))
                 end_lon = lon + (d/(40075000*np.cos(np.radians(lat))/360)) * np.sin(np.radians(bearing))
                 shadows.append({'start_lat': lat, 'start_lon': lon,
                                 'end_lat': end_lat, 'end_lon': end_lon,
-                                'color': [212,175,55], 'type': 'sun'})
-        # Moon (placeholder, requires proper moon position calc)
-        if show_moon:
+                                'color': [212,175,55]})
+        # Moon shadow if available
+        if show_moon and MOON_AVAILABLE:
             moon_azi = moon.azimuth(now, HOME_LAT, HOME_LON)
             moon_elev = moon.altitude(now, HOME_LAT, HOME_LON)
             if moon_elev > 0:
@@ -118,52 +108,32 @@ def main():
                 end_lon = lon + (d/(40075000*np.cos(np.radians(lat))/360)) * np.sin(np.radians(bearing))
                 shadows.append({'start_lat': lat, 'start_lon': lon,
                                 'end_lat': end_lat, 'end_lon': end_lon,
-                                'color': [128,128,128], 'type': 'moon'})
+                                'color': [128,128,128]})
 
     df_shadows = pd.DataFrame(shadows)
 
-    # Build PyDeck layers
     layers = []
-    # House
-    layers.append(pdk.Layer(
-        "ScatterplotLayer",
-        data=pd.DataFrame([{'lat': HOME_LAT, 'lon': HOME_LON}]),
-        get_position='[lon, lat]',
-        get_radius=alert_radius_m,
-        radius_units='meters',
-        get_fill_color=[255, 0, 0],
-        pickable=False
-    ))
+    # Home
+    layers.append(pdk.Layer("ScatterplotLayer", data=pd.DataFrame([{'lat': HOME_LAT, 'lon': HOME_LON}]),
+                            get_position='[lon, lat]', get_radius=alert_radius_m, radius_units='meters',
+                            get_fill_color=[255, 0, 0]))
     # Aircraft
-    layers.append(pdk.Layer(
-        "ScatterplotLayer",
-        data=df,
-        get_position='[lon, lat]',
-        get_radius=50,
-        radius_units='meters',
-        get_fill_color=[0, 0, 255],
-        pickable=True,
-        auto_highlight=True,
-        tooltip=True
-    ))
+    layers.append(pdk.Layer("ScatterplotLayer", data=df,
+                            get_position='[lon, lat]', get_radius=50, radius_units='meters',
+                            get_fill_color=[0, 0, 255], pickable=True, auto_highlight=True))
     # Shadows
     if not df_shadows.empty:
-        layers.append(pdk.Layer(
-            "LineLayer",
-            data=df_shadows,
-            get_source_position='[start_lon, start_lat]',
-            get_target_position='[end_lon, end_lat]',
-            get_color='color',
-            get_width=2,
-        ))
+        layers.append(pdk.Layer("LineLayer", data=df_shadows,
+                                get_source_position='[start_lon, start_lat]',
+                                get_target_position='[end_lon, end_lat]', get_color='color', get_width=2))
 
-    # Render map
     view_state = pdk.ViewState(latitude=HOME_LAT, longitude=HOME_LON, zoom=12)
     deck = pdk.Deck(layers=layers, initial_view_state=view_state, map_style='mapbox://styles/mapbox/light-v9')
     map_placeholder.pydeck_chart(deck, use_container_width=False, width=600, height=600)
 
-    # Sidebar status
     status_placeholder.markdown(f"**Tracked Aircraft:** {len(df)}")
 
-# Run repeatedly via auto-refresh
-main()
+if __name__ == "__main__":
+    if not MOON_AVAILABLE:
+        st.warning("Install 'astral' via pip to enable moon shadow calculations.")
+    main()
