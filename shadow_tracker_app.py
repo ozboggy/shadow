@@ -80,7 +80,6 @@ st.sidebar.header("Map & Alert Settings")
 st.sidebar.markdown(f"**Sun altitude:** {sun_alt:.1f}°")
 if moon_alt is not None:
     st.sidebar.markdown(f"**Moon altitude:** {moon_alt:.1f}°")
-
 radius_km          = st.sidebar.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
 military_radius_km = st.sidebar.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
 track_sun          = st.sidebar.checkbox("Show Sun Shadows", True)
@@ -108,9 +107,9 @@ if ADSBEX_TOKEN:
             "x-rapidapi-key": ADSBEX_TOKEN,
             "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
         }
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        raw = resp.json().get("ac", [])
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        raw = r.json().get("ac", [])
     except Exception as e:
         st.warning(f"ADS-B fetch failed: {e}")
 
@@ -167,7 +166,7 @@ trails_sun, trails_moon = [], []
 if track_sun:
     for _, r in df.iterrows():
         path = []
-        for sec in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
+        for sec in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FOREcast_INTERVAL_SEC):
             ft = now + timedelta(seconds=sec)
             sa, az = get_altitude(r.lat, r.lon, ft), get_azimuth(r.lat, r.lon, ft)
             if sa > 0:
@@ -195,11 +194,12 @@ if track_moon and ephem:
         if path:
             trails_moon.append({"callsign": r.callsign, "path": path})
 
+# Debug raw trails
 if debug_trails:
     st.sidebar.write("Sun trails sample:", trails_sun[:2])
     st.sidebar.write("Moon trails sample:", trails_moon[:2])
 
-# Determine which aircraft will shadow
+# Determine which aircraft will shadow home
 alerts = []
 for tr in trails_sun:
     for lon, lat in tr["path"]:
@@ -212,45 +212,53 @@ df["will_shadow"] = df["callsign"].isin(alerts)
 df_safe = df[~df["will_shadow"]]
 df_warn = df[df["will_shadow"]]
 
-# Build pydeck layers
+# Build PyDeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
 # Aircraft dots
 if not df_safe.empty:
-    layers.append(pdk.Layer("ScatterplotLayer", df_safe,
-                            get_position=["lon","lat"], get_color=[0,0,255,200], get_radius=100))
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", df_safe,
+        get_position=["lon","lat"], get_color=[0,0,255,200], get_radius=100
+    ))
 if not df_warn.empty:
-    layers.append(pdk.Layer("ScatterplotLayer", df_warn,
-                            get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=100))
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", df_warn,
+        get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=100
+    ))
 
 # Sun shadow paths (on top)
 if track_sun and trails_sun:
-    df_ps = pd.DataFrame(trails_sun)
-    layers.append(pdk.Layer("PathLayer", df_ps,
-                            get_path="path",
-                            get_color=[255,215,0,255],
-                            width_scale=20,
-                            width_min_pixels=5))
+    layers.append(pdk.Layer(
+        "PathLayer", trails_sun,
+        get_path="path",
+        get_color=[255,215,0],
+        width_scale=20,
+        width_min_pixels=5
+    ))
 
 # Moon shadow paths
 if track_moon and trails_moon:
-    df_pm = pd.DataFrame(trails_moon)
-    layers.append(pdk.Layer("PathLayer", df_pm,
-                            get_path="path",
-                            get_color=[100,100,100,255],
-                            width_scale=20,
-                            width_min_pixels=5))
+    layers.append(pdk.Layer(
+        "PathLayer", trails_moon,
+        get_path="path",
+        get_color=[100,100,100],
+        width_scale=20,
+        width_min_pixels=5
+    ))
 
 # Home marker
-layers.append(pdk.Layer("ScatterplotLayer",
-                        pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
-                        get_position=["lon","lat"],
-                        get_color=[255,0,0,200],
-                        get_radius=alert_width))
+layers.append(pdk.Layer(
+    "ScatterplotLayer",
+    pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
+    get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=alert_width
+))
 
-st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
-                use_container_width=True)
+st.pydeck_chart(
+    pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
+    use_container_width=True
+)
 
 # Onscreen alerts
 if alerts and enable_onscreen:
@@ -262,11 +270,7 @@ if not alerts:
     st.success("✅ No shadows predicted.")
 
 # History chart
-st.session_state.history.append({
-    "time":   now,
-    "tracked": len(df),
-    "shadows": len(alerts)
-})
-hist_df = pd.DataFrame(st.session_state.history).set_index("time")
+st.session_state.history.append({"time": now, "tracked": len(df), "shadows": len(alerts)})
+hist = pd.DataFrame(st.session_state.history).set_index("time")
 st.subheader("📈 Tracked vs Shadow Events")
-st.line_chart(hist_df)
+st.line_chart(hist)
