@@ -85,9 +85,14 @@ elif data_source == "ADS-B Exchange":
             lat = float(ac.get("lat")); lon = float(ac.get("lon"))
         except:
             continue
-        cs = ac.get("flight") or ac.get("hex") or ""
-        alt = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
-        aircraft_list.append({"lat": lat, "lon": lon, "alt": float(alt), "callsign": cs.strip()})
+        cs_raw = ac.get("flight") or ac.get("hex") or ""
+        cs = str(cs_raw).strip()
+        alt_raw = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
+        try:
+            alt_val = float(alt_raw)
+        except:
+            alt_val = 0.0
+        aircraft_list.append({"lat": lat, "lon": lon, "alt": alt_val, "callsign": cs})
 
 # DataFrame and altitude type
 df_ac = pd.DataFrame(aircraft_list)
@@ -144,4 +149,3 @@ if test_alert:
     st.success("Test alert triggered")
 if test_pushover:
     st.info("Sending test Pushover")
-
