@@ -99,23 +99,29 @@ selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 # Title
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
-# Pydeck map with incremental aircraft updates
+# Build aircraft DataFrame for Pydeck
+# Ensure aircraft_list is defined first (after fetching)
 df_ac = pd.DataFrame(aircraft_list)
-# Base view
+
+# Pydeck map with incremental aircraft updates
+import pydeck as pdk
+
 view_state = pdk.ViewState(
     latitude=CENTER_LAT,
     longitude=CENTER_LON,
     zoom=zoom_level,
     pitch=0
 )
-# Icon data: use a plane icon URL or emojis
-df_ac['icon_data'] = df_ac.apply(lambda ac: {
-    "url": "https://raw.githubusercontent.com/Concept211/Google-Maps-Markers/master/images/marker_plane.png",
-    "width": 128,
-    "height": 128,
-    "anchorY": 128
-}, axis=1)
-# Icon layer
+
+# Icon data: use a plane icon URL
+if not df_ac.empty:
+    df_ac['icon_data'] = df_ac.apply(lambda ac: {
+        "url": "https://raw.githubusercontent.com/Concept211/Google-Maps-Markers/master/images/marker_plane.png",
+        "width": 128,
+        "height": 128,
+        "anchorY": 128
+    }, axis=1)
+
 icon_layer = pdk.Layer(
     "IconLayer",
     df_ac,
@@ -125,27 +131,29 @@ icon_layer = pdk.Layer(
     get_position=["lon", "lat"],
     pickable=True
 )
-# Trail Layer (Scatterplot for end points)
+
+# Scatter layer for current positions
 trail_points = []
 for ac in aircraft_list:
-    lat, lon, baro, vel, hdg, cs = ac.values()
-    # only plot current position for pydeck
-    trail_points.append({"lat": lat, "lon": lon, "callsign": cs})
+    trail_points.append({"lat": ac['lat'], "lon": ac['lon'], "callsign": ac['callsign']})
 df_trail = pd.DataFrame(trail_points)
 trail_layer = pdk.Layer(
     "ScatterplotLayer",
     df_trail,
     get_position=["lon", "lat"],
     get_color=[0, 0, 255, 160],
-    get_radius=50,
+    get_radius=50
 )
-# Render pydeck chart
+
 deck = pdk.Deck(
     layers=[icon_layer, trail_layer],
     initial_view_state=view_state,
     tooltip={"text": "{callsign}"}
 )
+
 st.pydeck_chart(deck)
+
+# Continue with alert UI and Folium if needed
 
 # Alerts UI will follow
 alerts = []
