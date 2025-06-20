@@ -71,7 +71,7 @@ if 'history' not in st.session_state:
 # Sidebar controls
 with st.sidebar:
     st.header("Map & Alert Settings")
-    radius_km           = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
+    radius_km           = st.slider("Search Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
     military_radius_km  = st.slider("Military Alert Radius (km)", 0, 1000, DEFAULT_RADIUS_KM)
     track_sun           = st.checkbox("Show Sun Shadows", True)
     show_moon           = st.checkbox("Show Moon Shadows", False)
@@ -168,9 +168,9 @@ if show_moon and ephem and not df_ac.empty:
     for _, row in df_ac.iterrows():
         path, times = [], []
         for i in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
-            ft   = now + timedelta(seconds=i)
-            obs  = ephem.Observer(); obs.lat, obs.lon, obs.date = str(row["lat"]), str(row["lon"]), ft
-            m    = ephem.Moon(obs)
+            ft    = now + timedelta(seconds=i)
+            obs   = ephem.Observer(); obs.lat, obs.lon, obs.date = str(row["lat"]), str(row["lon"]), ft
+            m     = ephem.Moon(obs)
             m_alt = math.degrees(float(m.alt)); m_az = math.degrees(float(m.az))
             if m_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(m_alt))
