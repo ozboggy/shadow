@@ -66,7 +66,6 @@ now = datetime.now(timezone.utc)
 
 # Compute sun altitude at home
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now)
-
 # Compute moon altitude at home if available
 if ephem:
     obs = ephem.Observer()
@@ -83,14 +82,12 @@ if 'history' not in st.session_state:
 with st.sidebar:
     st.header("Map & Alert Settings")
 
-    # Sun altitude display
+    # Sun / Moon altitude
     sun_color = "green" if sun_alt > 0 else "red"
     st.markdown(
         f"**Sun altitude:** <span style='color:{sun_color};'>{sun_alt:.1f}°</span>",
         unsafe_allow_html=True
     )
-
-    # Moon altitude display
     if moon_alt is not None:
         moon_color = "green" if moon_alt > 0 else "red"
         st.markdown(
@@ -106,13 +103,12 @@ with st.sidebar:
     show_moon           = st.checkbox("Show Moon Shadows", False)
     alert_width         = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     enable_onscreen     = st.checkbox("Enable Onscreen Alert", True)
+    debug_adsb          = st.checkbox("Debug ADS-B Raw Data", False)
 
-    # Pushover test
     if st.button("Send Pushover Test"):
         send_pushover("✈️ Test Alert", "This is a Pushover test notification.")
         st.success("Pushover test sent!")
 
-    # Onscreen alert test
     if st.button("Test Onscreen Alert"):
         if enable_onscreen:
             st.error("🚨 TEST Shadow ALERT!")
@@ -137,53 +133,43 @@ with st.sidebar:
         else:
             st.warning("Onscreen alerts are disabled.")
 
-st.title("✈️ Aircraft Shadow Tracker")
+st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 
-# Fetch live aircraft data (ADS-B Exchange if token, else OpenSky)
+# Fetch live ADS-B Exchange data
 aircraft_list = []
+ac_data = []
 if ADSBEX_TOKEN:
     try:
         url = f"https://adsbexchange.com/api/aircraft/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
         headers = {"api-auth": ADSBEX_TOKEN}
-        resp = requests.get(url, headers=headers); resp.raise_for_status()
+        resp = requests.get(url, headers=headers)
+        resp.raise_for_status()
         ac_data = resp.json().get("ac", [])
     except Exception as e:
-        st.warning(f"ADS-B Exchange fetch failed: {e}")
-        ac_data = []
-    for ac in ac_data:
-        try:
-            lat   = float(ac.get("lat"))
-            lon   = float(ac.get("lon"))
-            alt   = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
-            angle = float(ac.get("track") or ac.get("trk") or 0.0)
-            cs    = str(ac.get("flight") or ac.get("hex") or "").strip()
-            mil   = bool(ac.get("mil", False))
-        except (TypeError, ValueError):
-            continue
-        aircraft_list.append({"lat": lat, "lon": lon, "alt": alt,
-                              "angle": angle, "callsign": cs, "mil": mil})
+        st.warning(f"ADS-B fetch failed: {e}")
 else:
-    st.info("No ADS-B Exchange key; falling back to OpenSky")
-    dr = radius_km / 111
-    south, north = CENTER_LAT - dr, CENTER_LAT + dr
-    dlon = dr / math.cos(math.radians(CENTER_LAT))
-    west, east = CENTER_LON - dlon, CENTER_LON + dlon
+    st.info("No ADS-B Exchange key; cannot fetch live data.")
+
+# Debug: show raw ADS-B JSON
+if debug_adsb:
+    st.subheader("Raw ADS-B Data")
+    st.write(ac_data)
+
+# Process aircraft list
+for ac in ac_data:
     try:
-        url = (f"https://opensky-network.org/api/states/all?"
-               f"lamin={south}&lomin={west}&lamax={north}&lomax={east}")
-        resp = requests.get(url); resp.raise_for_status()
-        states = resp.json().get("states", [])
-    except Exception as e:
-        st.warning(f"OpenSky fetch failed: {e}")
-        states = []
-    for s in states:
-        if len(s) < 11: continue
-        cs_raw = (s[1] or "").strip() or s[0]
-        lat, lon = s[6], s[5]
-        alt = s[13] or s[7] or 0.0
-        angle = s[10] or 0.0
-        aircraft_list.append({"lat": lat, "lon": lon, "alt": alt,
-                              "angle": angle, "callsign": cs_raw, "mil": False})
+        lat   = float(ac.get("lat"))
+        lon   = float(ac.get("lon"))
+        alt   = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
+        angle = float(ac.get("track") or ac.get("trk") or 0.0)
+        cs    = str(ac.get("flight") or ac.get("hex") or "").strip()
+        mil   = bool(ac.get("mil", False))
+    except (TypeError, ValueError):
+        continue
+    aircraft_list.append({
+        "lat": lat, "lon": lon, "alt": alt,
+        "angle": angle, "callsign": cs, "mil": mil
+    })
 
 # Build DataFrame & show count
 df_ac = pd.DataFrame(aircraft_list)
@@ -193,17 +179,17 @@ if not df_ac.empty:
 else:
     st.warning("No aircraft data available.")
 
-# Forecast trails (sun & moon)
+# Forecast trails
 trails_sun, trails_moon = [], []
 if track_sun and not df_ac.empty:
     for _, row in df_ac.iterrows():
         path, times = [], []
-        for i in range(0, FORECAST_INTERVAL_SEC*FORECAST_DURATION_MIN+1, FORECAST_INTERVAL_SEC):
-            ft = now + timedelta(seconds=i)
+        for i in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
+            ft    = now + timedelta(seconds=i)
             sun_a = get_altitude(row["lat"], row["lon"], ft)
             sun_z = get_azimuth(row["lat"], row["lon"], ft)
             if sun_a > 0:
-                dist = row["alt"] / math.tan(math.radians(sun_a))
+                dist   = row["alt"] / math.tan(math.radians(sun_a))
                 sh_lat = row["lat"] + (dist/111111)*math.cos(math.radians(sun_z+180))
                 sh_lon = row["lon"] + (dist/(111111*math.cos(math.radians(row["lat"]))))*math.sin(math.radians(sun_z+180))
                 path.append((sh_lon, sh_lat)); times.append(i)
@@ -213,13 +199,13 @@ if track_sun and not df_ac.empty:
 if show_moon and ephem and not df_ac.empty:
     for _, row in df_ac.iterrows():
         path, times = [], []
-        for i in range(0, FORECAST_INTERVAL_SEC*FORECAST_DURATION_MIN+1, FORECAST_INTERVAL_SEC):
-            ft = now + timedelta(seconds=i)
-            obs = ephem.Observer(); obs.lat,obs.lon,obs.date=str(row["lat"]),str(row["lon"]),ft
-            m = ephem.Moon(obs)
-            m_alt = math.degrees(float(m.alt)); m_az=math.degrees(float(m.az))
+        for i in range(0, FORECAST_INTERVAL_SEC * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_SEC):
+            ft   = now + timedelta(seconds=i)
+            obs  = ephem.Observer(); obs.lat,obs.lon,obs.date = str(row["lat"]),str(row["lon"]),ft
+            m    = ephem.Moon(obs)
+            m_alt = math.degrees(float(m.alt)); m_az = math.degrees(float(m.az))
             if m_alt > 0:
-                dist = row["alt"] / math.tan(math.radians(m_alt))
+                dist   = row["alt"] / math.tan(math.radians(m_alt))
                 sh_lat = row["lat"] + (dist/111111)*math.cos(math.radians(m_az+180))
                 sh_lon = row["lon"] + (dist/(111111*math.cos(math.radians(row["lat"]))))*math.sin(math.radians(m_az+180))
                 path.append((sh_lon, sh_lat)); times.append(i)
@@ -227,7 +213,7 @@ if show_moon and ephem and not df_ac.empty:
             trails_moon.append({"callsign": row["callsign"], "path": path, "times": times})
 
 # Build map layers
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
+view   = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 if not df_ac.empty:
     icon_df = pd.DataFrame([{
@@ -249,8 +235,7 @@ if show_moon:
                             width_scale=10, width_min_pixels=2))
 layers.append(pdk.Layer("ScatterplotLayer",
                         pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
-                        get_position=["lon","lat"], get_color=[255,0,0,200],
-                        get_radius=alert_width))
+                        get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=alert_width))
 st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style="light"),
                 use_container_width=True)
 
