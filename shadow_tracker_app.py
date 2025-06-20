@@ -130,7 +130,12 @@ if not df_ac.empty:
     scatter_layer = pdk.Layer(
         "ScatterplotLayer", df_ac, get_position=["lon","lat"], get_color=[0,0,255,160], get_radius=50
     )
-    deck = pdk.Deck(layers=[icon_layer, scatter_layer], initial_view_state=view_state, tooltip={"text":"{callsign}"})
+    deck = pdk.Deck(
+    layers=[icon_layer, scatter_layer],
+    initial_view_state=view_state,
+    tooltip={"text":"{callsign}"},
+    map_style="open-street-map"
+)
     st.pydeck_chart(deck)
 else:
     st.write("No aircraft data available")
