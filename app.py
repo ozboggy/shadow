@@ -7,7 +7,6 @@ import requests
 import pydeck as pdk
 import pandas as pd
 import numpy as np
-import time
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
 
 # Attempt to import astral for moon calculations
@@ -74,7 +73,8 @@ def fetch_aircraft(lat, lon, radius_km):
         try:
             data = resp.json().get('acList', [])
         except ValueError:
-            st.sidebar.error("Error: Received invalid JSON from ADSB-Exchange.")
+            st.sidebar.error("Error: Received invalid JSON from ADSB-Exchange. Response content:")
+            st.sidebar.code(resp.text)
             data = []
     except requests.exceptions.RequestException as e:
         st.sidebar.error(f"Error fetching ADSB data: {e}")
@@ -86,6 +86,9 @@ def main():
     raw = fetch_aircraft(HOME_LAT, HOME_LON, search_radius_km)
     if debug:
         st.sidebar.json(raw)
+
+    if not raw:
+        st.sidebar.info("No aircraft data available.")
 
     df = pd.DataFrame([{ 'lat': ac.get('Lat'), 'lon': ac.get('Long'), 'alt': ac.get('Alt'),
                          'track': ac.get('Trak'), 'callsign': ac.get('Call') } for ac in raw])
@@ -123,21 +126,28 @@ def main():
 
     layers = []
     # Home
-    layers.append(pdk.Layer("ScatterplotLayer", data=pd.DataFrame([{'lat': HOME_LAT, 'lon': HOME_LON}]),
-                            get_position='[lon, lat]', get_radius=alert_radius_m, radius_units='meters',
-                            get_fill_color=[255, 0, 0]))
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", data=pd.DataFrame([{'lat': HOME_LAT, 'lon': HOME_LON}]),
+        get_position='[lon, lat]', get_radius=alert_radius_m, radius_units='meters',
+        get_fill_color=[255, 0, 0]
+    ))
     # Aircraft
-    layers.append(pdk.Layer("ScatterplotLayer", data=df,
-                            get_position='[lon, lat]', get_radius=50, radius_units='meters',
-                            get_fill_color=[0, 0, 255], pickable=True, auto_highlight=True))
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", data=df,
+        get_position='[lon, lat]', get_radius=50, radius_units='meters',
+        get_fill_color=[0, 0, 255], pickable=True, auto_highlight=True
+    ))
     # Shadows
     if not df_shadows.empty:
-        layers.append(pdk.Layer("LineLayer", data=df_shadows,
-                                get_source_position='[start_lon, start_lat]',
-                                get_target_position='[end_lon, end_lat]', get_color='color', get_width=2))
+        layers.append(pdk.Layer(
+            "LineLayer", data=df_shadows,
+            get_source_position='[start_lon, start_lat]',
+            get_target_position='[end_lon, end_lat]', get_color='color', get_width=2
+        ))
 
     view_state = pdk.ViewState(latitude=HOME_LAT, longitude=HOME_LON, zoom=12)
-    deck = pdk.Deck(layers=layers, initial_view_state=view_state, map_style='mapbox://styles/mapbox/light-v9')
+    deck = pdk.Deck(layers=layers, initial_view_state=view_state,
+                    map_style='mapbox://styles/mapbox/light-v9')
     map_placeholder.pydeck_chart(deck, use_container_width=False, width=600, height=600)
 
     status_placeholder.markdown(f"**Tracked Aircraft:** {len(df)}")
