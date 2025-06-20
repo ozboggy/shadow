@@ -119,28 +119,35 @@ elif data_source == "ADS-B Exchange":
 # Build DataFrame for Pydeck
 df_ac = pd.DataFrame(aircraft_list)
 
-# Pydeck map
+# Pydeck map (simplified scatter)
 view_state = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=zoom_level, pitch=0)
+
 if not df_ac.empty:
-    df_ac['icon_data'] = df_ac.apply(lambda r: {"url": "https://raw.githubusercontent.com/Concept211/Google-Maps-Markers/master/images/marker_plane.png", "width":128, "height":128, "anchorY":128}, axis=1)
-    icon_layer = pdk.Layer(
-        "IconLayer", df_ac, get_icon="icon_data",
-        size_scale=15, get_size=4, get_position=["lon","lat"], pickable=True
-    )
     scatter_layer = pdk.Layer(
-        "ScatterplotLayer", df_ac, get_position=["lon","lat"], get_color=[0,0,255,160], get_radius=50
+        "ScatterplotLayer",
+        df_ac,
+        get_position=["lon", "lat"],
+        get_color=[255, 0, 0, 200],
+        get_radius=200,
+        pickable=True
     )
     deck = pdk.Deck(
-    layers=[icon_layer, scatter_layer],
-    initial_view_state=view_state,
-    tooltip={"text":"{callsign}"},
-    map_style="open-street-map"
-)
-    st.pydeck_chart(deck)
+        layers=[scatter_layer],
+        initial_view_state=view_state,
+        tooltip={"text": "{callsign}"},
+        map_style="open-street-map"
+    )
+    st.pydeck_chart(deck, use_container_width=True)
 else:
     st.write("No aircraft data available")
 
 # Test buttons
+if test_alert:
+    st.success("Test alert triggered")
+    send_pushover("✈️ Test Alert", "This is a test shadow alert.")
+if test_pushover:
+    st.info("Sending test Pushover notification...")
+    send_pushover("✈️ Test Push", "This is a test shadow alert.")
 if test_alert:
     st.success("Test alert triggered")
     send_pushover("✈️ Test Alert", "This is a test shadow alert.")
