@@ -66,11 +66,20 @@ status_placeholder = st.sidebar.empty()
 # Function to fetch live aircraft from ADSB-Exchange
 @st.cache_data(ttl=refresh_sec)
 def fetch_aircraft(lat, lon, radius_km):
-    url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
+    url = "https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
     params = {"lat": lat, "lng": lon, "fDstL": 0, "fDstU": radius_km}
-    resp = requests.get(url, params=params, auth=(ADSBEX_USER, ADSBEX_TOKEN))
-    resp.raise_for_status()
-    return resp.json().get('acList', [])
+    try:
+        resp = requests.get(url, params=params, auth=(ADSBEX_USER, ADSBEX_TOKEN), timeout=10)
+        resp.raise_for_status()
+        try:
+            data = resp.json().get('acList', [])
+        except ValueError:
+            st.sidebar.error("Error: Received invalid JSON from ADSB-Exchange.")
+            data = []
+    except requests.exceptions.RequestException as e:
+        st.sidebar.error(f"Error fetching ADSB data: {e}")
+        data = []
+    return data
 
 # Main rendering
 def main():
