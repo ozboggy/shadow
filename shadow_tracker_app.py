@@ -144,7 +144,9 @@ path_layer = pdk.Layer(
     width_min_pixels=2
 )
 
-view_state = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=zoom_level)
+# Ensure zoom_level is defined
+zoom = zoom_level if 'zoom_level' in locals() else DEFAULT_ZOOM
+view_state = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=zoom)
 
 deck = pdk.Deck(
     layers=[aircraft_layer, home_layer, path_layer],
