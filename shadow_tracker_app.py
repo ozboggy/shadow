@@ -115,6 +115,9 @@ for ac in data:
 
 # Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
+# Display total count in sidebar
+st.sidebar.markdown(f"**Tracked Aircraft:** {len(df_ac)}")
+
 if df_ac.empty:
     st.warning("No aircraft data available.")
 else:
@@ -132,7 +135,8 @@ if track_sun and not df_ac.empty:
             if sun_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(sun_alt))
                 sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * math.sin(math.radians(sun_az + 180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * \
+                         math.sin(math.radians(sun_az + 180))
                 path.append((sh_lon, sh_lat))
         if path:
             trails_sun.append({"path": path, "callsign": row["callsign"]})
@@ -154,7 +158,8 @@ if show_moon and ephem and not df_ac.empty:
             if moon_alt > 0:
                 dist   = row["alt"] / math.tan(math.radians(moon_alt))
                 sh_lat = row["lat"] + (dist/111111) * math.cos(math.radians(moon_az + 180))
-                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * math.sin(math.radians(moon_az + 180))
+                sh_lon = row["lon"] + (dist/(111111 * math.cos(math.radians(row["lat"])))) * \
+                         math.sin(math.radians(moon_az + 180))
                 path.append((sh_lon, sh_lat))
         if path:
             trails_moon.append({"path": path, "callsign": row["callsign"]})
