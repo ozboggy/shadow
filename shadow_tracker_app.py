@@ -85,6 +85,11 @@ elif data_source == "ADS-B Exchange":
 
 # Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
+# Ensure altitude is numeric
+if 'alt' in df_ac.columns:
+    df_ac['alt'] = pd.to_numeric(df_ac['alt'], errors='coerce').fillna(0.0)
+else:
+    df_ac['alt'] = 0.0
 
 # Compute shadow points using safe loop
 shadows = []
