@@ -80,7 +80,8 @@ if data_source == "OpenSky":
             continue
         cs = (s[1] or "").strip() or s[0]
         lat, lon = s[6], s[5]
-        aircraft_list.append({"latitude": lat, "longitude": lon, "callsign": cs})
+        alt = s[13] or s[7] or 0.0  # use geo altitude if available, else baro
+        aircraft_list.append({"latitude": lat, "longitude": lon, "altitude": alt, "callsign": cs})
 elif data_source == "ADS-B Exchange":
     api_key = os.getenv("RAPIDAPI_KEY")
     adsb = []
@@ -99,7 +100,12 @@ elif data_source == "ADS-B Exchange":
         except:
             continue
         cs = ac.get("flight") or ac.get("hex") or ""
-        aircraft_list.append({"latitude": lat, "longitude": lon, "callsign": cs.strip()})
+        alt = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
+        try:
+            alt = float(alt)
+        except:
+            alt = 0.0
+        aircraft_list.append({"latitude": lat, "longitude": lon, "altitude": alt, "callsign": cs.strip()})({"latitude": lat, "longitude": lon, "callsign": cs.strip()})
 
 # Prepare DataFrame for mapping
 import pandas as pd  # ensure pandas imported here
@@ -114,7 +120,29 @@ df_ac = df_map.rename(columns={'latitude':'lat','longitude':'lon'})
 # Home as a separate point
 home = pd.DataFrame([{'lat': CENTER_LAT, 'lon': CENTER_LON, 'callsign': 'Home'}])
 
-# Build paths (shadow lines) from each aircraft to home when tracking shadows
+# Compute shadow points from sun
+from pysolar.solar import get_altitude as _get_alt, get_azimuth as _get_az
+shadow_points = []
+for row in df_ac.itertuples():
+    alt_m = getattr(row, 'altitude', 0.0)
+    if alt_m and track_sun:
+        sun_alt = _get_alt(row.lat, row.lon, selected_time)
+        sun_az = _get_az(row.lat, row.lon, selected_time)
+        if sun_alt > 0:
+            dist = alt_m / math.tan(math.radians(sun_alt))
+            sh_lat = row.lat + (dist/111111) * math.cos(math.radians(sun_az + 180))
+            sh_lon = row.lon + (dist/(111111*math.cos(math.radians(row.lat)))) * math.sin(math.radians(sun_az + 180))
+            shadow_points.append({'lat': sh_lat, 'lon': sh_lon, 'callsign': row.callsign})
+df_shadows = pd.DataFrame(shadow_points)
+
+# Build paths (shadow lines) from each aircraft to its shadow point
+paths = []
+for ac, sh in zip(df_ac.to_dict('records'), df_shadows.to_dict('records')):
+    paths.append({'path': [(ac['lon'], ac['lat']), (sh['lon'], sh['lat'])], 'callsign': ac['callsign']})
+df_paths = pd.DataFrame(paths)
+
+# Define layers
+ (shadow lines) from each aircraft to home when tracking shadows
 paths = []
 if track_sun or track_moon or override_trails:
     for row in df_ac.itertuples():
