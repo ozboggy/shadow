@@ -46,83 +46,66 @@ DEFAULT_RADIUS_KM = 10
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 
-# Sidebar
+# Sidebar controls
 with st.sidebar:
     st.header("Map Options")
-    data_source = st.selectbox("Data Source", ["OpenSky", "ADS-B Exchange"], index=0)
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", True)
     alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
 
-st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
+st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 time_now = datetime.now(timezone.utc)
 
-# Fetch aircraft
+# Fetch ADS-B Exchange data
 aircraft_list = []
-if data_source == "OpenSky":
-    dr = radius_km / 111
-    south, north = CENTER_LAT - dr, CENTER_LAT + dr
-    dlon = dr / math.cos(math.radians(CENTER_LAT))
-    west, east = CENTER_LON - dlon, CENTER_LON + dlon
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+api_key = os.getenv("RAPIDAPI_KEY")
+adsb = []
+if api_key:
+    url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
+    headers = {
+        "x-rapidapi-key": api_key,
+        "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
+    }
     try:
-        r = requests.get(url); r.raise_for_status()
-        states = r.json().get("states", [])
-    except:
-        states = []
-    for s in states:
-        if len(s) < 11: continue
-        cs = (s[1] or "").strip() or s[0]
-        lat, lon = s[6], s[5]
-        alt = s[13] or s[7] or 0.0
-        heading = s[10] or 0.0
-        aircraft_list.append({
-            "lat": lat, "lon": lon, "alt": alt,
-            "callsign": cs, "angle": heading
-        })
-else:
-    api_key = os.getenv("RAPIDAPI_KEY")
-    adsb = []
-    if api_key:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-        headers = {
-            "x-rapidapi-key": api_key,
-            "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
-        }
-        try:
-            r2 = requests.get(url, headers=headers); r2.raise_for_status()
-            adsb = r2.json().get("ac", [])
-        except:
-            adsb = []
-    for ac in adsb:
-        try:
-            lat = float(ac.get("lat")); lon = float(ac.get("lon"))
-        except:
-            continue
-        cs = str(ac.get("flight") or ac.get("hex") or "").strip()
-        try:
-            alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
-        except:
-            alt_val = 0.0
-        try:
-            heading = float(ac.get("track") or ac.get("trk") or 0.0)
-        except:
-            heading = 0.0
-        aircraft_list.append({
-            "lat": lat, "lon": lon, "alt": alt_val,
-            "callsign": cs, "angle": heading
-        })
+        r2 = requests.get(url, headers=headers)
+        r2.raise_for_status()
+        adsb = r2.json().get("ac", [])
+    except Exception:
+        adsb = []
 
-# DataFrame
+for ac in adsb:
+    try:
+        lat = float(ac.get("lat"))
+        lon = float(ac.get("lon"))
+    except (TypeError, ValueError):
+        continue
+    cs = str(ac.get("flight") or ac.get("hex") or "").strip()
+    try:
+        alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0.0)
+    except (TypeError, ValueError):
+        alt_val = 0.0
+    try:
+        heading = float(ac.get("track") or ac.get("trk") or 0.0)
+    except (TypeError, ValueError):
+        heading = 0.0
+    aircraft_list.append({
+        "lat": lat,
+        "lon": lon,
+        "alt": alt_val,
+        "callsign": cs,
+        "angle": heading
+    })
+
+# Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
 if df_ac.empty:
     st.warning("No aircraft data available.")
 else:
     df_ac['alt'] = pd.to_numeric(df_ac['alt'], errors='coerce').fillna(0)
 
-# Shadow trails
+# Forecast shadow trails
 trails = []
 if track_sun and not df_ac.empty:
     for _, row in df_ac.iterrows():
@@ -133,13 +116,13 @@ if track_sun and not df_ac.empty:
             sun_az = get_azimuth(row['lat'], row['lon'], ft)
             if sun_alt > 0:
                 dist = row['alt'] / math.tan(math.radians(sun_alt))
-                sh_lat = row['lat'] + (dist/111111)*math.cos(math.radians(sun_az+180))
-                sh_lon = row['lon'] + (dist/(111111*math.cos(math.radians(row['lat']))))*math.sin(math.radians(sun_az+180))
+                sh_lat = row['lat'] + (dist/111111) * math.cos(math.radians(sun_az + 180))
+                sh_lon = row['lon'] + (dist/(111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(sun_az + 180))
                 path.append((sh_lon, sh_lat))
         if path:
             trails.append({"path": path, "callsign": row['callsign']})
 
-# IconLayer data
+# Prepare IconLayer data
 icon_df = pd.DataFrame([])
 if not df_ac.empty:
     icon_data = []
@@ -154,11 +137,11 @@ if not df_ac.empty:
                 "anchorX": 64,
                 "anchorY": 64
             },
-            "angle": row["angle"]  # heading
+            "angle": row["angle"]
         })
     icon_df = pd.DataFrame(icon_data)
 
-# Build layers
+# Build Deck.gl layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
@@ -168,7 +151,7 @@ if not icon_df.empty:
         icon_df,
         get_icon="icon",
         get_position=["lon", "lat"],
-        get_angle="angle",      # ← face the direction of flight
+        get_angle="angle",
         size_scale=15,
         pickable=True
     ))
@@ -197,7 +180,7 @@ layers.append(pdk.Layer(
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
 st.pydeck_chart(deck, use_container_width=True)
 
-# Shadow‐over‐home alerts
+# Alerts for shadows over home
 if track_sun and trails:
     for tr in trails:
         for lon, lat in tr["path"]:
