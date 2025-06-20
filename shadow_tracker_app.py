@@ -99,94 +99,55 @@ selected_time = datetime.utcnow().replace(tzinfo=timezone.utc)
 # Title
 st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
 
-# Create map and preserve view
-if 'zoom' not in st.session_state:
-    st.session_state.zoom = zoom_level
-if 'center' not in st.session_state:
-    st.session_state.center = [CENTER_LAT, CENTER_LON]
-
-fmap = folium.Map(
-    location=st.session_state.center,
-    zoom_start=st.session_state.zoom,
-    tiles=tile_style,
-    control_scale=True
+# Pydeck map with incremental aircraft updates
+df_ac = pd.DataFrame(aircraft_list)
+# Base view
+view_state = pdk.ViewState(
+    latitude=CENTER_LAT,
+    longitude=CENTER_LON,
+    zoom=zoom_level,
+    pitch=0
 )
-folium.Marker(
-    [CENTER_LAT, CENTER_LON],
-    icon=folium.Icon(color="red", icon="home", prefix="fa"),
-    popup="Home"
-).add_to(fmap)
-shadow_width = DEFAULT_SHADOW_WIDTH
+# Icon data: use a plane icon URL or emojis
+df_ac['icon_data'] = df_ac.apply(lambda ac: {
+    "url": "https://raw.githubusercontent.com/Concept211/Google-Maps-Markers/master/images/marker_plane.png",
+    "width": 128,
+    "height": 128,
+    "anchorY": 128
+}, axis=1)
+# Icon layer
+icon_layer = pdk.Layer(
+    "IconLayer",
+    df_ac,
+    get_icon="icon_data",
+    get_size=4,
+    size_scale=15,
+    get_position=["lon", "lat"],
+    pickable=True
+)
+# Trail Layer (Scatterplot for end points)
+trail_points = []
+for ac in aircraft_list:
+    lat, lon, baro, vel, hdg, cs = ac.values()
+    # only plot current position for pydeck
+    trail_points.append({"lat": lat, "lon": lon, "callsign": cs})
+df_trail = pd.DataFrame(trail_points)
+trail_layer = pdk.Layer(
+    "ScatterplotLayer",
+    df_trail,
+    get_position=["lon", "lat"],
+    get_color=[0, 0, 255, 160],
+    get_radius=50,
+)
+# Render pydeck chart
+deck = pdk.Deck(
+    layers=[icon_layer, trail_layer],
+    initial_view_state=view_state,
+    tooltip={"text": "{callsign}"}
+)
+st.pydeck_chart(deck)
 
-# Helpers
-
-def move_position(lat, lon, heading, dist):
-    R = 6371000
-    try:
-        hdr = math.radians(float(heading))
-    except:
-        hdr = 0.0
-    try:
-        lat1, lon1 = math.radians(lat), math.radians(lon)
-    except:
-        return lat, lon
-    lat2 = math.asin(math.sin(lat1)*math.cos(dist/R) + math.cos(lat1)*math.sin(dist/R)*math.cos(hdr))
-    lon2 = lon1 + math.atan2(math.sin(hdr)*math.sin(dist/R)*math.cos(lat1), math.cos(dist/R)-math.sin(lat1)*math.sin(lat2))
-    return math.degrees(lat2), math.degrees(lon2)
-
-def hav(lat1, lon1, lat2, lon2):
-    R = 6371000
-    dlat = math.radians(lat2-lat1)
-    dlon = math.radians(lon2-lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
-    return R * 2 * math.asin(math.sqrt(a))
-
-# Fetch aircraft
-aircraft_list = []
-if data_source == "OpenSky":
-    dr = radius_km/111.0
-    south, north = CENTER_LAT-dr, CENTER_LAT+dr
-    dlon = dr/math.cos(math.radians(CENTER_LAT))
-    west, east = CENTER_LON-dlon, CENTER_LON+dlon
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
-    try:
-        r = requests.get(url); r.raise_for_status(); states = r.json().get("states", [])
-    except:
-        states = []
-    for s in states:
-        if len(s) < 11: continue
-        icao, cs_raw, lon, lat, baro_raw, vel_raw, hdg_raw = s[0], s[1], s[5], s[6], s[7], s[9], s[10]
-        cs = cs_raw.strip() if isinstance(cs_raw, str) else icao
-        try: baro = float(baro_raw)
-        except: baro = 0.0
-        try: vel = float(vel_raw)
-        except: vel = 0.0
-        try: hdg = float(hdg_raw)
-        except: hdg = 0.0
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
-elif data_source == "ADS-B Exchange":
-    api_key = os.getenv("RAPIDAPI_KEY"); adsb = []
-    if api_key:
-        url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-        headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
-        try: r2 = requests.get(url, headers=headers); r2.raise_for_status(); adsb = r2.json().get("ac", [])
-        except:
-            adsb = []
-    for ac in adsb:
-        lat_raw, lon_raw = ac.get("lat"), ac.get("lon")
-        try: lat = float(lat_raw); lon = float(lon_raw)
-        except: continue
-        try: vel = float(ac.get("gs") or ac.get("spd"))
-        except: vel = 0.0
-        try: hdg = float(ac.get("track") or ac.get("trak"))
-        except: hdg = 0.0
-        try: baro = float(ac.get("alt_baro"))
-        except: baro = 0.0
-        cs = ac.get("flight") or ac.get("hex")
-        cs = cs.strip() if isinstance(cs, str) else None
-        aircraft_list.append({"lat": lat, "lon": lon, "baro": baro, "vel": vel, "hdg": hdg, "callsign": cs})
-
-# Plot aircraft and trails
+# Alerts UI will follow
 alerts = []
 for ac in aircraft_list:
     lat, lon, baro, vel, hdg, cs = ac.values()
