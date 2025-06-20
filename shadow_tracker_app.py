@@ -120,15 +120,18 @@ elif data_source == "ADS-B Exchange":
 df_ac = pd.DataFrame(aircraft_list)
 
 # Pydeck map (simplified scatter)
+# Debug: show DataFrame
+st.write("**Aircraft DataFrame**", df_ac)
+
 view_state = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=zoom_level, pitch=0)
 
 if not df_ac.empty:
     scatter_layer = pdk.Layer(
         "ScatterplotLayer",
         df_ac,
-        get_position=["lon", "lat"],
+        get_position=["lon", "lat"],  # [longitude, latitude]
         get_color=[255, 0, 0, 200],
-        get_radius=200,
+        get_radius=5000,  # radius in meters
         pickable=True
     )
     deck = pdk.Deck(
@@ -139,18 +142,6 @@ if not df_ac.empty:
     )
     st.pydeck_chart(deck, use_container_width=True)
 else:
-    st.write("No aircraft data available")
+    st.warning("No aircraft data available")
 
-# Test buttons
-if test_alert:
-    st.success("Test alert triggered")
-    send_pushover("✈️ Test Alert", "This is a test shadow alert.")
-if test_pushover:
-    st.info("Sending test Pushover notification...")
-    send_pushover("✈️ Test Push", "This is a test shadow alert.")
-if test_alert:
-    st.success("Test alert triggered")
-    send_pushover("✈️ Test Alert", "This is a test shadow alert.")
-if test_pushover:
-    st.info("Sending test Pushover notification...")
-    send_pushover("✈️ Test Push", "This is a test shadow alert.")
+# Continue to Test buttons
