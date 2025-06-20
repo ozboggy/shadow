@@ -16,14 +16,13 @@ try:
 except ImportError:
     ephem = None
 
-# Make sure our history log exists
+# Ensure history list exists
 if "history" not in st.session_state:
     st.session_state.history = []
 
 # Sidebar: auto‐refresh settings
 st.sidebar.header("Refresh Settings")
 auto_refresh     = st.sidebar.checkbox("Auto Refresh Map", value=True)
-# Default to 1 second now
 refresh_interval = st.sidebar.number_input("Refresh Interval (s)", min_value=1, max_value=60, value=1)
 if auto_refresh:
     st_autorefresh(interval=refresh_interval * 1000, key="datarefresh")
@@ -167,15 +166,20 @@ for ac in raw:
         mil   = bool(ac.get("mil", False))
     except:
         continue
-    aircraft.append({"lat": lat, "lon": lon, "alt": alt, "angle": angle,
-                     "callsign": cs.strip(), "mil": mil})
+    aircraft.append({"lat": lat, "lon": lon, "alt": alt,
+                     "angle": angle, "callsign": cs.strip(),
+                     "mil": mil})
 
 df = pd.DataFrame(aircraft)
 if debug_df:
     st.subheader("Processed DataFrame")
     st.write(df)
 
+# Sidebar counts
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(df)}")
+mil_count = int(df['mil'].sum())
+st.sidebar.markdown(f"**Tracked Military Aircraft:** {mil_count}")
+
 if not df.empty:
     df["alt"] = pd.to_numeric(df["alt"], errors="coerce").fillna(0)
 
