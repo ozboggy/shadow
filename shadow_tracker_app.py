@@ -103,19 +103,57 @@ import pandas as pd  # ensure pandas imported here
 
 df_map = pd.DataFrame(aircraft_list)
 
-# Display on map with home centering
-if not df_map.empty:
-    # Add home marker to center map and label it
-    home_entry = {"latitude": CENTER_LAT, "longitude": CENTER_LON, "callsign": "Home"}
-    df_map_plot = pd.DataFrame([home_entry])
-    df_map_plot = pd.concat([df_map_plot, df_map], ignore_index=True)
-    st.markdown(f"📍 **Home Location:** {CENTER_LAT}, {CENTER_LON}")
-    st.map(df_map_plot)
-else:
-    st.warning("No aircraft data available, but home is shown.")
-    # Show home only
-    st.map(pd.DataFrame([{"latitude": CENTER_LAT, "longitude": CENTER_LON}]))
-    st.warning("No aircraft data available")
+# Use Pydeck for light-themed map, home pin, and shadow lines
+import pydeck as pdk
+
+# Prepare scatter data for aircraft and home
+df_ac = df_map.rename(columns={'latitude':'lat','longitude':'lon'})
+# Home as a separate point
+home = pd.DataFrame([{'lat': CENTER_LAT, 'lon': CENTER_LON, 'callsign': 'Home'}])
+
+# Build paths (shadow lines) from each aircraft to home when tracking shadows
+paths = []
+if track_sun or track_moon or override_trails:
+    for row in df_ac.itertuples():
+        paths.append({'path': [(row.lon, row.lat), (CENTER_LON, CENTER_LAT)], 'callsign': row.callsign})
+df_paths = pd.DataFrame(paths)
+
+# Define layers
+aircraft_layer = pdk.Layer(
+    'ScatterplotLayer',
+    df_ac,
+    get_position=['lon','lat'],
+    get_color=[0, 128, 255, 200],
+    get_radius=500,
+    pickable=True
+)
+home_layer = pdk.Layer(
+    'ScatterplotLayer',
+    home,
+    get_position=['lon','lat'],
+    get_color=[255, 0, 0, 200],
+    get_radius=1000,
+    pickable=False
+)
+path_layer = pdk.Layer(
+    'PathLayer',
+    df_paths,
+    get_path='path',
+    get_color=[0, 0, 0, 100],
+    width_scale=10,
+    width_min_pixels=2
+)
+
+view_state = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=zoom_level)
+
+deck = pdk.Deck(
+    layers=[aircraft_layer, home_layer, path_layer],
+    initial_view_state=view_state,
+    map_style='light',
+    tooltip={'text': '{callsign}'}
+)
+
+st.pydeck_chart(deck, use_container_width=True)
 
 # Test alerts
 if test_alert:
