@@ -95,12 +95,10 @@ if api_key:
 
 for ac in adsb:
     try:
-        lat = float(ac.get("lat"))
-        lon = float(ac.get("lon"))
+        lat = float(ac.get("lat")); lon = float(ac.get("lon"))
     except (TypeError, ValueError):
         continue
     cs = (ac.get("flight") or ac.get("hex") or "").strip()
-    # Safely parse alt, vel, hdg
     try:
         alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
     except (TypeError, ValueError):
@@ -142,48 +140,60 @@ if not df_ac.empty:
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
-            sa = get_altitude(lat_i, lon_i, t)
-            saz = get_azimuth(lat_i, lon_i, t)
+            # Sun
+            sa = get_altitude(lat_i, lon_i, t); saz = get_azimuth(lat_i, lon_i, t)
             if sa > 0 and track_sun:
                 sd = row['alt'] / math.tan(math.radians(sa))
                 sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
                 s_path.append([sh_lon, sh_lat])
+            # Moon
             if ephem and track_moon:
-                obs.date = t
-                m = ephem.Moon(obs)
-                ma = math.degrees(m.alt)
-                maz = math.degrees(m.az)
+                obs.date = t; m = ephem.Moon(obs)
+                ma = math.degrees(m.alt); maz = math.degrees(m.az)
                 if ma > 0:
                     md = row['alt'] / math.tan(math.radians(ma))
                     mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
                     mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
                     m_path.append([mh_lon, mh_lat])
         if s_path:
-            sun_trails.append({"path": s_path, "callsign": cs})
+            sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
         if m_path:
-            moon_trails.append({"path": m_path, "callsign": cs})
+            moon_trails.append({"path": m_path, "callsign": cs, "current": m_path[0]})
 
 # Build map layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
-# Sun shadow trail
+# Sun shadow trail: quarter width
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_sun,
-        get_path="path", get_color=[50,50,50,255], width_scale=20,
-        width_min_pixels=3, pickable=False
+        get_path="path", get_color=[50,50,50,255], width_scale=5,
+        width_min_pixels=1, pickable=False
     ))
-# Moon shadow trail
+    # current shadow circle
+    sun_current = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", sun_current,
+        get_position=["lon","lat"], get_fill_color=[50,50,50,255], get_radius=100,
+        pickable=False
+    ))
+# Moon shadow trail: quarter width
 if track_moon and moon_trails:
     df_moon = pd.DataFrame(moon_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_moon,
-        get_path="path", get_color=[180,180,180,200], width_scale=20,
-        width_min_pixels=3, pickable=False
+        get_path="path", get_color=[180,180,180,200], width_scale=5,
+        width_min_pixels=1, pickable=False
     ))
-# Alert circle
+    moon_current = pd.DataFrame([{"lon": m["current"][0], "lat": m["current"][1]} for m in moon_trails])
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", moon_current,
+        get_position=["lon","lat"], get_fill_color=[180,180,180,200], get_radius=100,
+        pickable=False
+    ))
+# Alert circle: brighter red
 circle = []
 for ang in range(0, 360, 5):
     b = math.radians(ang)
@@ -193,10 +203,10 @@ for ang in range(0, 360, 5):
 circle.append(circle[0])
 layers.append(pdk.Layer(
     "PolygonLayer", [{"polygon": circle}],
-    get_polygon="polygon", get_fill_color=[139,0,0,100], stroked=True,
-    get_line_color=[139,0,0], get_line_width=3, pickable=False
+    get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True,
+    get_line_color=[255,0,0], get_line_width=3, pickable=False
 ))
-# Aircraft scatter
+# Aircraft scatter (double size)
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
@@ -204,15 +214,11 @@ if not df_ac.empty:
         pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
     ))
 # Tooltip
-tooltip = {
-    "html": (
-        "<b>Callsign:</b> {callsign}<br/>"
-        "<b>Alt:</b> {alt} m<br/>"
-        "<b>Speed:</b> {vel} m/s<br/>"
-        "<b>Heading:</b> {hdg}°"
-    ),
-    "style": {"backgroundColor":"black","color":"white"}
-}
+tooltip = {"html": (
+    "<b>Callsign:</b> {callsign}<br/>"
+    "<b>Alt:</b> {alt} m<br/>"
+    "<b>Speed:</b> {vel} m/s<br/>"
+    "<b>Heading:</b> {hdg}°"), "style": {"backgroundColor":"black","color":"white"}}
 # Render
 
 
