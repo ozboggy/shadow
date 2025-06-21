@@ -83,13 +83,11 @@ if not os.path.exists(log_path):
 
 # Fetch aircraft
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
-api_key = os.getenv("RAPIDAPI_KEY")
-if api_key:
-    url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-    headers = {
-        "x-rapidapi-key": api_key,
-        "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
-    }
+url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{HOME_LAT}/lon/{HOME_LON}/dist/{RADIUS_KM}/"
+headers = {
+    'X-RapidAPI-Key': os.getenv('ADSBEXCHANGE_API_KEY'),
+    'X-RapidAPI-Host': 'adsbexchange-com1.p.rapidapi.com'
+}
 try:
     r = requests.get(url, headers=headers)
     r.raise_for_status()
