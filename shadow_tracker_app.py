@@ -72,7 +72,7 @@ with st.sidebar:
     radius_km     = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun     = st.checkbox("Show Sun Shadows",   value=True)
     track_moon    = st.checkbox("Show Moon Shadows",  value=False)
-    alert_width   = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
+    alert_width   = st.slider("Shadow Alert Width (m)", 0, 100000, 50)
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
     st.markdown("---")
