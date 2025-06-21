@@ -16,20 +16,29 @@ try:
 except Exception:
     pass
 
-# Pushover
+# Pushover credentials
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
-def send_pushover(title, message):
+
+def send_pushover(title: str, message: str) -> bool:
+    """Send a Pushover message. Returns True on success, False on failure."""
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        st.warning("Pushover credentials not set.")
-        return
+        return False
     try:
-        requests.post(
+        resp = requests.post(
             "https://api.pushover.net/1/messages.json",
-            data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "title": title, "message": message}
+            data={
+                "token": PUSHOVER_API_TOKEN,
+                "user": PUSHOVER_USER_KEY,
+                "title": title,
+                "message": message
+            }
         )
+        resp.raise_for_status()
+        return True
     except Exception as e:
-        st.warning(f"Pushover failed: {e}")
+        st.error(f"Pushover API error: {e}")
+        return False
 
 # Haversine
 def hav(lat1, lon1, lat2, lon2):
@@ -212,6 +221,16 @@ if track_sun and trails:
 # --- Test buttons ---------------------------------------------------------
 if test_alert:
     st.success("Test alert triggered")
+
 if test_pushover:
-    send_pushover("✈️ Test", "This is a test Pushover message")
-    st.info("Test Pushover sent")
+    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
+        st.error(
+            "⚠️ Missing Pushover credentials.\n"
+            "Please set PUSHOVER_USER_KEY and PUSHOVER_API_TOKEN in your .env."
+        )
+    else:
+        ok = send_pushover("✈️ Shadow Tracker Test", "This is a test message from your Streamlit app.")
+        if ok:
+            st.success("✅ Test Pushover sent!")
+        else:
+            st.error("❌ Test Pushover failed. Check the log above.")
