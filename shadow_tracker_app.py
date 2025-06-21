@@ -92,8 +92,7 @@ else:
 for ac in adsb:
     # parse lat/lon
     try:
-        lat = float(ac.get("lat"))
-        lon = float(ac.get("lon"))
+        lat = float(ac.get("lat")); lon = float(ac.get("lon"))
     except:
         continue
 
@@ -101,22 +100,16 @@ for ac in adsb:
 
     # robust altitude
     alt_raw = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
-    try:
-        alt_val = float(alt_raw)
-    except:
-        alt_val = 0.0
+    try: alt_val = float(alt_raw)
+    except: alt_val = 0.0
 
     # robust groundspeed
-    try:
-        vel = float(ac.get("gs") or ac.get("spd") or 0)
-    except:
-        vel = 0.0
+    try: vel = float(ac.get("gs") or ac.get("spd") or 0)
+    except: vel = 0.0
 
     # robust heading
-    try:
-        hdg = float(ac.get("track") or ac.get("trak") or 0)
-    except:
-        hdg = 0.0
+    try: hdg = float(ac.get("track") or ac.get("trak") or 0)
+    except: hdg = 0.0
 
     aircraft_list.append({
         "lat": lat, "lon": lon,
@@ -166,33 +159,26 @@ layers = []
 # Aircraft scatter
 if not df_ac.empty:
     layers.append(pdk.Layer(
-        "ScatterplotLayer",
-        df_ac,
-        get_position=["lon","lat"],
-        get_color=[0,128,255,200],
-        get_radius=100,
-        pickable=True
+        "ScatterplotLayer", df_ac,
+        get_position=["lon","lat"], get_color=[0,128,255,200],
+        get_radius=100, pickable=True
     ))
 
 # Shadow paths
 if track_sun and trails:
     df_trails = pd.DataFrame(trails)
     layers.append(pdk.Layer(
-        "PathLayer",
-        df_trails,
-        get_path="path",
-        get_color=[0,0,0,150],
-        width_scale=10,
-        width_min_pixels=2,
-        pickable=False
+        "PathLayer", df_trails,
+        get_path="path", get_color=[0,0,0,150],
+        width_scale=10, width_min_pixels=2, pickable=False
     ))
 
 # Alert‐radius circle polygon
 circle = []
 for angle in range(0, 360, 5):
-    bearing = math.radians(angle)
-    dy = (alert_width / 111111) * math.cos(bearing)
-    dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(bearing)
+    b = math.radians(angle)
+    dy = (alert_width / 111111) * math.cos(b)
+    dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
     circle.append([CENTER_LON + dx, CENTER_LAT + dy])
 circle.append(circle[0])
 
@@ -210,13 +196,22 @@ layers.append(pdk.Layer(
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
 st.pydeck_chart(deck)
 
-# Alerts
+# Alerts with audible beep
 if track_sun and trails:
     for tr in trails:
         for lon, lat in tr["path"]:
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
                 st.error(f"🚨 Shadow of {tr['callsign']} over home!")
                 send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
+                # play an alert sound
+                st.markdown(
+                    """
+                    <audio autoplay>
+                      <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
+                    </audio>
+                    """,
+                    unsafe_allow_html=True
+                )
                 break
 
 # Test buttons
