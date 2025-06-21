@@ -82,7 +82,7 @@ if not os.path.exists(log_path):
         writer.writerow(["Time UTC", "Callsign", "Time Until Alert (sec)", "Lat", "Lon"])
 
 # Fetch aircraft
-aircraft_list = []
+north, south, west, east = -33.0, -34.5, 150.0, 151.5
 api_key = os.getenv("RAPIDAPI_KEY")
 if api_key:
     url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
