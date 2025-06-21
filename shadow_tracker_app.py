@@ -11,6 +11,12 @@ from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude, get_azimuth
 from streamlit_autorefresh import st_autorefresh
 
+# Attempt to import PyEphem for moon altitude
+try:
+    import ephem
+except ImportError:
+    ephem = None
+
 # Auto-refresh every second
 try:
     st_autorefresh(interval=1_000, key="datarefresh")
@@ -18,8 +24,8 @@ except Exception:
     pass
 
 # Pushover credentials
-PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
-PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+PUSHOVER_USER_KEY   = os.getenv("PUSHOVER_USER_KEY")
+PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
 
 def send_pushover(title: str, message: str) -> bool:
     """Send a Pushover message. Returns True on success, False on failure."""
@@ -56,7 +62,7 @@ DEFAULT_RADIUS_KM = 10
 FORECAST_INTERVAL_SECONDS = 30
 FORECAST_DURATION_MINUTES = 5
 
-# Sidebar
+# Sidebar controls
 with st.sidebar:
     st.header("Map Options")
     radius_km     = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
@@ -70,7 +76,33 @@ time_now = datetime.now(timezone.utc)
 
 st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 
-# Fetch ADS-B Exchange data
+# --- Sun & Moon altitude at home --------------------------------------------
+# Sun altitude
+sun_alt = get_altitude(CENTER_LAT, CENTER_LON, time_now)
+sun_color = "green" if sun_alt > 0 else "red"
+st.markdown(
+    f"**Sun altitude:** "
+    f"<span style='color:{sun_color}'>{sun_alt:.1f}°</span>",
+    unsafe_allow_html=True,
+)
+
+# Moon altitude (if PyEphem available)
+if ephem:
+    obs = ephem.Observer()
+    obs.lat, obs.lon = str(CENTER_LAT), str(CENTER_LON)
+    obs.date = datetime.utcnow()
+    moon_obs = ephem.Moon(obs)
+    moon_alt = math.degrees(moon_obs.alt)
+    moon_color = "green" if moon_alt > 0 else "red"
+    st.markdown(
+        f"**Moon altitude:** "
+        f"<span style='color:{moon_color}'>{moon_alt:.1f}°</span>",
+        unsafe_allow_html=True,
+    )
+else:
+    st.warning("PyEphem not installed; moon altitude unavailable.")
+
+# --- Fetch ADS-B Exchange data ------------------------------------------------
 aircraft_list = []
 api_key = os.getenv("RAPIDAPI_KEY")
 if api_key:
@@ -117,6 +149,10 @@ for ac in adsb:
         "hdg": hdg, "callsign": cs
     })
 
+# Show total aircraft count
+total_ac = len(aircraft_list)
+st.markdown(f"**Total aircraft tracked:** {total_ac}")
+
 # Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
 if df_ac.empty:
@@ -126,7 +162,7 @@ else:
         pd.to_numeric, errors='coerce'
     ).fillna(0)
 
-# Compute shadow trails
+# --- Compute shadow trails ---------------------------------------------------
 trails = []
 if track_sun and not df_ac.empty:
     for _, row in df_ac.iterrows():
@@ -135,24 +171,23 @@ if track_sun and not df_ac.empty:
         path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             ft = time_now + timedelta(seconds=i)
-            # project movement
             dist_m = row['vel'] * i
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
-            sun_alt = get_altitude(lat_i, lon_i, ft)
-            sun_az  = get_azimuth(lat_i, lon_i, ft)
-            if sun_alt > 0:
-                shadow_dist = row['alt'] / math.tan(math.radians(sun_alt))
-                sh_lat = lat_i + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
-                sh_lon = lon_i + (shadow_dist / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(sun_az + 180))
+            sun_alt_i = get_altitude(lat_i, lon_i, ft)
+            sun_az_i  = get_azimuth(lat_i, lon_i, ft)
+            if sun_alt_i > 0:
+                shadow_dist = row['alt'] / math.tan(math.radians(sun_alt_i))
+                sh_lat = lat_i + (shadow_dist / 111111) * math.cos(math.radians(sun_az_i + 180))
+                sh_lon = lon_i + (shadow_dist / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(sun_az_i + 180))
                 path.append([sh_lon, sh_lat])
 
         if path:
             trails.append({"path": path, "callsign": cs})
 
-# Build pydeck layers
+# --- Build pydeck layers -----------------------------------------------------
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
@@ -181,7 +216,6 @@ for angle in range(0, 360, 5):
     dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
     circle.append([CENTER_LON + dx, CENTER_LAT + dy])
 circle.append(circle[0])
-
 layers.append(pdk.Layer(
     "PolygonLayer",
     data=[{"polygon": circle}],
@@ -196,14 +230,13 @@ layers.append(pdk.Layer(
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
 st.pydeck_chart(deck)
 
-# Alerts with audible beep
+# --- Alerts with audible beep -----------------------------------------------
 if track_sun and trails:
     for tr in trails:
         for lon, lat in tr["path"]:
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
                 st.error(f"🚨 Shadow of {tr['callsign']} over home!")
                 send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
-                # play an alert sound
                 st.markdown(
                     """
                     <audio autoplay>
@@ -214,7 +247,7 @@ if track_sun and trails:
                 )
                 break
 
-# Test buttons
+# --- Test buttons -----------------------------------------------------------
 if test_alert:
     st.success("Test alert triggered")
 
