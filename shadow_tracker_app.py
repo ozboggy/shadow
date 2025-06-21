@@ -281,5 +281,5 @@ if test_pushover:
         ok=send_pushover("✈️ Test","This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(5);ph2.empty()
-```
+
 
