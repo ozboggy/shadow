@@ -185,6 +185,8 @@ for ac in data:
 import pandas as pd
 
 df_ac = pd.DataFrame(aircraft_list)
+# default military count
+mil_count = 0
 if not df_ac.empty:
     # ensure numeric types
     df_ac[['alt', 'vel', 'hdg']] = df_ac[['alt', 'vel', 'hdg']].apply(
