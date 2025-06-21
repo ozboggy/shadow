@@ -104,13 +104,11 @@ else:
     adsb = []
 
 for ac in adsb:
-    # parse location
     try:
         lat = float(ac.get("lat")); lon = float(ac.get("lon"))
     except:
         continue
     cs = (ac.get("flight") or ac.get("hex") or "").strip()
-    # robust fields
     try: alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
     except: alt_val = 0.0
     try: vel = float(ac.get("gs") or ac.get("spd") or 0)
@@ -118,8 +116,7 @@ for ac in adsb:
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
 
-    # only include airborne
-    if alt_val > 0:
+    if alt_val > 0:  # only airborne
         aircraft_list.append({
             "lat": lat, "lon": lon,
             "alt": alt_val, "vel": vel,
@@ -161,16 +158,16 @@ if not df_ac.empty:
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
-            # sun trail
+            # sun path
             sa = get_altitude(lat_i, lon_i, t)
             saz = get_azimuth(lat_i, lon_i, t)
             if sa > 0 and track_sun:
                 sd = row['alt'] / math.tan(math.radians(sa))
                 sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
-                s_path.append([sh_lon, sh_lat])
+                s_path.append((t, sh_lon, sh_lat))
 
-            # moon trail
+            # moon path
             if ephem and track_moon:
                 obs.date = t
                 m = ephem.Moon(obs)
@@ -180,12 +177,12 @@ if not df_ac.empty:
                     md = row['alt'] / math.tan(math.radians(ma))
                     mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
                     mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
-                    m_path.append([mh_lon, mh_lat])
+                    m_path.append((t, mh_lon, mh_lat))
 
         if s_path:
-            sun_trails.append({"path": s_path, "callsign": cs})
+            sun_trails.append({"callsign": cs, "path": s_path})
         if m_path:
-            moon_trails.append({"path": m_path, "callsign": cs})
+            moon_trails.append({"callsign": cs, "path": m_path})
 
 # Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
@@ -199,7 +196,10 @@ if not df_ac.empty:
     ))
 
 if track_sun and sun_trails:
-    df_sun = pd.DataFrame(sun_trails)
+    df_sun = pd.DataFrame([
+        {"path": [ [lon, lat] for _, lon, lat in tr["path"] ]}
+        for tr in sun_trails
+    ])
     layers.append(pdk.Layer(
         "PathLayer", df_sun,
         get_path="path", get_color=[255,215,0,150],
@@ -207,14 +207,17 @@ if track_sun and sun_trails:
     ))
 
 if track_moon and moon_trails:
-    df_moon = pd.DataFrame(moon_trails)
+    df_moon = pd.DataFrame([
+        {"path": [ [lon, lat] for _, lon, lat in tr["path"] ]}
+        for tr in moon_trails
+    ])
     layers.append(pdk.Layer(
         "PathLayer", df_moon,
         get_path="path", get_color=[135,206,250,150],
         width_scale=10, width_min_pixels=2, pickable=True
     ))
 
-# Alert circle polygon
+# alert circle polygon
 circle = []
 for ang in range(0, 360, 5):
     b = math.radians(ang)
@@ -229,7 +232,7 @@ layers.append(pdk.Layer(
     stroked=True, get_line_color=[255,0,0], get_line_width=2
 ))
 
-# Tooltip config
+# tooltip config
 tooltip = {
     "html": "<b>Callsign:</b> {callsign}<br/>"
             "<b>Alt:</b> {alt:.0f} m<br/>"
@@ -238,7 +241,7 @@ tooltip = {
     "style": {"backgroundColor": "black", "color": "white"}
 }
 
-# Render map
+# render map
 deck = pdk.Deck(
     layers=layers,
     initial_view_state=view,
@@ -247,28 +250,37 @@ deck = pdk.Deck(
 )
 st.pydeck_chart(deck, use_container_width=True)
 
-# Alerts with screen, audio, and pushover
+# Alerts with timing
 beep_html = """
 <audio autoplay>
   <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
 </audio>
 """
-if track_sun and sun_trails:
+
+# sun alert
+if track_sun:
     for tr in sun_trails:
-        for lon, lat in tr["path"]:
+        for idx, (t, lon, lat) in enumerate(tr["path"]):
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
-                st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
+                delta = t - now_utc
+                mins, secs = divmod(int(delta.total_seconds()), 60)
+                st.error(f"🚨 Sun shadow of {tr['callsign']} in {mins}m{secs}s")
                 st.markdown(beep_html, unsafe_allow_html=True)
-                send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
+                send_pushover("✈️ Sun Shadow Alert",
+                              f"{tr['callsign']} in {mins}m{secs}s")
                 break
 
-if track_moon and moon_trails:
+# moon alert
+if track_moon:
     for tr in moon_trails:
-        for lon, lat in tr["path"]:
+        for idx, (t, lon, lat) in enumerate(tr["path"]):
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
-                st.error(f"🚨 Moon shadow of {tr['callsign']} over home!")
+                delta = t - now_utc
+                mins, secs = divmod(int(delta.total_seconds()), 60)
+                st.error(f"🚨 Moon shadow of {tr['callsign']} in {mins}m{secs}s")
                 st.markdown(beep_html, unsafe_allow_html=True)
-                send_pushover("✈️ Moon Shadow Alert", f"{tr['callsign']} moon shadow at home")
+                send_pushover("✈️ Moon Shadow Alert",
+                              f"{tr['callsign']} in {mins}m{secs}s")
                 break
 
 # Test alert with audio
@@ -289,3 +301,4 @@ if test_pushover:
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(5)
     ph2.empty()
+
