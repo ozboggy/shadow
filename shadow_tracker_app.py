@@ -213,29 +213,8 @@ if moon_alt is not None:
 else:
     st.sidebar.warning("Moon data unavailable")
 st.sidebar.markdown(f"Total airborne aircraft: **{len(df_ac)}**")
-if not df_ac.empty:
-    st.sidebar.markdown(f"Military within 200mi: **{mil_count}**")
-
-# Build shadow trails
-sun_trails = []
-if not df_ac.empty and track_sun:
-    for _, row in df_ac.iterrows():
-        cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
-        s_path = []
-        for i in range(0, FORECAST_INTERVAL_S*FORECAST_DURATION_MIN+1, FORECAST_INTERVAL_S):
-            t = now_utc + timedelta(seconds=i)
-            d = row['vel'] * i
-            dlat = d * math.cos(math.radians(row['hdg'])) / 111111
-            dlon = d * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
-            li, lo = lat0 + dlat, lon0 + dlon
-            sa, saz = get_altitude(li, lo, t), get_azimuth(li, lo, t)
-            if sa > 0:
-                sd = row['alt'] / math.tan(math.radians(sa))
-                shlat = li + (sd/111111) * math.cos(math.radians(saz+180))
-                shlon = lo + (sd/(111111 * math.cos(math.radians(li)))) * math.sin(math.radians(saz+180))
-                s_path.append([shlon, shlat])
-        if s_path:
-            sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
+# Military aircraft count metric
+st.sidebar.metric(label="Military (≤200 mi)", value=f"{mil_count}")
 
 # Prepare layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
