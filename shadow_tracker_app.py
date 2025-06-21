@@ -120,14 +120,13 @@ if 'updating_home' not in st.session_state:
 
 # If updating home, run map click UI and capture
 if st.session_state.updating_home:
+    # show map for location pick
     new_home = handle_update_home()
-    # turn off update mode
+    # disable update mode
     st.session_state.updating_home = False
-    # apply if valid
+    # apply if valid and rerun rest
     if new_home[0] is not None:
         CENTER_LAT, CENTER_LON = new_home
-if st.session_state.updating_home:
-    handle_update_home()
     st.stop()
 
 # Sidebar controls
