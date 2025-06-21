@@ -13,7 +13,6 @@ import folium
 from streamlit_folium import st_folium
 from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude, get_azimuth
-from streamlit_autorefresh import st_autorefresh
 
 # Optional moon computations
 try:
@@ -24,8 +23,9 @@ except ImportError:
 # Auto-refresh every second
 AUTOREFRESH_MS = 1000
 try:
+    from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=AUTOREFRESH_MS, key="datarefresh")
-except Exception:
+except ImportError:
     pass
 
 # Paths & credentials
@@ -82,14 +82,15 @@ def hav(lat1, lon1, lat2, lon2):
 
 def log_alert(callsign, lat, lon, time_until, distance_mi):
     df = pd.read_csv(log_path)
-    df = pd.concat([df, pd.DataFrame([{  
+    new = pd.DataFrame([{
         "Time UTC": datetime.now(timezone.utc).isoformat(),
         "Callsign": callsign,
         "Lat": lat,
         "Lon": lon,
         "Time Until Alert (sec)": time_until,
         "Distance (mi)": distance_mi
-    }])], ignore_index=True)
+    }])
+    df = pd.concat([df, new], ignore_index=True)
     df.to_csv(log_path, index=False)
 
 # Defaults
@@ -99,17 +100,42 @@ FORECAST_DURATION_MIN = 5
 
 # Function to update home via map click
 def handle_update_home():
-    st.markdown("### Click map to set new home location")
+    st.markdown("### Click on the map to set new home location")
     m = folium.Map(location=[CENTER_LAT, CENTER_LON], zoom_start=DEFAULT_RADIUS_KM)
-    click_data = st_folium(m, width=700, height=500)
-    if click_data and click_data.get('last_clicked'):
-        lat = click_data['last_clicked']['lat']
-        lon = click_data['last_clicked']['lng']
+    components = st_folium(m, width=700, height=500)
+    if components and components.get('last_clicked'):
+        lat = components['last_clicked']['lat']
+        lon = components['last_clicked']['lng']
         with open(home_config, 'w') as f:
             json.dump({'lat': lat, 'lon': lon}, f)
         st.success(f"Home updated to {lat:.6f}, {lon:.6f}")
-        return lat, lon
-    return None, None
+        st.experimental_rerun()
+
+# Initialize session state for update
+if 'updating_home' not in st.session_state:
+    st.session_state.updating_home = False
+
+# Sidebar controls
+with st.sidebar:
+    st.header("Map Options")
+    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
+    track_sun = st.checkbox("Show Sun Shadows", value=True)
+    track_moon = st.checkbox("Show Moon Shadows", value=False)
+    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
+    test_alert = st.button("Test Alert")
+    test_pushover = st.button("Test Pushover")
+    if st.button("Update Home Location"):
+        st.session_state.updating_home = True
+    st.markdown("---")
+    if os.path.exists(log_path):
+        st.download_button("📥 Download alert_log.csv", open(log_path,'rb'), "alert_log.csv", "text/csv")
+    else:
+        st.info("No alert_log.csv yet")
+
+# If in update mode, show map and exit
+if st.session_state.updating_home:
+    handle_update_home()
+    st.stop()
 
 # Sidebar controls
 with st.sidebar:
