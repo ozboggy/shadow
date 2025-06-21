@@ -306,45 +306,8 @@ if not df_ac.empty:
         highlight_color=[255,255,0,255]
     ))
 
-# Prepare deck view
+# Prepare deck view and render map
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
-layers = []
-if sun_trails:
-    df_s = pd.DataFrame(sun_trails)
-    layers.append(pdk.Layer(
-        "PathLayer", df_s, get_path="path",
-        get_color=[50,50,50,255], width_scale=5, width_min_pixels=1
-    ))
-    curr = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", curr,
-        get_position=["lon","lat"],
-        get_fill_color=[50,50,50,255], get_radius=100,
-        pickable=True
-    ))
-# Alert circle
-circle = []
-for ang in range(0,360,5):
-    b = math.radians(ang)
-    dy = (alert_width/111111)*math.cos(b)
-    dx = (alert_width/(111111*math.cos(math.radians(CENTER_LAT))))*math.sin(b)
-    circle.append([CENTER_LON+dx, CENTER_LAT+dy])
-circle.append(circle[0])
-layers.append(pdk.Layer(
-    "PolygonLayer", [{"polygon": circle}],
-    get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True,
-    get_line_color=[255,0,0], get_line_width=3, pickable=False
-))
-# Aircraft scatter layer
-if not df_ac.empty:
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", df_ac,
-        get_position=["lon","lat"],
-        get_fill_color=[0,128,255,200], get_radius=300,
-        pickable=True, auto_highlight=True,
-        highlight_color=[255,255,0,255]
-    ))
-# Tooltip
 tooltip = {
     "html": (
         "<b>Callsign:</b> {callsign}<br/>"
@@ -354,7 +317,6 @@ tooltip = {
     ),
     "style": {"backgroundColor":"black","color":"white"}
 }
-# Render map
 st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view,
@@ -410,3 +372,4 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
+
