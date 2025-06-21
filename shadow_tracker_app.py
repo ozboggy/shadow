@@ -328,9 +328,5 @@ if track_moon and moon_trails:
                 send_pushover("✈️ Moon Shadow Alert", f"{tr['callsign']} moon shadow at home")
                 break
 
-# Test alert button
-if test_alert:
-    ph = st.empty()
-    ph.success("🔔 Test alert triggered!")
-    st.markdown(beep_html, unsafe
+
 
