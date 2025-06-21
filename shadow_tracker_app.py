@@ -239,6 +239,10 @@ if not df_ac.empty and track_sun:
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
 
+# Prepare layers
+# initialize layers list once
+layers = []
+
 # Distance rings (miles) – add concentric circles
 ring_miles = [1, 2, 5, 10, 20]
 for m in ring_miles:
@@ -254,6 +258,16 @@ for m in ring_miles:
         ])
     ring.append(ring[0])
     layers.append(pdk.Layer(
+        "PolygonLayer", [{"polygon": ring}],
+        get_polygon="polygon",
+        get_fill_color=[0, 255, 0, 50],
+        stroked=True,
+        get_line_color=[0, 255, 0],
+        get_line_width=1,
+        pickable=False
+    ))
+
+# Shadow and other layers follow(pdk.Layer(
         "PolygonLayer", [{"polygon": ring}],
         get_polygon="polygon",
         get_fill_color=[0, 255, 0, 50],
@@ -367,4 +381,3 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
-
