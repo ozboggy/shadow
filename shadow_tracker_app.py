@@ -70,6 +70,7 @@ with st.sidebar:
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
 
+# Current UTC time
 now_utc = datetime.now(timezone.utc)
 
 # Compute sun & moon altitude at center
@@ -112,12 +113,20 @@ for ac in adsb:
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
     if alt_val > 0:
-        aircraft_list.append({"lat": lat, "lon": lon, "alt": alt_val, "vel": vel, "hdg": hdg, "callsign": cs})
+        aircraft_list.append({
+            "lat": lat, "lon": lon,
+            "alt": alt_val, "vel": vel,
+            "hdg": hdg, "callsign": cs
+        })
 
 # Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
-    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric, errors='coerce').fillna(0)
+    df_ac[['alt','vel','hdg']] = (
+        df_ac[['alt','vel','hdg']]
+        .apply(pd.to_numeric, errors='coerce')
+        .fillna(0)
+    )
 
 # Sidebar status
 total_ac = len(df_ac)
@@ -141,7 +150,7 @@ if not df_ac.empty:
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
-            # Sun
+            # Sun path
             sa = get_altitude(lat_i, lon_i, t)
             saz = get_azimuth(lat_i, lon_i, t)
             if sa > 0 and track_sun:
@@ -149,7 +158,7 @@ if not df_ac.empty:
                 sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
                 s_path.append([sh_lon, sh_lat])
-            # Moon
+            # Moon path
             if ephem and track_moon:
                 obs.date = t
                 m = ephem.Moon(obs)
@@ -160,10 +169,12 @@ if not df_ac.empty:
                     mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
                     mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
                     m_path.append([mh_lon, mh_lat])
-        if s_path: sun_trails.append({"path": s_path, "callsign": cs})
-        if m_path: moon_trails.append({"path": m_path, "callsign": cs})
+        if s_path:
+            sun_trails.append({"path": s_path, "callsign": cs})
+        if m_path:
+            moon_trails.append({"path": m_path, "callsign": cs})
 
-# Build pydeck layers and reorder for proper hover
+# Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
@@ -204,8 +215,9 @@ if track_sun:
     sun_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☀"}]
     layers.append(pdk.Layer(
         "TextLayer", sun_icon,
-        get_position=["lon","lat"], get_text="text", get_color=[255,215,0],
-        get_size=32, get_alignment_baseline="bottom", pickable=False
+        get_position=["lon","lat"], get_text="text",
+        get_color=[255,215,0], get_size=32,
+        get_alignment_baseline="bottom", pickable=False
     ))
 
 # Moon icon (non-pickable)
@@ -213,11 +225,12 @@ if ephem and track_moon:
     moon_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☾"}]
     layers.append(pdk.Layer(
         "TextLayer", moon_icon,
-        get_position=["lon","lat"], get_text="text", get_color=[200,200,200],
-        get_size=32, get_alignment_baseline="bottom", pickable=False
+        get_position=["lon","lat"], get_text="text",
+        get_color=[200,200,200], get_size=32,
+        get_alignment_baseline="bottom", pickable=False
     ))
 
-# Aircraft scatter layer (top, pickable with auto-highlight)
+# Aircraft scatter layer (pickable)
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
@@ -226,13 +239,13 @@ if not df_ac.empty:
         highlight_color=[255,255,0,255]
     ))
 
-# Tooltip config for all layers
+# Tooltip config
 tooltip = {
     "html": (
         "<b>Callsign:</b> {callsign}<br/>"
-        "<b>Alt:</b> {alt:.0f} m<br/>"
-        "<b>Speed:</b> {vel:.0f} m/s<br/>"
-        "<b>Heading:</b> {hdg:.0f}°"
+        "<b>Alt:</b> {alt} m<br/>"
+        "<b>Speed:</b> {vel} m/s<br/>"
+        "<b>Heading:</b> {hdg}°"
     ),
     "style": {"backgroundColor":"black","color":"white"}
 }
@@ -245,9 +258,6 @@ deck = pdk.Deck(
     tooltip=tooltip
 )
 st.pydeck_chart(deck, use_container_width=True)
-
-# (rest of alert and test logic unchanged)
-
 
 # Alerts with screen, audio, and pushover
 beep_html = """
