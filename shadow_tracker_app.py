@@ -120,14 +120,27 @@ with st.sidebar:
     alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
-    update_home = st.button("Update Home Location")
+    if st.button("Update Home Location"):
+        st.session_state.updating_home = True
     st.markdown("---")
     if os.path.exists(log_path):
         st.download_button("📥 Download alert_log.csv", open(log_path,'rb'), "alert_log.csv", "text/csv")
     else:
         st.info("No alert_log.csv yet")
 
-# Handle updating home before plotting
+# Handle updating home via session state
+if st.session_state.get('updating_home'):
+    new = handle_update_home()
+    # after attempting click, stop update mode regardless
+    st.session_state.updating_home = False
+    if new[0] is not None:
+        CENTER_LAT, CENTER_LON = new
+        # reload page to apply new home
+        st.experimental_rerun()
+
+# Current UTC time
+now_utc = datetime.now(timezone.utc)
+
 if update_home:
     new = handle_update_home()
     if new[0] is not None:
@@ -164,6 +177,7 @@ for ac in data:
     if alt_val > 0:
         aircraft_list.append({'lat': lat, 'lon': lon, 'alt': alt_val,
                               'vel': vel, 'hdg': hdg, 'callsign': cs})
+
 # Aircraft DataFrame & metrics
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
