@@ -98,38 +98,35 @@ DEFAULT_RADIUS_KM = 10
 FORECAST_INTERVAL_S = 30
 FORECAST_DURATION_MIN = 5
 
-# Function to update home via map click
-def handle_update_home():
-    """Render map and return new home coords when clicked."""
-    st.markdown("### Click on the map to set new home location")
-    m = folium.Map(location=[CENTER_LAT, CENTER_LON], zoom_start=DEFAULT_RADIUS_KM)
-    components = st_folium(m, width=700, height=500)
-    if components and components.get('last_clicked'):
-        lat = components['last_clicked']['lat']
-        lon = components['last_clicked']['lng']
-        # save to config
-        with open(home_config, 'w') as f:
-            json.dump({'lat': lat, 'lon': lon}, f)
-        st.success(f"Home updated to {lat:.6f}, {lon:.6f}")
-        return lat, lon
-    return None, None
+# Sidebar controls and Home Location inputs
+with st.sidebar:
+    st.header("Home & Map Options")
+    # Display and save new home via text inputs
+    st.subheader("Home Location")
+    st.markdown(f"**Current:** {CENTER_LAT:.6f}, {CENTER_LON:.6f}")
+    new_lat = st.number_input("New Home Latitude", value=CENTER_LAT, format="%.6f")
+    new_lon = st.number_input("New Home Longitude", value=CENTER_LON, format="%.6f")
+    if st.button("Save Home Location"):
+        with open(home_config, "w") as f:
+            json.dump({"lat": new_lat, "lon": new_lon}, f)
+        st.success(f"Home updated to {new_lat:.6f}, {new_lon:.6f}")
+        CENTER_LAT, CENTER_LON = new_lat, new_lon
+        st.experimental_rerun()
 
-# Initialize session state for update
-if 'updating_home' not in st.session_state:
-    st.session_state.updating_home = False
+    # Existing map options
+    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
+    track_sun = st.checkbox("Show Sun Shadows", value=True)
+    track_moon = st.checkbox("Show Moon Shadows", value=False)
+    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
+    test_alert = st.button("Test Alert")
+    test_pushover = st.button("Test Pushover")
+    st.markdown("---")
+    if os.path.exists(log_path):
+        st.download_button("📥 Download alert_log.csv", open(log_path, 'rb'), "alert_log.csv", "text/csv")
+    else:
+        st.info("No alert_log.csv yet")
 
-# If updating home, run map click UI and capture
-if st.session_state.updating_home:
-    # show map for location pick
-    new_home = handle_update_home()
-    # disable update mode
-    st.session_state.updating_home = False
-    # apply if valid and rerun rest
-    if new_home[0] is not None:
-        CENTER_LAT, CENTER_LON = new_home
-    st.stop()
-
-# Sidebar controls
+# Main app continues below
 with st.sidebar:
     st.header("Map Options")
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
