@@ -145,10 +145,9 @@ if not df_ac.empty:
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
-            # Sun path
-            sa = get_altitude(lat_i, lon_i, t)
-            saz = get_azimuth(lat_i, lon_i, t)
-            if sa > 0 and track_sun:
+            if get_altitude(lat_i, lon_i, t) > 0 and track_sun:
+                sa = get_altitude(lat_i, lon_i, t)
+                saz = get_azimuth(lat_i, lon_i, t)
                 sd = row['alt'] / math.tan(math.radians(sa))
                 sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
@@ -156,23 +155,21 @@ if not df_ac.empty:
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs})
         if ephem and track_moon:
-            # Moon path computations
+            obs.date = t
             m = ephem.Moon(obs)
-            try:
-                ma = math.degrees(m.alt); maz = math.degrees(m.az)
-                if ma > 0:
-                    md = row['alt'] / math.tan(math.radians(ma))
-                    mh_lat = lat0 + (md / 111111) * math.cos(math.radians(maz + 180))
-                    mh_lon = lon0 + (md / (111111 * math.cos(math.radians(lat0)))) * math.sin(math.radians(maz + 180))
-                    moon_trails.append({"path": [[mh_lon,mh_lat]], "callsign": cs})
-            except:
-                pass
+            ma = math.degrees(m.alt)
+            maz = math.degrees(m.az)
+            if ma > 0:
+                md = row['alt'] / math.tan(math.radians(ma))
+                mh_lat = lat0 + (md / 111111) * math.cos(math.radians(maz + 180))
+                mh_lon = lon0 + (md / (111111 * math.cos(math.radians(lat0)))) * math.sin(math.radians(maz + 180))
+                moon_trails.append({"path": [[mh_lon, mh_lat]], "callsign": cs})
 
 # Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
-# Sun trails as almost-black line (non-pickable)
+# Sun trails (almost-black)
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
@@ -188,7 +185,17 @@ if track_moon and moon_trails:
         get_path="path", get_color=[135,206,250,150], width_scale=10, width_min_pixels=2, pickable=False
     ))
 
-# Alert circle polygon
+# Home location marker (dark red dot)
+home_df = pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}])
+layers.append(pdk.Layer(
+    "ScatterplotLayer", home_df,
+    get_position=["lon", "lat"],
+    get_fill_color=[200, 0, 0, 255],
+    get_radius=300,
+    pickable=False
+))
+
+# Alert circle
 circle = []
 for ang in range(0, 360, 5):
     b = math.radians(ang)
@@ -213,15 +220,15 @@ if ephem and track_moon:
         get_position=["lon","lat"], get_text="text", get_color=[200,200,200], get_size=32, pickable=False
     ))
 
-# Aircraft scatter layer (hover-enabled)
+# Aircraft scatter layer (double size)
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
-        get_position=["lon","lat"], get_fill_color=[0,128,255,200], get_radius=150,
+        get_position=["lon","lat"], get_fill_color=[0,128,255,200], get_radius=300,
         pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
     ))
 
-# Tooltip
+# Tooltip configuration
 tooltip = {
     "html": (
         "<b>Callsign:</b> {callsign}<br/>"
