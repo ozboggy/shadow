@@ -122,7 +122,7 @@ for ac in adsb:
         "hdg": hdg, "callsign": cs
     })
 
-# Build DataFrame and filter out ground (altitude ≤ 0)
+# Build DataFrame and filter out those on the ground
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
     df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(
@@ -133,7 +133,8 @@ if not df_ac.empty:
 # Total airborne aircraft count
 total_ac = len(df_ac)
 
-# Sidebar status
+# Title and sidebar status
+st.title("✈️ Aircraft Shadow Tracker")
 st.sidebar.markdown("### Status")
 st.sidebar.markdown(f"Sun altitude: {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°")
 if moon_alt is not None:
@@ -158,7 +159,7 @@ if not df_ac.empty:
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
-            # sun trail
+            # sun path
             sa = get_altitude(lat_i, lon_i, t)
             saz = get_azimuth(lat_i, lon_i, t)
             if sa > 0 and track_sun:
@@ -167,7 +168,7 @@ if not df_ac.empty:
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
                 s_path.append([sh_lon, sh_lat])
 
-            # moon trail
+            # moon path
             if ephem and track_moon:
                 obs.date = t
                 m = ephem.Moon(obs)
@@ -211,7 +212,7 @@ if track_moon and moon_trails:
         width_scale=10, width_min_pixels=2, pickable=True
     ))
 
-# Alert circle polygon
+# alert circle polygon
 circle = []
 for ang in range(0, 360, 5):
     b = math.radians(ang)
@@ -226,7 +227,7 @@ layers.append(pdk.Layer(
     stroked=True, get_line_color=[255,0,0], get_line_width=2
 ))
 
-# Tooltip configuration
+# tooltip config
 tooltip = {
     "html": "<b>Callsign:</b> {callsign}<br/>"
             "<b>Alt:</b> {alt:.0f} m<br/>"
@@ -235,7 +236,7 @@ tooltip = {
     "style": {"backgroundColor": "black", "color": "white"}
 }
 
-# Render map with tooltip
+# render map
 deck = pdk.Deck(
     layers=layers,
     initial_view_state=view,
@@ -244,31 +245,45 @@ deck = pdk.Deck(
 )
 st.pydeck_chart(deck, use_container_width=True)
 
-# Alerts with sound
+# Alerts with screen, audio, and pushover
+beep_html = """
+<audio autoplay>
+  <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
+</audio>
+"""
 if track_sun and sun_trails:
     for tr in sun_trails:
         for lon, lat in tr["path"]:
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
                 st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
-                st.markdown(
-                    """<audio autoplay>
-                         <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
-                       </audio>""",
-                    unsafe_allow_html=True
-                )
+                st.markdown(beep_html, unsafe_allow_html=True)
                 send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
                 break
 
-# Test buttons
-if test_alert:
-    st.success("Test alert triggered")
+if track_moon and moon_trails:
+    for tr in moon_trails:
+        for lon, lat in tr["path"]:
+            if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
+                st.error(f"🚨 Moon shadow of {tr['callsign']} over home!")
+                st.markdown(beep_html, unsafe_allow_html=True)
+                send_pushover("✈️ Moon Shadow Alert", f"{tr['callsign']} moon shadow at home")
+                break
 
-if test_pushover:
+# Test alert with audio and screen
+if test_alert:
     ph = st.empty()
-    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        ph.error("⚠️ Missing Pushover credentials")
-    else:
-        ok = send_pushover("✈️ Test", "This is a test from your app.")
-        ph.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
+    ph.success("🔔 Test alert triggered!")
+    st.markdown(beep_html, unsafe_allow_html=True)
     time.sleep(5)
     ph.empty()
+
+# Test pushover
+if test_pushover:
+    ph2 = st.empty()
+    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
+        ph2.error("⚠️ Missing Pushover credentials")
+    else:
+        ok = send_pushover("✈️ Test", "This is a test from your app.")
+        ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
+    time.sleep(5)
+    ph2.empty()
