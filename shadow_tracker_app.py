@@ -100,22 +100,32 @@ FORECAST_DURATION_MIN = 5
 
 # Function to update home via map click
 def handle_update_home():
+    """Render map and return new home coords when clicked."""
     st.markdown("### Click on the map to set new home location")
     m = folium.Map(location=[CENTER_LAT, CENTER_LON], zoom_start=DEFAULT_RADIUS_KM)
     components = st_folium(m, width=700, height=500)
     if components and components.get('last_clicked'):
         lat = components['last_clicked']['lat']
         lon = components['last_clicked']['lng']
+        # save to config
         with open(home_config, 'w') as f:
             json.dump({'lat': lat, 'lon': lon}, f)
         st.success(f"Home updated to {lat:.6f}, {lon:.6f}")
-        st.experimental_rerun()
+        return lat, lon
+    return None, None
 
 # Initialize session state for update
 if 'updating_home' not in st.session_state:
     st.session_state.updating_home = False
 
-# If updating home, show only the map click UI
+# If updating home, run map click UI and capture
+if st.session_state.updating_home:
+    new_home = handle_update_home()
+    # turn off update mode
+    st.session_state.updating_home = False
+    # apply if valid
+    if new_home[0] is not None:
+        CENTER_LAT, CENTER_LON = new_home
 if st.session_state.updating_home:
     handle_update_home()
     st.stop()
@@ -337,3 +347,4 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
+
