@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
@@ -40,12 +41,12 @@ def send_pushover(title: str, message: str) -> bool:
         st.error(f"Pushover API error: {e}")
         return False
 
-# Haversine
+# Haversine distance
 def hav(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
     return R * 2 * math.asin(math.sqrt(a))
 
 # Defaults
@@ -69,7 +70,7 @@ time_now = datetime.now(timezone.utc)
 
 st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 
-# --- Fetch ADS-B Exchange data -----------------------------------------------
+# Fetch ADS-B Exchange data
 aircraft_list = []
 api_key = os.getenv("RAPIDAPI_KEY")
 if api_key:
@@ -93,7 +94,7 @@ for ac in adsb:
     try:
         lat = float(ac.get("lat"))
         lon = float(ac.get("lon"))
-    except Exception:
+    except:
         continue
 
     cs = (ac.get("flight") or ac.get("hex") or "").strip()
@@ -102,19 +103,19 @@ for ac in adsb:
     alt_raw = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
     try:
         alt_val = float(alt_raw)
-    except Exception:
+    except:
         alt_val = 0.0
 
     # robust groundspeed
     try:
         vel = float(ac.get("gs") or ac.get("spd") or 0)
-    except Exception:
+    except:
         vel = 0.0
 
     # robust heading
     try:
         hdg = float(ac.get("track") or ac.get("trak") or 0)
-    except Exception:
+    except:
         hdg = 0.0
 
     aircraft_list.append({
@@ -132,7 +133,7 @@ else:
         pd.to_numeric, errors='coerce'
     ).fillna(0)
 
-# --- Compute shadow trails --------------------------------------------------
+# Compute shadow trails
 trails = []
 if track_sun and not df_ac.empty:
     for _, row in df_ac.iterrows():
@@ -141,7 +142,7 @@ if track_sun and not df_ac.empty:
         path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             ft = time_now + timedelta(seconds=i)
-            # project aircraft movement
+            # project movement
             dist_m = row['vel'] * i
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
@@ -158,11 +159,11 @@ if track_sun and not df_ac.empty:
         if path:
             trails.append({"path": path, "callsign": cs})
 
-# --- Build pydeck layers ----------------------------------------------------
+# Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
-# Aircraft scatter layer
+# Aircraft scatter
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer",
@@ -209,7 +210,7 @@ layers.append(pdk.Layer(
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
 st.pydeck_chart(deck)
 
-# --- Alerts ---------------------------------------------------------------
+# Alerts
 if track_sun and trails:
     for tr in trails:
         for lon, lat in tr["path"]:
@@ -218,19 +219,22 @@ if track_sun and trails:
                 send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
                 break
 
-# --- Test buttons ---------------------------------------------------------
+# Test buttons
 if test_alert:
     st.success("Test alert triggered")
 
 if test_pushover:
+    placeholder = st.empty()
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        st.error(
+        placeholder.error(
             "⚠️ Missing Pushover credentials.\n"
             "Please set PUSHOVER_USER_KEY and PUSHOVER_API_TOKEN in your .env."
         )
     else:
         ok = send_pushover("✈️ Shadow Tracker Test", "This is a test message from your Streamlit app.")
         if ok:
-            st.success("✅ Test Pushover sent!")
+            placeholder.success("✅ Test Pushover sent!")
         else:
-            st.error("❌ Test Pushover failed. Check the log above.")
+            placeholder.error("❌ Test Pushover failed. Check the log above.")
+    time.sleep(5)
+    placeholder.empty()
