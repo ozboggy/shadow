@@ -73,7 +73,7 @@ with st.sidebar:
 # Current UTC time
 now_utc = datetime.now(timezone.utc)
 
-# Compute sun & moon altitude at center
+# Compute sun & moon altitude
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
 if ephem:
     obs = ephem.Observer()
@@ -113,11 +113,7 @@ for ac in adsb:
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
     if alt_val > 0:
-        aircraft_list.append({
-            "lat": lat, "lon": lon,
-            "alt": alt_val, "vel": vel,
-            "hdg": hdg, "callsign": cs
-        })
+        aircraft_list.append({"lat": lat, "lon": lon, "alt": alt_val, "vel": vel, "hdg": hdg, "callsign": cs})
 
 # Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
@@ -138,19 +134,15 @@ sun_trails, moon_trails = [], []
 if not df_ac.empty:
     for _, row in df_ac.iterrows():
         cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
-        s_path, m_path = [], []
+        s_path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             t = now_utc + timedelta(seconds=i)
-            dist_m = row['vel'] * i
-            dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
-            dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
-            lat_i, lon_i = lat0 + dlat, lon0 + dlon
-            if get_altitude(lat_i, lon_i, t) > 0 and track_sun:
-                sa = get_altitude(lat_i, lon_i, t)
-                saz = get_azimuth(lat_i, lon_i, t)
+            if get_altitude(lat0, lon0, t) > 0 and track_sun:
+                sa = get_altitude(lat0, lon0, t)
+                saz = get_azimuth(lat0, lon0, t)
                 sd = row['alt'] / math.tan(math.radians(sa))
-                sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
-                sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
+                sh_lat = lat0 + (sd / 111111) * math.cos(math.radians(saz + 180))
+                sh_lon = lon0 + (sd / (111111 * math.cos(math.radians(lat0)))) * math.sin(math.radians(saz + 180))
                 s_path.append([sh_lon, sh_lat])
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs})
@@ -171,29 +163,11 @@ layers = []
 
 # Sun trails (almost-black)
 if track_sun and sun_trails:
-    df_sun = pd.DataFrame(sun_trails)
-    layers.append(pdk.Layer(
-        "PathLayer", df_sun,
-        get_path="path", get_color=[0,0,0,200], width_scale=10, width_min_pixels=2, pickable=False
-    ))
+    layers.append(pdk.Layer("PathLayer", pd.DataFrame(sun_trails), get_path="path", get_color=[0,0,0,200], width_scale=10, width_min_pixels=2, pickable=False))
 
 # Moon trails
 if track_moon and moon_trails:
-    df_moon = pd.DataFrame(moon_trails)
-    layers.append(pdk.Layer(
-        "PathLayer", df_moon,
-        get_path="path", get_color=[135,206,250,150], width_scale=10, width_min_pixels=2, pickable=False
-    ))
-
-# Home location marker (dark red dot)
-home_df = pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}])
-layers.append(pdk.Layer(
-    "ScatterplotLayer", home_df,
-    get_position=["lon", "lat"],
-    get_fill_color=[200, 0, 0, 255],
-    get_radius=300,
-    pickable=False
-))
+    layers.append(pdk.Layer("PathLayer", pd.DataFrame(moon_trails), get_path="path", get_color=[135,206,250,150], width_scale=10, width_min_pixels=2, pickable=False))
 
 # Alert circle
 circle = []
@@ -203,50 +177,25 @@ for ang in range(0, 360, 5):
     dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
     circle.append([CENTER_LON + dx, CENTER_LAT + dy])
 circle.append(circle[0])
-layers.append(pdk.Layer(
-    "PolygonLayer", [{"polygon": circle}],
-    get_polygon="polygon", get_fill_color=[255,0,0,50], stroked=True, get_line_color=[255,0,0], get_line_width=2, pickable=False
-))
+layers.append(pdk.Layer("PolygonLayer", [{"polygon": circle}], get_polygon="polygon", get_fill_color=[255,0,0,50], stroked=True, get_line_color=[255,0,0], get_line_width=2, pickable=False))
 
 # Sun and Moon icons
 if track_sun:
-    layers.append(pdk.Layer(
-        "TextLayer", [{"lon":CENTER_LON, "lat":CENTER_LAT, "text":"☀"}],
-        get_position=["lon","lat"], get_text="text", get_color=[255,215,0], get_size=32, pickable=False
-    ))
+    layers.append(pdk.Layer("TextLayer", [{"lon":CENTER_LON, "lat":CENTER_LAT, "text":"☀"}], get_position=["lon","lat"], get_text="text", get_color=[255,215,0], get_size=32, pickable=False))
 if ephem and track_moon:
-    layers.append(pdk.Layer(
-        "TextLayer", [{"lon":CENTER_LON, "lat":CENTER_LAT, "text":"☾"}],
-        get_position=["lon","lat"], get_text="text", get_color=[200,200,200], get_size=32, pickable=False
-    ))
+    layers.append(pdk.Layer("TextLayer", [{"lon":CENTER_LON, "lat":CENTER_LAT, "text":"☾"}], get_position=["lon","lat"], get_text="text", get_color=[200,200,200], get_size=32, pickable=False))
 
 # Aircraft scatter layer (double size)
 if not df_ac.empty:
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", df_ac,
-        get_position=["lon","lat"], get_fill_color=[0,128,255,200], get_radius=300,
-        pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
-    ))
+    layers.append(pdk.Layer("ScatterplotLayer", df_ac, get_position=["lon","lat"], get_fill_color=[0,128,255,200], get_radius=300, pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]))
 
 # Tooltip configuration
-tooltip = {
-    "html": (
-        "<b>Callsign:</b> {callsign}<br/>"
-        "<b>Alt:</b> {alt} m<br/>"
-        "<b>Speed:</b> {vel} m/s<br/>"
-        "<b>Heading:</b> {hdg}°"
-    ),
-    "style": {"backgroundColor":"black","color":"white"}
-}
+tooltip = {"html": "<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} m<br/><b>Speed:</b> {vel} m/s<br/><b>Heading:</b> {hdg}°", "style": {"backgroundColor":"black","color":"white"}}
 
 # Render map
-deck = pdk.Deck(
-    layers=layers,
-    initial_view_state=view,
-    map_style="light",
-    tooltip=tooltip
-)
+deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light", tooltip=tooltip)
 st.pydeck_chart(deck, use_container_width=True)
+
 
 # Alerts with screen, audio, and pushover
 beep_html = """
