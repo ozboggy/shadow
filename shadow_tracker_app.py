@@ -91,7 +91,7 @@ with st.sidebar:
     radius_km     = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun     = st.checkbox("Show Sun Shadows",   value=True)
     track_moon    = st.checkbox("Show Moon Shadows",  value=False)
-    alert_width   = st.slider("Shadow Alert Width (m)", 0, 100000, 50)
+    alert_width   = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
     st.markdown("---")
@@ -182,6 +182,16 @@ if not df_ac.empty:
     df_ac[['alt', 'vel', 'hdg']] = df_ac[['alt','vel','hdg']].apply(
         pd.to_numeric, errors='coerce'
     ).fillna(0)
+    # Distance from home (meters and miles)
+    df_ac['distance_m'] = df_ac.apply(
+        lambda r: hav(r['lat'], r['lon'], CENTER_LAT, CENTER_LON), axis=1)
+    df_ac['distance_mi'] = df_ac['distance_m'] / 1609.34
+    # Count military aircraft within 200 miles
+    mil_df = df_ac[
+        df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)', na=False) &
+        (df_ac['distance_mi'] <= 200)
+    ]
+    mil_count = len(mil_df)
 
 # ───────── Sidebar Status ─────────
 st.sidebar.markdown("### Status")
@@ -191,6 +201,9 @@ if moon_alt is not None:
 else:
     st.sidebar.warning("Moon data unavailable")
 st.sidebar.markdown(f"Total airborne aircraft: **{len(df_ac)}**")
+# New military count
+if not df_ac.empty:
+    st.sidebar.markdown(f"Military within 200mi: **{mil_count}**")
 
 # ───────── Compute Shadow Paths ─────────
 sun_trails, moon_trails = [], []
