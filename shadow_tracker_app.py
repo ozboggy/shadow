@@ -214,7 +214,7 @@ if moon_alt is not None:
     st.sidebar.markdown(f"Moon altitude: {'🟢' if moon_alt>0 else '🔴'} {moon_alt:.1f}°")
 else:
     st.sidebar.warning("Moon data unavailable")
-st.sidebar.markdown(f"Total airborne aircraft: **{len(df_ac)}**")
+st.sidebar.metric(label="Total airborne aircraft", value=len(df_ac))
 # Military aircraft count metric
 st.sidebar.metric(label="Military (≤200 mi)", value=f"{mil_count}")
 
