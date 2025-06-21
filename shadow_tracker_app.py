@@ -259,7 +259,8 @@ for m in ring_miles:
     ring.append(ring[0])
     # draw ring as faint thin path
     layers.append(pdk.Layer(
-        "PathLayer", [{"path": ring}],
+        "PathLayer",
+        data=[{"path": ring}],
         get_path="path",
         get_color=[0, 200, 0, 120],    # slightly darker, faint green
         width_scale=100,               # thin lines
@@ -269,13 +270,14 @@ for m in ring_miles:
     # add label at top of ring
     label_lon, label_lat = ring[0]
     layers.append(pdk.Layer(
-        "TextLayer", [{"text": f"{m} mi", "position": [label_lon, label_lat]}],
+        "TextLayer",
+        data=[{"text": f"{m} mi", "position": [label_lon, label_lat]}],
         get_position="position",
         get_text="text",
         get_color=[0, 200, 0, 200],     # darker text
         get_size=16,
         pickable=False
-    )))
+    ))
 
 # Shadow trails layer
 if sun_trails:
