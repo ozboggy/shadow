@@ -257,6 +257,21 @@ for m in ring_miles:
             CENTER_LAT + lat_diff * math.cos(rad)
         ])
     ring.append(ring[0])
+    # draw ring as thin, faint path
+    layers.append(pdk.Layer(
+        "PathLayer", [{"path": ring}],
+        get_path="path", get_color=[0, 255, 0, 100],  # fainter green
+        width_scale=200, width_min_pixels=1          # thinner lines
+    )) / 111111
+    lon_diff = lat_diff / math.cos(math.radians(CENTER_LAT))
+    ring = []
+    for ang in range(0, 360, 5):
+        rad = math.radians(ang)
+        ring.append([
+            CENTER_LON + lon_diff * math.sin(rad),
+            CENTER_LAT + lat_diff * math.cos(rad)
+        ])
+    ring.append(ring[0])
     # draw ring as path
     layers.append(pdk.Layer(
         "PathLayer", [{"path": ring}],
