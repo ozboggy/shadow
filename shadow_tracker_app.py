@@ -10,7 +10,7 @@ import pandas as pd
 import plotly.express as px
 import pydeck as pdk
 import folium
-from folium.plugins import ClickForLatLng
+from folium.plugins import LatLngPopup
 from streamlit_folium import st_folium
 from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude, get_azimuth
@@ -83,7 +83,7 @@ def hav(lat1, lon1, lat2, lon2):
 
 def log_alert(callsign: str, lat: float, lon: float, time_until: float, distance_mi: float):
     df = pd.read_csv(log_path)
-    new_row = pd.DataFrame([{  
+    new_row = pd.DataFrame([{
         "Time UTC": datetime.now(timezone.utc).isoformat(),
         "Callsign": callsign,
         "Lat": lat,
@@ -99,6 +99,21 @@ DEFAULT_RADIUS_KM = 10
 FORECAST_INTERVAL_S = 30
 FORECAST_DURATION_MIN = 5
 
+# Function to update home via map click
+def handle_update_home():
+    st.markdown("### Click map to set new home location")
+    m = folium.Map(location=[CENTER_LAT, CENTER_LON], zoom_start=DEFAULT_RADIUS_KM)
+    m.add_child(LatLngPopup())
+    click_data = st_folium(m, width=700, height=500)
+    if click_data and click_data.get('last_clicked'):
+        lat = click_data['last_clicked']['lat']
+        lon = click_data['last_clicked']['lng']
+        st.success(f"Home set to {lat:.6f}, {lon:.6f}")
+        with open(home_config, 'w') as f:
+            json.dump({'lat': lat, 'lon': lon}, f)
+        return lat, lon
+    return None, None
+
 # Sidebar controls
 with st.sidebar:
     st.header("Map Options")
@@ -112,44 +127,29 @@ with st.sidebar:
     st.markdown("---")
     if os.path.exists(log_path):
         st.download_button(
-            label="📥 Download alert_log.csv",
-            data=open(log_path, "rb"),
-            file_name="alert_log.csv",
-            mime="text/csv"
+            "📥 Download alert_log.csv",
+            open(log_path, 'rb'),
+            "alert_log.csv",
+            "text/csv"
         )
     else:
         st.info("No alert_log.csv yet")
 
-# Update home location via map click
-def handle_update_home():
-    st.markdown("### Click map below to set new home location")
-    m = folium.Map(location=[CENTER_LAT, CENTER_LON], zoom_start=DEFAULT_RADIUS_KM)
-    ClickForLatLng(popup="Lat: {lat}, Lon: {lng}").add_to(m)
-    click_data = st_folium(m, width=700, height=500)
-    if click_data and click_data.get("last_clicked"):
-        lat = click_data["last_clicked"]["lat"]
-        lon = click_data["last_clicked"]["lng"]
-        st.success(f"Home location updated to {lat:.6f}, {lon:.6f}")
-        with open(home_config, 'w') as f:
-            json.dump({'lat': lat, 'lon': lon}, f)
-        return lat, lon
-    return None, None
-
+# Handle home update
 if update_home:
-    new_lat, new_lon = handle_update_home()
-    if new_lat and new_lon:
-        CENTER_LAT, CENTER_LON = new_lat, new_lon
+    new = handle_update_home()
+    if new[0] is not None:
+        CENTER_LAT, CENTER_LON = new
 
 # Current UTC time
 now_utc = datetime.now(timezone.utc)
 
-# Sun & moon altitude
+# Sun & Moon altitude
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
 moon_alt = None
 if ephem:
     obs = ephem.Observer()
-    obs.lat, obs.lon = str(CENTER_LAT), str(CENTER_LON)
-    obs.date = now_utc
+    obs.lat, obs.lon, obs.date = str(CENTER_LAT), str(CENTER_LON), now_utc
     moon = ephem.Moon(obs)
     moon_alt = math.degrees(moon.alt)
 
@@ -161,40 +161,34 @@ if RAPIDAPI_KEY:
     try:
         r = requests.get(url, headers=headers)
         r.raise_for_status()
-        adsb_data = r.json().get("ac", [])
+        data = r.json().get("ac", [])
     except Exception:
         st.warning("Failed to fetch ADS-B data.")
-        adsb_data = []
+        data = []
 else:
-    adsb_data = []
-
-for ac in adsb_data:
+    data = []
+for ac in data:
     try:
-        lat = float(ac.get("lat")); lon = float(ac.get("lon"))
+        lat, lon = float(ac.get('lat')), float(ac.get('lon'))
     except:
         continue
-    callsign = (ac.get("flight") or ac.get("hex") or "").strip()
-    try: alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
-    except: alt_val = 0.0
-    try: vel = float(ac.get("gs") or ac.get("spd") or 0)
-    except: vel = 0.0
-    try: hdg = float(ac.get("track") or ac.get("trak") or 0)
-    except: hdg = 0.0
+    cs = (ac.get('flight') or ac.get('hex') or '').strip()
+    alt_val = float(ac.get('alt_geo') or ac.get('alt_baro') or 0)
+    vel = float(ac.get('gs') or ac.get('spd') or 0)
+    hdg = float(ac.get('track') or ac.get('trak') or 0)
     if alt_val > 0:
-        aircraft_list.append({"lat": lat, "lon": lon,
-                              "alt": alt_val, "vel": vel,
-                              "hdg": hdg, "callsign": callsign})
+        aircraft_list.append({'lat': lat, 'lon': lon, 'alt': alt_val,
+                              'vel': vel, 'hdg': hdg, 'callsign': cs})
 
-# Aircraft DataFrame and metrics
-
+# Aircraft DataFrame & metrics
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
-    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric,errors='coerce').fillna(0)
+    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric, errors='coerce').fillna(0)
     df_ac['alt_ft'] = df_ac['alt'] * 3.28084
     df_ac['vel_kt'] = df_ac['vel'] * 1.94384
-    df_ac['distance_m'] = df_ac.apply(lambda r: hav(r['lat'],r['lon'],CENTER_LAT,CENTER_LON),axis=1)
-    df_ac['distance_mi'] = df_ac['distance_m']/1609.34
-    mil_df = df_ac[df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)',na=False) & (df_ac['distance_mi']<=200)]
+    df_ac['distance_m'] = df_ac.apply(lambda r: hav(r['lat'], r['lon'], CENTER_LAT, CENTER_LON), axis=1)
+    df_ac['distance_mi'] = df_ac['distance_m'] / 1609.34
+    mil_df = df_ac[df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)', na=False) & (df_ac['distance_mi'] <= 200)]
     mil_count = len(mil_df)
 
 # Sidebar status
@@ -208,33 +202,31 @@ st.sidebar.markdown(f"Total airborne aircraft: **{len(df_ac)}**")
 if not df_ac.empty:
     st.sidebar.markdown(f"Military within 200mi: **{mil_count}**")
 
-# Build shadow trails for map
-sun_trails, moon_trails = [], []
+# Build shadow trails
+sun_trails = []
 if not df_ac.empty:
     for _, row in df_ac.iterrows():
         cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
-        s_path, m_path = [], []
+        s_path = []
         for i in range(0, FORECAST_INTERVAL_S*FORECAST_DURATION_MIN+1, FORECAST_INTERVAL_S):
             t = now_utc + timedelta(seconds=i)
             d = row['vel'] * i
-            dlat = d*math.cos(math.radians(row['hdg']))/111111
-            dlon = d*math.sin(math.radians(row['hdg']))/(111111*math.cos(math.radians(lat0)))
-            li, lo = lat0+dlat, lon0+dlon
-            # sun
+            dlat = d * math.cos(math.radians(row['hdg'])) / 111111
+            dlon = d * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
+            li, lo = lat0 + dlat, lon0 + dlon
             if track_sun:
                 sa, saz = get_altitude(li, lo, t), get_azimuth(li, lo, t)
-                if sa>0:
-                    sd = row['alt']/math.tan(math.radians(sa))
-                    shlat = li+(sd/111111)*math.cos(math.radians(saz+180))
-                    shlon = lo+(sd/(111111*math.cos(math.radians(li))))*math.sin(math.radians(saz+180))
+                if sa > 0:
+                    sd = row['alt'] / math.tan(math.radians(sa))
+                    shlat = li + (sd/111111) * math.cos(math.radians(saz+180))
+                    shlon = lo + (sd/(111111 * math.cos(math.radians(li)))) * math.sin(math.radians(saz+180))
                     s_path.append([shlon, shlat])
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
 
 # Map rendering
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
-layers=[]
-# sun trails
+layers = []
 if track_sun and sun_trails:
     df_s = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
@@ -246,23 +238,22 @@ if track_sun and sun_trails:
         "ScatterplotLayer", curr,
         get_position=["lon","lat"],
         get_fill_color=[50,50,50,255], get_radius=100,
-        pickable=True # enable hover
+        pickable=True
     ))
-# alert circle
-circle=[]
+# Alert circle
+circle = []
 for ang in range(0,360,5):
-    b=math.radians(ang)
-    dy=(alert_width/111111)*math.cos(b)
-    dx=(alert_width/(111111*math.cos(math.radians(CENTER_LAT))))*math.sin(b)
+    b = math.radians(ang)
+    dy = (alert_width/111111)*math.cos(b)
+    dx = (alert_width/(111111*math.cos(math.radians(CENTER_LAT))))*math.sin(b)
     circle.append([CENTER_LON+dx, CENTER_LAT+dy])
-
 circle.append(circle[0])
 layers.append(pdk.Layer(
     "PolygonLayer", [{"polygon": circle}],
     get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True,
     get_line_color=[255,0,0], get_line_width=3, pickable=False
 ))
-# aircraft scatter with enhanced tooltip
+# Aircraft layer
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
@@ -271,8 +262,7 @@ if not df_ac.empty:
         pickable=True, auto_highlight=True,
         highlight_color=[255,255,0,255]
     ))
-# tooltip showing callsign, alt (ft), speed (kt), heading
-# tooltip showing callsign, alt (ft), speed (kt), heading
+# Tooltip
 tooltip = {
     "html": (
         "<b>Callsign:</b> {callsign}<br/>"
@@ -282,24 +272,20 @@ tooltip = {
     ),
     "style": {"backgroundColor":"black","color":"white"}
 }
-
-
-deck = pdk.Deck(
+# Render deck
+st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view,
     map_style="light",
     tooltip=tooltip
-)
-st.pydeck_chart(deck, use_container_width=True)
+), use_container_width=True)
 
 # Alert detection & logging
 for trail in sun_trails:
     for lon, lat in trail['path']:
         if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
             cs = trail['callsign']
-            # estimate distance & transit for this point
             dist_mi = hav(lat, lon, CENTER_LAT, CENTER_LON)/1609.34
-            # find index for transit time
             idx = trail['path'].index([lon, lat])
             transit = idx * FORECAST_INTERVAL_S
             st.error(f"🚨 Sun shadow by {cs}: {dist_mi:.1f} mi away, {transit} sec transit")
@@ -313,7 +299,7 @@ try:
     df_log = pd.read_csv(log_path)
     if not df_log.empty:
         df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-        df_log['y']=0
+        df_log['y'] = 0
         df_disp = df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']].copy()
         df_disp.rename(columns={'Time Until Alert (sec)':'Transit (s)'}, inplace=True)
         st.markdown("### 📊 Recent Alerts")
