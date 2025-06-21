@@ -50,7 +50,7 @@ def hav(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
     return R * 2 * math.asin(math.sqrt(a))
 
 # Defaults
@@ -66,7 +66,7 @@ with st.sidebar:
     radius_km     = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun     = st.checkbox("Show Sun Shadows", True)
     track_moon    = st.checkbox("Show Moon Shadows", False)
-    alert_width   = st.slider("Shadow Alert Width (m)", 0, 10000, 50)
+    alert_width   = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
 
@@ -158,16 +158,16 @@ if not df_ac.empty:
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
-            # sun path
+            # sun point
             sa = get_altitude(lat_i, lon_i, t)
             saz = get_azimuth(lat_i, lon_i, t)
             if sa > 0 and track_sun:
                 sd = row['alt'] / math.tan(math.radians(sa))
-                sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
-                sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
-                s_path.append((t, sh_lon, sh_lat))
+                sh_lat = lat_i + (sd/111111)*math.cos(math.radians(saz+180))
+                sh_lon = lon_i + (sd/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(saz+180))
+                s_path.append({"lon": sh_lon, "lat": sh_lat, "callsign": cs})
 
-            # moon path
+            # moon point
             if ephem and track_moon:
                 obs.date = t
                 m = ephem.Moon(obs)
@@ -175,73 +175,85 @@ if not df_ac.empty:
                 maz = math.degrees(m.az)
                 if ma > 0:
                     md = row['alt'] / math.tan(math.radians(ma))
-                    mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
-                    mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
-                    m_path.append((t, mh_lon, mh_lat))
+                    mh_lat = lat_i + (md/111111)*math.cos(math.radians(maz+180))
+                    mh_lon = lon_i + (md/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(maz+180))
+                    m_path.append({"lon": mh_lon, "lat": mh_lat, "callsign": cs})
 
         if s_path:
-            sun_trails.append({"callsign": cs, "path": s_path})
+            sun_trails.append({"path": [ [p["lon"], p["lat"]] for p in s_path ], "callsign": cs})
         if m_path:
-            moon_trails.append({"callsign": cs, "path": m_path})
+            moon_trails.append({"path": [ [p["lon"], p["lat"]] for p in m_path ], "callsign": cs})
 
 # Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
+# Aircraft layer with full info
 if not df_ac.empty:
     layers.append(pdk.Layer(
-        "ScatterplotLayer", df_ac,
-        get_position=["lon","lat"], get_color=[0,128,255,200],
-        get_radius=100, pickable=True
+        "ScatterplotLayer",
+        df_ac,
+        get_position=["lon","lat"],
+        get_color=[0,128,255,200],
+        get_radius=100,
+        pickable=True
     ))
 
+# Sun path layer carries callsign into the layer’s data
 if track_sun and sun_trails:
-    df_sun = pd.DataFrame([
-        {"path": [ [lon, lat] for _, lon, lat in tr["path"] ]}
-        for tr in sun_trails
-    ])
+    df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
-        "PathLayer", df_sun,
-        get_path="path", get_color=[255,215,0,150],
-        width_scale=10, width_min_pixels=2, pickable=True
+        "PathLayer",
+        df_sun,
+        get_path="path",
+        get_color=[255,215,0,150],
+        width_scale=10,
+        width_min_pixels=2,
+        pickable=True
     ))
 
+# Moon path layer likewise
 if track_moon and moon_trails:
-    df_moon = pd.DataFrame([
-        {"path": [ [lon, lat] for _, lon, lat in tr["path"] ]}
-        for tr in moon_trails
-    ])
+    df_moon = pd.DataFrame(moon_trails)
     layers.append(pdk.Layer(
-        "PathLayer", df_moon,
-        get_path="path", get_color=[135,206,250,150],
-        width_scale=10, width_min_pixels=2, pickable=True
+        "PathLayer",
+        df_moon,
+        get_path="path",
+        get_color=[135,206,250,150],
+        width_scale=10,
+        width_min_pixels=2,
+        pickable=True
     ))
 
-# alert circle polygon
+# Alert circle polygon
 circle = []
 for ang in range(0, 360, 5):
     b = math.radians(ang)
-    dy = (alert_width / 111111) * math.cos(b)
-    dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
-    circle.append([CENTER_LON + dx, CENTER_LAT + dy])
+    dy = (alert_width/111111)*math.cos(b)
+    dx = (alert_width/(111111*math.cos(math.radians(CENTER_LAT))))*math.sin(b)
+    circle.append([CENTER_LON+dx, CENTER_LAT+dy])
 circle.append(circle[0])
 layers.append(pdk.Layer(
-    "PolygonLayer", [{"polygon": circle}],
+    "PolygonLayer",
+    [{"polygon": circle}],
     get_polygon="polygon",
     get_fill_color=[255,0,0,50],
-    stroked=True, get_line_color=[255,0,0], get_line_width=2
+    stroked=True,
+    get_line_color=[255,0,0],
+    get_line_width=2
 ))
 
-# tooltip config
+# Unified tooltip—fields must exist on the layer’s data
 tooltip = {
-    "html": "<b>Callsign:</b> {callsign}<br/>"
-            "<b>Alt:</b> {alt:.0f} m<br/>"
-            "<b>Speed:</b> {vel:.0f} m/s<br/>"
-            "<b>Heading:</b> {hdg:.0f}°",
-    "style": {"backgroundColor": "black", "color": "white"}
+    "html": 
+      "<b>Callsign:</b> {callsign}<br/>"
+      "<b>Altitude:</b> {alt:.0f} m<br/>"
+      "<b>Speed:</b> {vel:.0f} m/s<br/>"
+      "<b>Heading:</b> {hdg:.0f}°",
+    "style": {"backgroundColor":"black","color":"white"}
 }
 
-# render map
+# Render map
 deck = pdk.Deck(
     layers=layers,
     initial_view_state=view,
@@ -250,44 +262,35 @@ deck = pdk.Deck(
 )
 st.pydeck_chart(deck, use_container_width=True)
 
-# Alerts with timing
-beep_html = """
+# Alerts (screen, audio, Pushover)
+beep = """
 <audio autoplay>
   <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
 </audio>
 """
-
-# sun alert
-if track_sun:
+if track_sun and sun_trails:
     for tr in sun_trails:
-        for idx, (t, lon, lat) in enumerate(tr["path"]):
+        for lon, lat in tr["path"]:
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
-                delta = t - now_utc
-                mins, secs = divmod(int(delta.total_seconds()), 60)
-                st.error(f"🚨 Sun shadow of {tr['callsign']} in {mins}m{secs}s")
-                st.markdown(beep_html, unsafe_allow_html=True)
-                send_pushover("✈️ Sun Shadow Alert",
-                              f"{tr['callsign']} in {mins}m{secs}s")
+                st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
+                st.markdown(beep, unsafe_allow_html=True)
+                send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow incoming")
                 break
 
-# moon alert
-if track_moon:
+if track_moon and moon_trails:
     for tr in moon_trails:
-        for idx, (t, lon, lat) in enumerate(tr["path"]):
+        for lon, lat in tr["path"]:
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
-                delta = t - now_utc
-                mins, secs = divmod(int(delta.total_seconds()), 60)
-                st.error(f"🚨 Moon shadow of {tr['callsign']} in {mins}m{secs}s")
-                st.markdown(beep_html, unsafe_allow_html=True)
-                send_pushover("✈️ Moon Shadow Alert",
-                              f"{tr['callsign']} in {mins}m{secs}s")
+                st.error(f"🚨 Moon shadow of {tr['callsign']} over home!")
+                st.markdown(beep, unsafe_allow_html=True)
+                send_pushover("✈️ Moon Shadow Alert", f"{tr['callsign']} shadow incoming")
                 break
 
-# Test alert with audio
+# Test alert
 if test_alert:
     ph = st.empty()
-    ph.success("🔔 Test alert triggered!")
-    st.markdown(beep_html, unsafe_allow_html=True)
+    ph.success("🔔 Test alert")
+    st.markdown(beep, unsafe_allow_html=True)
     time.sleep(5)
     ph.empty()
 
@@ -297,8 +300,7 @@ if test_pushover:
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
         ph2.error("⚠️ Missing Pushover credentials")
     else:
-        ok = send_pushover("✈️ Test", "This is a test from your app.")
-        ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
+        ok = send_pushover("✈️ Test", "This is a test")
+        ph2.success("✅ Pushover sent" if ok else "❌ Pushover failed")
     time.sleep(5)
     ph2.empty()
-
