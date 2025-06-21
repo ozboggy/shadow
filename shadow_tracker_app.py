@@ -298,10 +298,8 @@ st.pydeck_chart(deck, use_container_width=True)
 try:
     df_log = pd.read_csv(log_path)
     if not df_log.empty:
-        # parse timestamp
         df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-
-        # calculate distance from home
+        # compute distance
         df_log['distance_m'] = df_log.apply(
             lambda r: hav(r['Lat'], r['Lon'], CENTER_LAT, CENTER_LON), axis=1
         )
@@ -310,30 +308,34 @@ try:
         st.markdown("### 📊 Recent Alerts")
         st.dataframe(df_log.tail(10))
 
-        # existing bubble chart: time vs callsign
+        # 1) Callsign timeline (unchanged)
         fig1 = px.scatter(
-            df_log,
-            x="Time UTC",
-            y="Callsign",
+            df_log, x="Time UTC", y="Callsign",
             size="Time Until Alert (sec)",
-            hover_data=["Lat", "Lon"],
+            hover_data=["Lat","Lon"],
             title="Shadow Alerts Over Time"
         )
         st.plotly_chart(fig1, use_container_width=True)
 
-        # new bubble chart: time vs proximity
+        # 2) True “timeline”: all bubbles on y=0, sized by proximity
+        df_log['y'] = 0
         fig2 = px.scatter(
-            df_log,
-            x="Time UTC",
-            y="distance_mi",
-            size="Time Until Alert (sec)",
-            hover_data=["Callsign", "Lat", "Lon"],
-            title="Alert Proximity Over Time (mi)"
+            df_log, x="Time UTC", y="y",
+            size="distance_mi",            # bubble size now = how far in miles
+            hover_name="Callsign",
+            hover_data={"distance_mi":True, "Time Until Alert (sec)":True},
+            title="Alert Proximity Timeline"
         )
+        # draw a single horizontal line at y=0
+        fig2.add_hline(y=0, line_color="lightgray")
+        # hide the y-axis entirely
+        fig2.update_yaxes(visible=False, range=[-0.5,0.5])
+        # tighten margins
+        fig2.update_layout(margin={"t":50,"b":50,"l":20,"r":20})
         st.plotly_chart(fig2, use_container_width=True)
+
 except FileNotFoundError:
     st.warning(f"Alert log not found at `{log_path}`")
-
 
 # ───────── Alerts & Test Buttons ─────────
 beep_html = """
