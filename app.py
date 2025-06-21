@@ -35,6 +35,10 @@ def send_pushover(title, message, user_key, api_token):
 st.set_page_config(layout="wide")
 st.markdown("<meta http-equiv='refresh' content='30'>", unsafe_allow_html=True)
 st.title("✈️ Aircraft Shadow Forecast")
+if st.sidebar.button('🚨 Test Alert'):
+    st.warning('🚨 TEST: Shadow ALERT!')
+    st.audio('https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg', autoplay=True)
+    send_pushover('✈️ Test Alert', 'This is a test alert.', PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
 
 st.sidebar.header("Select Time")
 selected_date = st.sidebar.date_input("Date (UTC)", value=datetime.utcnow().date())
@@ -79,7 +83,18 @@ if not os.path.exists(log_path):
 
 # Fetch aircraft
 north, south, west, east = -33.0, -34.5, 150.0, 151.5
-url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{HOME_LAT}/lon/{HOME_LON}/dist/{RADIUS_KM}/"
+headers = {
+    'X-RapidAPI-Key': os.getenv('ADSBEXCHANGE_API_KEY'),
+    'X-RapidAPI-Host': 'adsbexchange-com1.p.rapidapi.com'
+}
+try:
+    r = requests.get(url, headers=headers)
+    r.raise_for_status()
+    data = r.json()
+except Exception as e:
+    st.error(f'Error fetching ADS-B Exchange data: {e}')
+    data = {}
 try:
     r = requests.get(url)
     r.raise_for_status()
@@ -211,4 +226,3 @@ map_data = st_folium(fmap, width=2000, height=1400)
 if map_data and "zoom" in map_data and "center" in map_data:
     st.session_state.zoom = map_data["zoom"]
     st.session_state.center = map_data["center"]
-
