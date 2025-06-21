@@ -30,6 +30,12 @@ PUSHOVER_USER_KEY   = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
 RAPIDAPI_KEY        = os.getenv("RAPIDAPI_KEY")
 
+# ─── Ensure the alert log exists ───
+if not os.path.exists(log_path):
+    pd.DataFrame(columns=[
+        "Time UTC", "Callsign", "Lat", "Lon", "Time Until Alert (sec)"
+    ]).to_csv(log_path, index=False)
+
 def send_pushover(title: str, message: str) -> bool:
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
         return False
@@ -59,6 +65,18 @@ def hav(lat1, lon1, lat2, lon2):
          math.sin(dlon/2)**2)
     return R * 2 * math.asin(math.sqrt(a))
 
+def log_alert(callsign: str, lat: float, lon: float, time_until: float):
+    """Append a new alert to the CSV log."""
+    df = pd.read_csv(log_path)
+    df = df.append({
+        "Time UTC": datetime.now(timezone.utc).isoformat(),
+        "Callsign": callsign,
+        "Lat": lat,
+        "Lon": lon,
+        "Time Until Alert (sec)": time_until
+    }, ignore_index=True)
+    df.to_csv(log_path, index=False)
+
 # Defaults
 CENTER_LAT             = -33.7602563
 CENTER_LON             = 150.9717434
@@ -72,7 +90,7 @@ with st.sidebar:
     radius_km     = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun     = st.checkbox("Show Sun Shadows",   value=True)
     track_moon    = st.checkbox("Show Moon Shadows",  value=False)
-    alert_width   = st.slider("Shadow Alert Width (m)", 0, 100000, 50)
+    alert_width   = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
     st.markdown("---")
@@ -181,10 +199,12 @@ if not df_ac.empty:
         s_path, m_path = [], []
         for i in range(0, FORECAST_INTERVAL_S * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_S):
             t = now_utc + timedelta(seconds=i)
-            # projected aircraft movement
+            # projected movement
             dist_m = row['vel'] * i
             dlat   = dist_m * math.cos(math.radians(row['hdg'])) / 111111
-            dlon   = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
+            dlon   = dist_m * math.sin(math.radians(row['hdg'])) / (
+                        111111 * math.cos(math.radians(lat0))
+                    )
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
             # sun shadow
@@ -213,7 +233,7 @@ if not df_ac.empty:
         if m_path:
             moon_trails.append({"path": m_path, "callsign": cs, "current": m_path[0]})
 
-# ───────── Build Map Layers ─────────
+# ───────── Build Map Layers & Render ─────────
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
@@ -221,30 +241,26 @@ layers = []
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
-        "PathLayer", df_sun,
-        get_path="path", get_color=[50,50,50,255],
-        width_scale=5, width_min_pixels=1, pickable=False
+        "PathLayer", df_sun, get_path="path",
+        get_color=[50,50,50,255], width_scale=5, width_min_pixels=1, pickable=False
     ))
     sun_current = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
     layers.append(pdk.Layer(
         "ScatterplotLayer", sun_current,
-        get_position=["lon","lat"], get_fill_color=[50,50,50,255],
-        get_radius=100, pickable=False
+        get_position=["lon","lat"], get_fill_color=[50,50,50,255], get_radius=100, pickable=False
     ))
 
 # Moon trails
 if track_moon and moon_trails:
     df_moon = pd.DataFrame(moon_trails)
     layers.append(pdk.Layer(
-        "PathLayer", df_moon,
-        get_path="path", get_color=[180,180,180,200],
-        width_scale=5, width_min_pixels=1, pickable=False
+        "PathLayer", df_moon, get_path="path",
+        get_color=[180,180,180,200], width_scale=5, width_min_pixels=1, pickable=False
     ))
     moon_current = pd.DataFrame([{"lon": m["current"][0], "lat": m["current"][1]} for m in moon_trails])
     layers.append(pdk.Layer(
         "ScatterplotLayer", moon_current,
-        get_position=["lon","lat"], get_fill_color=[180,180,180,200],
-        get_radius=100, pickable=False
+        get_position=["lon","lat"], get_fill_color=[180,180,180,200], get_radius=100, pickable=False
     ))
 
 # Alert circle
@@ -266,8 +282,7 @@ if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
         get_position=["lon","lat"], get_fill_color=[0,128,255,200],
-        get_radius=300, pickable=True, auto_highlight=True,
-        highlight_color=[255,255,0,255]
+        get_radius=300, pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
     ))
 
 tooltip = {
@@ -309,11 +324,13 @@ beep_html = """
   <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
 </audio>
 """
+
 if track_sun and sun_trails:
     for tr in sun_trails:
         for lon, lat in tr["path"]:
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
                 st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
+                log_alert(tr['callsign'], CENTER_LAT, CENTER_LON, 0)
                 st.markdown(beep_html, unsafe_allow_html=True)
                 send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
                 break
@@ -323,11 +340,12 @@ if track_moon and moon_trails:
         for lon, lat in tr["path"]:
             if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
                 st.error(f"🚨 Moon shadow of {tr['callsign']} over home!")
+                log_alert(tr['callsign'], CENTER_LAT, CENTER_LON, 0)
                 st.markdown(beep_html, unsafe_allow_html=True)
                 send_pushover("✈️ Moon Shadow Alert", f"{tr['callsign']} moon shadow at home")
                 break
 
-# Test alert
+# Test alert button
 if test_alert:
     ph = st.empty()
     ph.success("🔔 Test alert triggered!")
@@ -335,7 +353,7 @@ if test_alert:
     time.sleep(5)
     ph.empty()
 
-# Test pushover
+# Test pushover button
 if test_pushover:
     ph2 = st.empty()
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
