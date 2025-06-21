@@ -243,12 +243,26 @@ if not df_ac.empty and track_sun:
 # initialize layers list
 layers = []
 
-# Distance rings (miles) – add concentric circles
+# Distance rings (miles) – add concentric circles as PathLayer
 ring_miles = [1, 2, 5, 10, 20]
 for m in ring_miles:
     km = m * 1.60934
     lat_diff = (km * 1000) / 111111
     lon_diff = lat_diff / math.cos(math.radians(CENTER_LAT))
+    ring = []
+    for ang in range(0, 360, 5):
+        rad = math.radians(ang)
+        ring.append([
+            CENTER_LON + lon_diff * math.sin(rad),
+            CENTER_LAT + lat_diff * math.cos(rad)
+        ])
+    ring.append(ring[0])
+    # draw ring as path
+    layers.append(pdk.Layer(
+        "PathLayer", [{"path": ring}],
+        get_path="path", get_color=[0, 255, 0, 200],
+        width_scale=1000, width_min_pixels=1
+    ))
     ring = []
     for ang in range(0, 360, 5):
         rad = math.radians(ang)
@@ -372,4 +386,3 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
-
