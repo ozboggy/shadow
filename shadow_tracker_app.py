@@ -254,10 +254,6 @@ deck = pdk.Deck(
 )
 st.pydeck_chart(deck, use_container_width=True)
 
-# Alerts, Recent Alerts, Test buttons omitted for brevity
-```
-
-
 # Alert detection & logging
 for trail in sun_trails:
     for lon, lat in trail['path']:
