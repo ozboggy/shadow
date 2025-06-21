@@ -1,3 +1,4 @@
+```python
 import time
 import streamlit as st
 from dotenv import load_dotenv
@@ -55,6 +56,7 @@ def send_pushover(title: str, message: str) -> bool:
 
 
 def hav(lat1, lon1, lat2, lon2):
+    """Return haversine distance in meters."""
     R = 6_371_000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -130,6 +132,7 @@ if RAPIDAPI_KEY:
         adsb_data = []
 else:
     adsb_data = []
+
 for ac in adsb_data:
     try:
         lat = float(ac.get("lat")); lon = float(ac.get("lon"))
@@ -146,10 +149,14 @@ for ac in adsb_data:
         aircraft_list.append({"lat": lat, "lon": lon,
                               "alt": alt_val, "vel": vel,
                               "hdg": hdg, "callsign": callsign})
+
 # Aircraft DataFrame and metrics
+
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
     df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric,errors='coerce').fillna(0)
+    df_ac['alt_ft'] = df_ac['alt'] * 3.28084
+    df_ac['vel_kt'] = df_ac['vel'] * 1.94384
     df_ac['distance_m'] = df_ac.apply(lambda r: hav(r['lat'],r['lon'],CENTER_LAT,CENTER_LON),axis=1)
     df_ac['distance_mi'] = df_ac['distance_m']/1609.34
     mil_df = df_ac[df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)',na=False) & (df_ac['distance_mi']<=200)]
@@ -186,33 +193,71 @@ if not df_ac.empty:
                     shlat = li+(sd/111111)*math.cos(math.radians(saz+180))
                     shlon = lo+(sd/(111111*math.cos(math.radians(li))))*math.sin(math.radians(saz+180))
                     s_path.append([shlon, shlat])
-            # moon omitted
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
+
 # Map rendering
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers=[]
-# sun trails layer
+# sun trails
 if track_sun and sun_trails:
     df_s = pd.DataFrame(sun_trails)
-    layers.append(pdk.Layer("PathLayer", df_s, get_path="path", get_color=[50,50,50,255], width_scale=5, width_min_pixels=1))
+    layers.append(pdk.Layer(
+        "PathLayer", df_s, get_path="path",
+        get_color=[50,50,50,255], width_scale=5, width_min_pixels=1
+    ))
     curr = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
-    layers.append(pdk.Layer("ScatterplotLayer", curr, get_position=["lon","lat"], get_fill_color=[50,50,50,255], get_radius=100))
-# alert circle layer
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", curr,
+        get_position=["lon","lat"],
+        get_fill_color=[50,50,50,255], get_radius=100,
+        pickable=True # enable hover
+    ))
+# alert circle
 circle=[]
 for ang in range(0,360,5):
     b=math.radians(ang)
     dy=(alert_width/111111)*math.cos(b)
     dx=(alert_width/(111111*math.cos(math.radians(CENTER_LAT))))*math.sin(b)
     circle.append([CENTER_LON+dx, CENTER_LAT+dy])
+
 circle.append(circle[0])
-layers.append(pdk.Layer("PolygonLayer", [{"polygon": circle}], get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True, get_line_color=[255,0,0], get_line_width=3))
-# aircraft scatter
+layers.append(pdk.Layer(
+    "PolygonLayer", [{"polygon": circle}],
+    get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True,
+    get_line_color=[255,0,0], get_line_width=3, pickable=False
+))
+# aircraft scatter with enhanced tooltip
 if not df_ac.empty:
-    layers.append(pdk.Layer("ScatterplotLayer", df_ac, get_position=["lon","lat"], get_fill_color=[0,128,255,200], get_radius=300, pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]))
-# render
-deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light", tooltip={"html":"<b>Callsign:</b> {callsign}","style":{"backgroundColor":"black","color":"white"}})
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", df_ac,
+        get_position=["lon","lat"],
+        get_fill_color=[0,128,255,200], get_radius=300,
+        pickable=True, auto_highlight=True,
+        highlight_color=[255,255,0,255]
+    ))
+# tooltip showing callsign, alt (ft), speed (kt), heading
+tooltip = {
+    "html": (
+        "<b>Callsign:</b> {callsign}<br/>"
+        "<b>Alt:</b> {alt_ft:.0f} ft<br/>"
+        "<b>Speed:</b> {vel_kt:.0f} kt<br/>"
+        "<b>Heading:</b> {hdg:.0f}\u00B0"
+    ),
+    "style": {"backgroundColor":"black","color":"white"}
+}
+
+deck = pdk.Deck(
+    layers=layers,
+    initial_view_state=view,
+    map_style="light",
+    tooltip=tooltip
+)
 st.pydeck_chart(deck, use_container_width=True)
+
+# Alerts, Recent Alerts, Test buttons omitted for brevity
+```
+
 
 # Alert detection & logging
 for trail in sun_trails:
