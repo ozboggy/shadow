@@ -247,3 +247,66 @@ layers.append(pdk.Layer(
     get_line_width=3,
     pickable=False
 ))
+
+# Aircraft layers
+if not df_ac.empty:
+    df_civ = df_ac[~df_ac['mil']]
+    if not df_civ.empty:
+        layers.append(pdk.Layer(
+            "ScatterplotLayer", df_civ,
+            get_position=["lon","lat"],
+            get_fill_color=[0,128,255,200],
+            get_radius=300,
+            pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
+        ))
+    df_mil = df_ac[df_ac['mil']]
+    if not df_mil.empty:
+        layers.append(pdk.Layer(
+            "ScatterplotLayer", df_mil,
+            get_position=["lon","lat"],
+            get_fill_color=[255,0,0,255],
+            get_radius=400,
+            pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
+        ))
+
+# Render map
+deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light", tooltip=tooltip)
+st.pydeck_chart(deck, use_container_width=True)
+
+# Alerts & tests
+beep_html = """
+<audio autoplay>
+  <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
+</audio>
+"""
+if track_sun and sun_trails:
+    for tr in sun_trails:
+        for lon, lat in tr["path"]:
+            if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
+                st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
+                st.markdown(beep_html, unsafe_allow_html=True)
+                send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
+                break
+
+if track_moon and moon_trails:
+    for tr in moon_trails:
+        for lon, lat in tr["path"]:
+            if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
+                st.error(f"🚨 Moon shadow of {tr['callsign']} over home!")
+                st.markdown(beep_html, unsafe_allow_html=True)
+                send_pushover("✈️ Moon Shadow Alert", f"{tr['callsign']} moon shadow at home")
+                break
+
+if test_alert:
+    ph = st.empty(); ph.success("🔔 Test alert triggered!")
+    st.markdown(beep_html, unsafe_allow_html=True); time.sleep(5); ph.empty()
+
+if test_pushover:
+    ph2 = st.empty()
+    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
+        ph2.error("⚠️ Missing Pushover credentials")
+    else:
+        ok = send_pushover("✈️ Test", "This is a test from your app.")
+        ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
+    time.sleep(5); ph2.empty())
+
