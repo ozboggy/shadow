@@ -240,11 +240,8 @@ if not df_ac.empty and track_sun:
             sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
 
 # Distance rings (miles) – add concentric circles
-# initialize layers for map
-layers = []
 ring_miles = [1, 2, 5, 10, 20]
 for m in ring_miles:
-    # convert miles to km and then to approximate degrees
     km = m * 1.60934
     lat_diff = (km * 1000) / 111111
     lon_diff = lat_diff / math.cos(math.radians(CENTER_LAT))
@@ -259,7 +256,7 @@ for m in ring_miles:
     layers.append(pdk.Layer(
         "PolygonLayer", [{"polygon": ring}],
         get_polygon="polygon",
-        get_fill_color=[0, 255, 0, 50],  # translucent green
+        get_fill_color=[0, 255, 0, 50],
         stroked=True,
         get_line_color=[0, 255, 0],
         get_line_width=1,
@@ -370,3 +367,4 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
+
