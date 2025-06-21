@@ -104,21 +104,17 @@ else:
     adsb = []
 
 for ac in adsb:
-    # parse location
     try:
         lat = float(ac.get("lat")); lon = float(ac.get("lon"))
     except:
         continue
     cs = (ac.get("flight") or ac.get("hex") or "").strip()
-    # robust fields
     try: alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
     except: alt_val = 0.0
     try: vel = float(ac.get("gs") or ac.get("spd") or 0)
     except: vel = 0.0
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
-
-    # only include airborne
     if alt_val > 0:
         aircraft_list.append({
             "lat": lat, "lon": lon,
@@ -160,8 +156,6 @@ if not df_ac.empty:
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
-
-            # sun trail
             sa = get_altitude(lat_i, lon_i, t)
             saz = get_azimuth(lat_i, lon_i, t)
             if sa > 0 and track_sun:
@@ -169,8 +163,6 @@ if not df_ac.empty:
                 sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
                 s_path.append([sh_lon, sh_lat])
-
-            # moon trail
             if ephem and track_moon:
                 obs.date = t
                 m = ephem.Moon(obs)
@@ -181,7 +173,6 @@ if not df_ac.empty:
                     mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
                     mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
                     m_path.append([mh_lon, mh_lat])
-
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs})
         if m_path:
@@ -191,6 +182,7 @@ if not df_ac.empty:
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
+# Aircraft scatter layer
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
@@ -198,6 +190,7 @@ if not df_ac.empty:
         get_radius=100, pickable=True
     ))
 
+# Sun trails
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
@@ -206,12 +199,33 @@ if track_sun and sun_trails:
         width_scale=10, width_min_pixels=2, pickable=True
     ))
 
+# Moon trails
 if track_moon and moon_trails:
     df_moon = pd.DataFrame(moon_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_moon,
         get_path="path", get_color=[135,206,250,150],
         width_scale=10, width_min_pixels=2, pickable=True
+    ))
+
+# Sun icon at center
+if track_sun:
+    sun_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☀"}]
+    layers.append(pdk.Layer(
+        "TextLayer", sun_icon,
+        get_position=["lon","lat"],
+        get_text="text", get_color=[255,215,0], get_size=32,
+        get_alignment_baseline="bottom"
+    ))
+
+# Moon icon at center
+if ephem and track_moon:
+    moon_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☾"}]
+    layers.append(pdk.Layer(
+        "TextLayer", moon_icon,
+        get_position=["lon","lat"],
+        get_text="text", get_color=[200,200,200], get_size=32,
+        get_alignment_baseline="bottom"
     ))
 
 # Alert circle polygon
@@ -261,7 +275,6 @@ if track_sun and sun_trails:
                 st.markdown(beep_html, unsafe_allow_html=True)
                 send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
                 break
-
 if track_moon and moon_trails:
     for tr in moon_trails:
         for lon, lat in tr["path"]:
