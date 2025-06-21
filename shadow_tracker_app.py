@@ -202,7 +202,7 @@ if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_sun,
-        get_path="path", get_color=[255,215,0,150],
+        get_path="path", get_color=[255,255,0,250],
         width_scale=10, width_min_pixels=2, pickable=True
     ))
 
