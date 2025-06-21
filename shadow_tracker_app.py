@@ -298,44 +298,47 @@ st.pydeck_chart(deck, use_container_width=True)
 try:
     df_log = pd.read_csv(log_path)
     if not df_log.empty:
+        # parse timestamp
         df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-        # compute distance
-        df_log['distance_m'] = df_log.apply(
-            lambda r: hav(r['Lat'], r['Lon'], CENTER_LAT, CENTER_LON), axis=1
-        )
+
+        # compute distance from home (m & mi)
+        df_log['distance_m']  = df_log.apply(lambda r: hav(r['Lat'], r['Lon'], CENTER_LAT, CENTER_LON), axis=1)
         df_log['distance_mi'] = df_log['distance_m'] / 1609.34
 
+        # show last 10 with distance
+        df_display = df_log[
+            ['Time UTC','Callsign','distance_mi','Time Until Alert (sec)','Lat','Lon']
+        ].copy()
+        df_display.rename(columns={'distance_mi':'Distance (mi)'}, inplace=True)
         st.markdown("### 📊 Recent Alerts")
-        st.dataframe(df_log.tail(10))
+        st.dataframe(df_display.tail(10))
 
-        # 1) Callsign timeline (unchanged)
-        fig1 = px.scatter(
-            df_log, x="Time UTC", y="Callsign",
-            size="Time Until Alert (sec)",
-            hover_data=["Lat","Lon"],
-            title="Shadow Alerts Over Time"
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-
-        # 2) True “timeline”: all bubbles on y=0, sized by proximity
+        # timeline: all bubbles on y=0, sized by proximity (mi)
         df_log['y'] = 0
-        fig2 = px.scatter(
-            df_log, x="Time UTC", y="y",
-            size="distance_mi",            # bubble size now = how far in miles
-            hover_name="Callsign",
-            hover_data={"distance_mi":True, "Time Until Alert (sec)":True},
+        fig = px.scatter(
+            df_log,
+            x='Time UTC',
+            y='y',
+            size='distance_mi',
+            size_max=40,
+            hover_name='Callsign',
+            hover_data={
+                'distance_mi':':.1f',
+                'Time Until Alert (sec)':True,
+                'Lat':True,'Lon':True
+            },
+            labels={'distance_mi':'Distance (mi)'},
             title="Alert Proximity Timeline"
         )
-        # draw a single horizontal line at y=0
-        fig2.add_hline(y=0, line_color="lightgray")
-        # hide the y-axis entirely
-        fig2.update_yaxes(visible=False, range=[-0.5,0.5])
-        # tighten margins
-        fig2.update_layout(margin={"t":50,"b":50,"l":20,"r":20})
-        st.plotly_chart(fig2, use_container_width=True)
+        # horizontal axis line at y=0
+        fig.add_hline(y=0, line_color='lightgray', line_width=1)
+        fig.update_yaxes(visible=False, range=[-0.5,0.5])
+        fig.update_layout(margin=dict(t=40,b=30,l=20,r=20))
+        st.plotly_chart(fig, use_container_width=True)
 
 except FileNotFoundError:
     st.warning(f"Alert log not found at `{log_path}`")
+
 
 # ───────── Alerts & Test Buttons ─────────
 beep_html = """
