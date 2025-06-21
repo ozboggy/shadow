@@ -115,24 +115,7 @@ def handle_update_home():
 if 'updating_home' not in st.session_state:
     st.session_state.updating_home = False
 
-# Sidebar controls
-with st.sidebar:
-    st.header("Map Options")
-    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
-    track_sun = st.checkbox("Show Sun Shadows", value=True)
-    track_moon = st.checkbox("Show Moon Shadows", value=False)
-    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
-    test_alert = st.button("Test Alert")
-    test_pushover = st.button("Test Pushover")
-    if st.button("Update Home Location"):
-        st.session_state.updating_home = True
-    st.markdown("---")
-    if os.path.exists(log_path):
-        st.download_button("📥 Download alert_log.csv", open(log_path,'rb'), "alert_log.csv", "text/csv")
-    else:
-        st.info("No alert_log.csv yet")
-
-# If in update mode, show map and exit
+# If updating home, show only the map click UI
 if st.session_state.updating_home:
     handle_update_home()
     st.stop()
@@ -150,37 +133,21 @@ with st.sidebar:
         st.session_state.updating_home = True
     st.markdown("---")
     if os.path.exists(log_path):
-        st.download_button("📥 Download alert_log.csv", open(log_path,'rb'), "alert_log.csv", "text/csv")
+        st.download_button("📥 Download alert_log.csv", open(log_path, 'rb'), "alert_log.csv", "text/csv")
     else:
         st.info("No alert_log.csv yet")
 
-# Handle updating home via session state
-if st.session_state.get('updating_home'):
-    new = handle_update_home()
-    # after attempting click, stop update mode regardless
-    st.session_state.updating_home = False
-    if new[0] is not None:
-        CENTER_LAT, CENTER_LON = new
-        # reload page to apply new home
-        st.experimental_rerun()
-
-# Current UTC time
-now_utc = datetime.now(timezone.utc)
-
-if update_home:
-    new = handle_update_home()
-    if new[0] is not None:
-        CENTER_LAT, CENTER_LON = new
-
-# Current UTC time
+# Main app continues below
 now_utc = datetime.now(timezone.utc)
 
 # Sun & moon altitude
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
 moon_alt = None
 if ephem:
-    obs = ephem.Observer(); obs.lat, obs.lon, obs.date = str(CENTER_LAT), str(CENTER_LON), now_utc
-    moon = ephem.Moon(obs); moon_alt = math.degrees(moon.alt)
+    obs = ephem.Observer()
+    obs.lat, obs.lon, obs.date = str(CENTER_LAT), str(CENTER_LON), now_utc
+    moon = ephem.Moon(obs)
+    moon_alt = math.degrees(moon.alt)
 
 # Fetch ADS-B data
 aircraft_list = []
@@ -188,14 +155,20 @@ if RAPIDAPI_KEY:
     url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
     try:
-        r = requests.get(url, headers=headers); r.raise_for_status(); data = r.json().get("ac", [])
+        r = requests.get(url, headers=headers)
+        r.raise_for_status()
+        data = r.json().get("ac", [])
     except Exception:
-        st.warning("Failed to fetch ADS-B data."); data = []
+        st.warning("Failed to fetch ADS-B data.")
+        data = []
 else:
     data = []
+
 for ac in data:
-    try: lat, lon = float(ac.get('lat')), float(ac.get('lon'))
-    except: continue
+    try:
+        lat, lon = float(ac.get('lat')), float(ac.get('lon'))
+    except:
+        continue
     cs = (ac.get('flight') or ac.get('hex') or '').strip()
     alt_val = float(ac.get('alt_geo') or ac.get('alt_baro') or 0)
     vel = float(ac.get('gs') or ac.get('spd') or 0)
@@ -204,7 +177,9 @@ for ac in data:
         aircraft_list.append({'lat': lat, 'lon': lon, 'alt': alt_val,
                               'vel': vel, 'hdg': hdg, 'callsign': cs})
 
-# Aircraft DataFrame & metrics
+# Create DataFrame & metrics
+import pandas as pd
+
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
     df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric, errors='coerce').fillna(0)
@@ -228,7 +203,7 @@ if not df_ac.empty:
 
 # Build shadow trails
 sun_trails = []
-if not df_ac.empty:
+if not df_ac.empty and track_sun:
     for _, row in df_ac.iterrows():
         cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
         s_path = []
@@ -238,20 +213,19 @@ if not df_ac.empty:
             dlat = d * math.cos(math.radians(row['hdg'])) / 111111
             dlon = d * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             li, lo = lat0 + dlat, lon0 + dlon
-            if track_sun:
-                sa, saz = get_altitude(li, lo, t), get_azimuth(li, lo, t)
-                if sa > 0:
-                    sd = row['alt'] / math.tan(math.radians(sa))
-                    shlat = li + (sd/111111) * math.cos(math.radians(saz+180))
-                    shlon = lo + (sd/(111111 * math.cos(math.radians(li)))) * math.sin(math.radians(saz+180))
-                    s_path.append([shlon, shlat])
+            sa, saz = get_altitude(li, lo, t), get_azimuth(li, lo, t)
+            if sa > 0:
+                sd = row['alt'] / math.tan(math.radians(sa))
+                shlat = li + (sd/111111) * math.cos(math.radians(saz+180))
+                shlon = lo + (sd/(111111 * math.cos(math.radians(li)))) * math.sin(math.radians(saz+180))
+                s_path.append([shlon, shlat])
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
 
-# Map rendering
+# Prepare layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
-if track_sun and sun_trails:
+if sun_trails:
     df_s = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_s, get_path="path",
@@ -277,7 +251,7 @@ layers.append(pdk.Layer(
     get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True,
     get_line_color=[255,0,0], get_line_width=3, pickable=False
 ))
-# Aircraft layer
+# Aircraft scatter layer
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
@@ -296,7 +270,7 @@ tooltip = {
     ),
     "style": {"backgroundColor":"black","color":"white"}
 }
-# Render deck
+# Render map
 st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view,
@@ -338,7 +312,7 @@ except FileNotFoundError:
 
 # Test buttons
 if test_alert:
-    ph = st.empty(); ph.success("🔔 Test alert triggered!"); time.sleep(5); ph.empty()
+    ph = st.empty(); ph.success("🔔 Test alert triggered!"); time.sleep(2); ph.empty()
 if test_pushover:
     ph2 = st.empty();
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
@@ -346,5 +320,4 @@ if test_pushover:
     else:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
-    time.sleep(5); ph2.empty()
-    
+    time.sleep(2); ph2.empty()
