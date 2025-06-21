@@ -11,3 +11,4 @@ python-dotenv
 pydeck
 streamlit-autorefresh
 PyEphem
+ClickForLatLng
