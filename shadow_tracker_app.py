@@ -164,7 +164,6 @@ if not df_ac.empty:
 # Build map layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
-
 # Sun shadow trail: quarter width
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
@@ -177,10 +176,9 @@ if track_sun and sun_trails:
     sun_current = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
     layers.append(pdk.Layer(
         "ScatterplotLayer", sun_current,
-        get_position=["lon","lat"], get_fill_color=[50,50,50,255], get_radius=50,
+        get_position=["lon","lat"], get_fill_color=[50,50,50,255], get_radius=100,
         pickable=False
     ))
-
 # Moon shadow trail: quarter width
 if track_moon and moon_trails:
     df_moon = pd.DataFrame(moon_trails)
@@ -192,24 +190,9 @@ if track_moon and moon_trails:
     moon_current = pd.DataFrame([{"lon": m["current"][0], "lat": m["current"][1]} for m in moon_trails])
     layers.append(pdk.Layer(
         "ScatterplotLayer", moon_current,
-        get_position=["lon","lat"], get_fill_color=[180,180,180,200], get_radius=50,
+        get_position=["lon","lat"], get_fill_color=[180,180,180,200], get_radius=100,
         pickable=False
     ))
-
-# Add sun & moon reference icons at center
-if track_sun:
-    layers.append(pdk.Layer(
-        "TextLayer", [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☀"}],
-        get_position=["lon","lat"], get_text="text", get_color=[255,215,0], get_size=32,
-        get_alignment_baseline="bottom", pickable=False
-    ))
-if ephem and track_moon:
-    layers.append(pdk.Layer(
-        "TextLayer", [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☾"}],
-        get_position=["lon","lat"], get_text="text", get_color=[200,200,200], get_size=32,
-        get_alignment_baseline="bottom", pickable=False
-    ))
-
 # Alert circle: brighter red
 circle = []
 for ang in range(0, 360, 5):
@@ -220,10 +203,9 @@ for ang in range(0, 360, 5):
 circle.append(circle[0])
 layers.append(pdk.Layer(
     "PolygonLayer", [{"polygon": circle}],
-    get_polygon="polygon", get_fill_color=[255,0,0,150], stroked=True,
+    get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True,
     get_line_color=[255,0,0], get_line_width=3, pickable=False
 ))
-
 # Aircraft scatter (double size)
 if not df_ac.empty:
     layers.append(pdk.Layer(
@@ -231,18 +213,18 @@ if not df_ac.empty:
         get_position=["lon","lat"], get_fill_color=[0,128,255,200], get_radius=300,
         pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
     ))
-
 # Tooltip
 tooltip = {"html": (
     "<b>Callsign:</b> {callsign}<br/>"
     "<b>Alt:</b> {alt} m<br/>"
     "<b>Speed:</b> {vel} m/s<br/>"
     "<b>Heading:</b> {hdg}°"), "style": {"backgroundColor":"black","color":"white"}}
+# Render
 
-# Render map
+
+# Render
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light", tooltip=tooltip)
 st.pydeck_chart(deck, use_container_width=True)
-
 
 # Alerts with screen, audio, and pushover
 beep_html = """
