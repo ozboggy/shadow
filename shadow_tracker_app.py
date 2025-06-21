@@ -98,10 +98,10 @@ DEFAULT_RADIUS_KM = 10
 FORECAST_INTERVAL_S = 30
 FORECAST_DURATION_MIN = 5
 
-# Sidebar controls and Home Location inputs
+# Sidebar: Home & Map Options
 with st.sidebar:
     st.header("Home & Map Options")
-    # Display and save new home via text inputs
+    # Home Location inputs
     st.subheader("Home Location")
     st.markdown(f"**Current:** {CENTER_LAT:.6f}, {CENTER_LON:.6f}")
     new_lat = st.number_input("New Home Latitude", value=CENTER_LAT, format="%.6f")
@@ -113,11 +113,13 @@ with st.sidebar:
         CENTER_LAT, CENTER_LON = new_lat, new_lon
         st.experimental_rerun()
 
-    # Existing map options
+    st.markdown("---")
+    # Map settings
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
     alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
+    # Test buttons
     test_alert = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
     st.markdown("---")
@@ -127,23 +129,7 @@ with st.sidebar:
         st.info("No alert_log.csv yet")
 
 # Main app continues below
-with st.sidebar:
-    st.header("Map Options")
-    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
-    track_sun = st.checkbox("Show Sun Shadows", value=True)
-    track_moon = st.checkbox("Show Moon Shadows", value=False)
-    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
-    test_alert = st.button("Test Alert")
-    test_pushover = st.button("Test Pushover")
-    if st.button("Update Home Location"):
-        st.session_state.updating_home = True
-    st.markdown("---")
-    if os.path.exists(log_path):
-        st.download_button("📥 Download alert_log.csv", open(log_path, 'rb'), "alert_log.csv", "text/csv")
-    else:
-        st.info("No alert_log.csv yet")
-
-# Main app continues below
+now_utc = datetime.now(timezone.utc)
 now_utc = datetime.now(timezone.utc)
 
 # Sun & moon altitude
