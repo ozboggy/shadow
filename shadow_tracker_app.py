@@ -187,14 +187,23 @@ import pandas as pd
 
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
-    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric, errors='coerce').fillna(0)
-    # convert altitude to feet and round
-df_ac['alt_ft'] = (df_ac['alt'] * 3.28084).round(0).astype(int)
-    # convert speed to knots and round
-df_ac['vel_kt'] = (df_ac['vel'] * 1.94384).round(0).astype(int)
-    df_ac['distance_m'] = df_ac.apply(lambda r: hav(r['lat'], r['lon'], CENTER_LAT, CENTER_LON), axis=1)
+    # ensure numeric types
+    df_ac[['alt', 'vel', 'hdg']] = df_ac[['alt', 'vel', 'hdg']].apply(
+        pd.to_numeric, errors='coerce').fillna(0)
+    # convert altitude to feet and round to nearest ft
+    df_ac['alt_ft'] = (df_ac['alt'] * 3.28084).round().astype(int)
+    # convert speed to knots and round to nearest kt
+    df_ac['vel_kt'] = (df_ac['vel'] * 1.94384).round().astype(int)
+    # compute distances
+    df_ac['distance_m'] = df_ac.apply(
+        lambda r: hav(r['lat'], r['lon'], CENTER_LAT, CENTER_LON), axis=1
+    )
     df_ac['distance_mi'] = df_ac['distance_m'] / 1609.34
-    mil_df = df_ac[df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)', na=False) & (df_ac['distance_mi'] <= 200)]
+    # military count
+    mil_df = df_ac[
+        df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)', na=False) &
+        (df_ac['distance_mi'] <= 200)
+    ]
     mil_count = len(mil_df)
 
 # Sidebar status
