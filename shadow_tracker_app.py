@@ -66,15 +66,16 @@ def hav(lat1, lon1, lat2, lon2):
     return R * 2 * math.asin(math.sqrt(a))
 
 def log_alert(callsign: str, lat: float, lon: float, time_until: float):
-    """Append a new alert to the CSV log."""
+    """Append a new alert to the CSV log using pd.concat."""
     df = pd.read_csv(log_path)
-    df = df.append({
+    new_row = pd.DataFrame([{
         "Time UTC": datetime.now(timezone.utc).isoformat(),
         "Callsign": callsign,
         "Lat": lat,
         "Lon": lon,
         "Time Until Alert (sec)": time_until
-    }, ignore_index=True)
+    }])
+    df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(log_path, index=False)
 
 # Defaults
@@ -90,7 +91,7 @@ with st.sidebar:
     radius_km     = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun     = st.checkbox("Show Sun Shadows",   value=True)
     track_moon    = st.checkbox("Show Moon Shadows",  value=False)
-    alert_width   = st.slider("Shadow Alert Width (m)", 0, 100000, 50)
+    alert_width   = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
     st.markdown("---")
@@ -199,18 +200,14 @@ if not df_ac.empty:
         s_path, m_path = [], []
         for i in range(0, FORECAST_INTERVAL_S * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_S):
             t = now_utc + timedelta(seconds=i)
-            # projected movement
             dist_m = row['vel'] * i
             dlat   = dist_m * math.cos(math.radians(row['hdg'])) / 111111
-            dlon   = dist_m * math.sin(math.radians(row['hdg'])) / (
-                        111111 * math.cos(math.radians(lat0))
-                    )
+            dlon   = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
             # sun shadow
             if track_sun:
-                sa  = get_altitude(lat_i, lon_i, t)
-                saz = get_azimuth(lat_i, lon_i, t)
+                sa, saz = get_altitude(lat_i, lon_i, t), get_azimuth(lat_i, lon_i, t)
                 if sa > 0:
                     sd = row['alt'] / math.tan(math.radians(sa))
                     sh_lat = lat_i + (sd/111111)*math.cos(math.radians(saz+180))
@@ -233,35 +230,27 @@ if not df_ac.empty:
         if m_path:
             moon_trails.append({"path": m_path, "callsign": cs, "current": m_path[0]})
 
-# ───────── Build Map Layers & Render ─────────
+# ───────── Build Map Layers ─────────
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
 # Sun trails
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
-    layers.append(pdk.Layer(
-        "PathLayer", df_sun, get_path="path",
-        get_color=[50,50,50,255], width_scale=5, width_min_pixels=1, pickable=False
-    ))
+    layers.append(pdk.Layer("PathLayer", df_sun, get_path="path",
+                            get_color=[50,50,50,255], width_scale=5, width_min_pixels=1))
     sun_current = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", sun_current,
-        get_position=["lon","lat"], get_fill_color=[50,50,50,255], get_radius=100, pickable=False
-    ))
+    layers.append(pdk.Layer("ScatterplotLayer", sun_current,
+                            get_position=["lon","lat"], get_fill_color=[50,50,50,255], get_radius=100))
 
 # Moon trails
 if track_moon and moon_trails:
     df_moon = pd.DataFrame(moon_trails)
-    layers.append(pdk.Layer(
-        "PathLayer", df_moon, get_path="path",
-        get_color=[180,180,180,200], width_scale=5, width_min_pixels=1, pickable=False
-    ))
+    layers.append(pdk.Layer("PathLayer", df_moon, get_path="path",
+                            get_color=[180,180,180,200], width_scale=5, width_min_pixels=1))
     moon_current = pd.DataFrame([{"lon": m["current"][0], "lat": m["current"][1]} for m in moon_trails])
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", moon_current,
-        get_position=["lon","lat"], get_fill_color=[180,180,180,200], get_radius=100, pickable=False
-    ))
+    layers.append(pdk.Layer("ScatterplotLayer", moon_current,
+                            get_position=["lon","lat"], get_fill_color=[180,180,180,200], get_radius=100))
 
 # Alert circle
 circle = []
@@ -271,31 +260,26 @@ for ang in range(0, 360, 5):
     dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
     circle.append([CENTER_LON + dx, CENTER_LAT + dy])
 circle.append(circle[0])
-layers.append(pdk.Layer(
-    "PolygonLayer", [{"polygon": circle}],
-    get_polygon="polygon", get_fill_color=[255,0,0,100],
-    stroked=True, get_line_color=[255,0,0], get_line_width=3, pickable=False
-))
+layers.append(pdk.Layer("PolygonLayer", [{"polygon": circle}],
+                        get_polygon="polygon", get_fill_color=[255,0,0,100],
+                        stroked=True, get_line_color=[255,0,0], get_line_width=3))
 
 # Aircraft scatter
 if not df_ac.empty:
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", df_ac,
-        get_position=["lon","lat"], get_fill_color=[0,128,255,200],
-        get_radius=300, pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
-    ))
+    layers.append(pdk.Layer("ScatterplotLayer", df_ac,
+                            get_position=["lon","lat"], get_fill_color=[0,128,255,200],
+                            get_radius=300, pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]))
 
 tooltip = {
-    "html": (
-        "<b>Callsign:</b> {callsign}<br/>"
-        "<b>Alt:</b> {alt} m<br/>"
-        "<b>Speed:</b> {vel} m/s<br/>"
-        "<b>Heading:</b> {hdg}°"
-    ),
+    "html": (\"<b>Callsign:</b> {callsign}<br/>" +
+              "<b>Alt:</b> {alt} m<br/>" +
+              "<b>Speed:</b> {vel} m/s<br/>" +
+              "<b>Heading:</b> {hdg}°"),
     "style": {"backgroundColor":"black","color":"white"}
 }
 
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light", tooltip=tooltip)
+
 st.pydeck_chart(deck, use_container_width=True)
 
 # ───────── Recent Alerts Section ─────────
