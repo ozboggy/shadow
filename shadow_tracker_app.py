@@ -116,29 +116,20 @@ with st.sidebar:
     # Alert preferences
     on_screen_alerts = st.checkbox("Enable On-Screen Alerts", value=True)
     pushover_alerts = st.checkbox("Enable Pushover Alerts", value=True)
+
     st.markdown("---")
     # Map settings
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
     alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
+
     # Test buttons
     test_alert = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
+
     st.markdown("---")
-    if os.path.exists(log_path):
-        st.download_button("📥 Download alert_log.csv", open(log_path, 'rb'), "alert_log.csv", "text/csv")
-    else:
-        st.info("No alert_log.csv yet")
-    # Map settings
-    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
-    track_sun = st.checkbox("Show Sun Shadows", value=True)
-    track_moon = st.checkbox("Show Moon Shadows", value=False)
-    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
-    # Test buttons
-    test_alert = st.button("Test Alert")
-    test_pushover = st.button("Test Pushover")
-    st.markdown("---")
+    # Download
     if os.path.exists(log_path):
         st.download_button("📥 Download alert_log.csv", open(log_path, 'rb'), "alert_log.csv", "text/csv")
     else:
