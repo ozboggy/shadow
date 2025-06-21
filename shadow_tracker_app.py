@@ -18,7 +18,10 @@ except ImportError:
     ephem = None
 
 # Auto-refresh every second
-st_autorefresh(interval=1_000, key="datarefresh")
+try:
+    st_autorefresh(interval=1_000, key="datarefresh")
+except Exception:
+    pass
 
 # Pushover credentials
 PUSHOVER_USER_KEY  = os.getenv("PUSHOVER_USER_KEY")
@@ -67,7 +70,7 @@ with st.sidebar:
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
 
-# Current time
+# Current UTC time
 now_utc = datetime.now(timezone.utc)
 
 # Compute sun & moon altitude
@@ -94,36 +97,46 @@ if api_key:
         r = requests.get(url, headers=headers)
         r.raise_for_status()
         adsb = r.json().get("ac", [])
-    except:
+    except Exception:
         st.warning("Failed to fetch ADS-B Exchange data.")
         adsb = []
 else:
     adsb = []
 
 for ac in adsb:
+    # parse location
     try:
         lat = float(ac.get("lat")); lon = float(ac.get("lon"))
     except:
         continue
     cs = (ac.get("flight") or ac.get("hex") or "").strip()
+    # robust fields
     try: alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
     except: alt_val = 0.0
     try: vel = float(ac.get("gs") or ac.get("spd") or 0)
     except: vel = 0.0
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
-    if alt_val > 0:  # only airborne
+
+    # only include airborne
+    if alt_val > 0:
         aircraft_list.append({
             "lat": lat, "lon": lon,
             "alt": alt_val, "vel": vel,
             "hdg": hdg, "callsign": cs
         })
 
-# Total airborne aircraft count
-total_ac = len(aircraft_list)
+# Build DataFrame
+df_ac = pd.DataFrame(aircraft_list)
+if not df_ac.empty:
+    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(
+        pd.to_numeric, errors='coerce'
+    ).fillna(0)
 
-# Title and sidebar status
-st.title("✈️ Aircraft Shadow Tracker")
+# Total airborne aircraft
+total_ac = len(df_ac)
+
+# Sidebar status
 st.sidebar.markdown("### Status")
 st.sidebar.markdown(f"Sun altitude: {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°")
 if moon_alt is not None:
@@ -132,84 +145,133 @@ else:
     st.sidebar.warning("Moon data unavailable")
 st.sidebar.markdown(f"Total airborne aircraft: **{total_ac}**")
 
-# Compute shadow trails with timestamps
+# Compute shadow trails
 sun_trails = []
 moon_trails = []
-for row in aircraft_list:
-    cs = row["callsign"]
-    lat0, lon0 = row["lat"], row["lon"]
-    s_path = []
-    m_path = []
-    for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
-        t = now_utc + timedelta(seconds=i)
-        dist_m = row["vel"] * i
-        dlat = dist_m * math.cos(math.radians(row["hdg"])) / 111111
-        dlon = dist_m * math.sin(math.radians(row["hdg"])) / (111111 * math.cos(math.radians(lat0)))
-        lat_i, lon_i = lat0 + dlat, lon0 + dlon
+if not df_ac.empty:
+    for _, row in df_ac.iterrows():
+        cs = row['callsign']
+        lat0, lon0 = row['lat'], row['lon']
+        s_path = []
+        m_path = []
+        for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
+            t = now_utc + timedelta(seconds=i)
+            dist_m = row['vel'] * i
+            dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
+            dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
+            lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
-        sa = get_altitude(lat_i, lon_i, t)
-        saz = get_azimuth(lat_i, lon_i, t)
-        if sa > 0 and track_sun:
-            sd = row["alt"] / math.tan(math.radians(sa))
-            sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
-            sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
-            s_path.append({"time": t, "lon": sh_lon, "lat": sh_lat})
+            # sun trail
+            sa = get_altitude(lat_i, lon_i, t)
+            saz = get_azimuth(lat_i, lon_i, t)
+            if sa > 0 and track_sun:
+                sd = row['alt'] / math.tan(math.radians(sa))
+                sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
+                sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
+                s_path.append([sh_lon, sh_lat])
 
-        if ephem and track_moon:
-            obs.date = t
-            m = ephem.Moon(obs)
-            ma = math.degrees(m.alt)
-            maz = math.degrees(m.az)
-            if ma > 0:
-                md = row["alt"] / math.tan(math.radians(ma))
-                mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
-                mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
-                m_path.append({"time": t, "lon": mh_lon, "lat": mh_lat})
+            # moon trail
+            if ephem and track_moon:
+                obs.date = t
+                m = ephem.Moon(obs)
+                ma = math.degrees(m.alt)
+                maz = math.degrees(m.az)
+                if ma > 0:
+                    md = row['alt'] / math.tan(math.radians(ma))
+                    mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
+                    mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
+                    m_path.append([mh_lon, mh_lat])
 
-    if s_path:
-        sun_trails.append({"callsign": cs, "path": s_path})
-    if m_path:
-        moon_trails.append({"callsign": cs, "path": m_path})
+        if s_path:
+            sun_trails.append({"path": s_path, "callsign": cs})
+        if m_path:
+            moon_trails.append({"path": m_path, "callsign": cs})
 
-# Prepare map layers (no change to existing layers)
-# … [pydeck layers for scatter, sun paths, moon paths, alert circle, tooltip] …
+# Build pydeck layers
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
+layers = []
 
-# Now compute next crossover events
-def next_event(trails):
-    soonest = None
-    for tr in trails:
-        for pt in tr["path"]:
-            dist = hav(pt["lat"], pt["lon"], CENTER_LAT, CENTER_LON)
-            if dist <= alert_width:
-                dt = pt["time"] - now_utc
-                if dt.total_seconds() >= 0:
-                    if soonest is None or pt["time"] < soonest["time"]:
-                        soonest = {"callsign": tr["callsign"], "time": pt["time"], "delta": dt}
-                break
-    return soonest
+if not df_ac.empty:
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", df_ac,
+        get_position=["lon","lat"], get_color=[0,128,255,200],
+        get_radius=100, pickable=True
+    ))
 
-next_sun = next_event(sun_trails) if track_sun else None
-next_moon = next_event(moon_trails) if (ephem and track_moon) else None
+if track_sun and sun_trails:
+    df_sun = pd.DataFrame(sun_trails)
+    layers.append(pdk.Layer(
+        "PathLayer", df_sun,
+        get_path="path", get_color=[255,215,0,150],
+        width_scale=10, width_min_pixels=2, pickable=True
+    ))
 
+if track_moon and moon_trails:
+    df_moon = pd.DataFrame(moon_trails)
+    layers.append(pdk.Layer(
+        "PathLayer", df_moon,
+        get_path="path", get_color=[135,206,250,150],
+        width_scale=10, width_min_pixels=2, pickable=True
+    ))
+
+# Alert circle polygon
+circle = []
+for ang in range(0, 360, 5):
+    b = math.radians(ang)
+    dy = (alert_width / 111111) * math.cos(b)
+    dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
+    circle.append([CENTER_LON + dx, CENTER_LAT + dy])
+circle.append(circle[0])
+layers.append(pdk.Layer(
+    "PolygonLayer", [{"polygon": circle}],
+    get_polygon="polygon",
+    get_fill_color=[255,0,0,50],
+    stroked=True, get_line_color=[255,0,0], get_line_width=2
+))
+
+# Tooltip config
+tooltip = {
+    "html": "<b>Callsign:</b> {callsign}<br/>"
+            "<b>Alt:</b> {alt:.0f} m<br/>"
+            "<b>Speed:</b> {vel:.0f} m/s<br/>"
+            "<b>Heading:</b> {hdg:.0f}°",
+    "style": {"backgroundColor": "black", "color": "white"}
+}
+
+# Render map
+deck = pdk.Deck(
+    layers=layers,
+    initial_view_state=view,
+    map_style="light",
+    tooltip=tooltip
+)
+st.pydeck_chart(deck, use_container_width=True)
+
+# Alerts with screen, audio, and pushover
 beep_html = """
 <audio autoplay>
   <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
-</audio>"""
+</audio>
+"""
+if track_sun and sun_trails:
+    for tr in sun_trails:
+        for lon, lat in tr["path"]:
+            if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
+                st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
+                st.markdown(beep_html, unsafe_allow_html=True)
+                send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
+                break
 
-# Alert logic: continue alerting until crossover window ends
-if next_sun:
-    mins, secs = divmod(int(next_sun["delta"].total_seconds()), 60)
-    st.error(f"🚨 Sun shadow ({next_sun['callsign']}) crosses in {mins}m{secs}s at {next_sun['time'].strftime('%H:%M:%S UTC')}")
-    st.markdown(beep_html, unsafe_allow_html=True)
-    send_pushover("✈️ Sun Shadow Alert", f"{next_sun['callsign']} in {mins}m{secs}s")
+if track_moon and moon_trails:
+    for tr in moon_trails:
+        for lon, lat in tr["path"]:
+            if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
+                st.error(f"🚨 Moon shadow of {tr['callsign']} over home!")
+                st.markdown(beep_html, unsafe_allow_html=True)
+                send_pushover("✈️ Moon Shadow Alert", f"{tr['callsign']} moon shadow at home")
+                break
 
-if next_moon:
-    mins, secs = divmod(int(next_moon["delta"].total_seconds()), 60)
-    st.error(f"🚨 Moon shadow ({next_moon['callsign']}) crosses in {mins}m{secs}s at {next_moon['time'].strftime('%H:%M:%S UTC')}")
-    st.markdown(beep_html, unsafe_allow_html=True)
-    send_pushover("✈️ Moon Shadow Alert", f"{next_moon['callsign']} in {mins}m{secs}s")
-
-# Test alert: audio + screen
+# Test alert with audio
 if test_alert:
     ph = st.empty()
     ph.success("🔔 Test alert triggered!")
