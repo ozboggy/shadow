@@ -298,11 +298,20 @@ st.pydeck_chart(deck, use_container_width=True)
 try:
     df_log = pd.read_csv(log_path)
     if not df_log.empty:
+        # parse timestamp
         df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+
+        # calculate distance from home
+        df_log['distance_m'] = df_log.apply(
+            lambda r: hav(r['Lat'], r['Lon'], CENTER_LAT, CENTER_LON), axis=1
+        )
+        df_log['distance_mi'] = df_log['distance_m'] / 1609.34
+
         st.markdown("### 📊 Recent Alerts")
         st.dataframe(df_log.tail(10))
 
-        fig = px.scatter(
+        # existing bubble chart: time vs callsign
+        fig1 = px.scatter(
             df_log,
             x="Time UTC",
             y="Callsign",
@@ -310,9 +319,21 @@ try:
             hover_data=["Lat", "Lon"],
             title="Shadow Alerts Over Time"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig1, use_container_width=True)
+
+        # new bubble chart: time vs proximity
+        fig2 = px.scatter(
+            df_log,
+            x="Time UTC",
+            y="distance_mi",
+            size="Time Until Alert (sec)",
+            hover_data=["Callsign", "Lat", "Lon"],
+            title="Alert Proximity Over Time (mi)"
+        )
+        st.plotly_chart(fig2, use_container_width=True)
 except FileNotFoundError:
     st.warning(f"Alert log not found at `{log_path}`")
+
 
 # ───────── Alerts & Test Buttons ─────────
 beep_html = """
