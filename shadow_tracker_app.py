@@ -70,10 +70,9 @@ with st.sidebar:
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
 
-# Current UTC time
 now_utc = datetime.now(timezone.utc)
 
-# Compute sun & moon altitude
+# Compute sun & moon altitude at center
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
 if ephem:
     obs = ephem.Observer()
@@ -89,10 +88,7 @@ aircraft_list = []
 api_key = os.getenv("RAPIDAPI_KEY")
 if api_key:
     url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-    headers = {
-        "x-rapidapi-key": api_key,
-        "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
-    }
+    headers = {"x-rapidapi-key": api_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
     try:
         r = requests.get(url, headers=headers)
         r.raise_for_status()
@@ -116,23 +112,15 @@ for ac in adsb:
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
     if alt_val > 0:
-        aircraft_list.append({
-            "lat": lat, "lon": lon,
-            "alt": alt_val, "vel": vel,
-            "hdg": hdg, "callsign": cs
-        })
+        aircraft_list.append({"lat": lat, "lon": lon, "alt": alt_val, "vel": vel, "hdg": hdg, "callsign": cs})
 
 # Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
-    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(
-        pd.to_numeric, errors='coerce'
-    ).fillna(0)
-
-# Total airborne aircraft
-total_ac = len(df_ac)
+    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric, errors='coerce').fillna(0)
 
 # Sidebar status
+total_ac = len(df_ac)
 st.sidebar.markdown("### Status")
 st.sidebar.markdown(f"Sun altitude: {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°")
 if moon_alt is not None:
@@ -142,20 +130,18 @@ else:
 st.sidebar.markdown(f"Total airborne aircraft: **{total_ac}**")
 
 # Compute shadow trails
-sun_trails = []
-moon_trails = []
+sun_trails, moon_trails = [], []
 if not df_ac.empty:
     for _, row in df_ac.iterrows():
-        cs = row['callsign']
-        lat0, lon0 = row['lat'], row['lon']
-        s_path = []
-        m_path = []
+        cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
+        s_path, m_path = [], []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             t = now_utc + timedelta(seconds=i)
             dist_m = row['vel'] * i
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
+            # Sun
             sa = get_altitude(lat_i, lon_i, t)
             saz = get_azimuth(lat_i, lon_i, t)
             if sa > 0 and track_sun:
@@ -163,6 +149,7 @@ if not df_ac.empty:
                 sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
                 s_path.append([sh_lon, sh_lat])
+            # Moon
             if ephem and track_moon:
                 obs.date = t
                 m = ephem.Moon(obs)
@@ -173,62 +160,32 @@ if not df_ac.empty:
                     mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
                     mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
                     m_path.append([mh_lon, mh_lat])
-        if s_path:
-            sun_trails.append({"path": s_path, "callsign": cs})
-        if m_path:
-            moon_trails.append({"path": m_path, "callsign": cs})
+        if s_path: sun_trails.append({"path": s_path, "callsign": cs})
+        if m_path: moon_trails.append({"path": m_path, "callsign": cs})
 
-# Build pydeck layers
+# Build pydeck layers and reorder for proper hover
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
-# Aircraft scatter layer
-if not df_ac.empty:
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", df_ac,
-        get_position=["lon","lat"], get_color=[0,128,255,200],
-        get_radius=100, pickable=True
-    ))
-
-# Sun trails
+# Sun trails (non-pickable)
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_sun,
-        get_path="path", get_color=[255,215,0,150],
-        width_scale=10, width_min_pixels=2, pickable=True
+        get_path="path", get_color=[255,215,0,150], width_scale=10,
+        width_min_pixels=2, pickable=False
     ))
 
-# Moon trails
+# Moon trails (non-pickable)
 if track_moon and moon_trails:
     df_moon = pd.DataFrame(moon_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_moon,
-        get_path="path", get_color=[135,206,250,150],
-        width_scale=10, width_min_pixels=2, pickable=True
+        get_path="path", get_color=[135,206,250,150], width_scale=10,
+        width_min_pixels=2, pickable=False
     ))
 
-# Sun icon at center
-if track_sun:
-    sun_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☀"}]
-    layers.append(pdk.Layer(
-        "TextLayer", sun_icon,
-        get_position=["lon","lat"],
-        get_text="text", get_color=[255,215,0], get_size=32,
-        get_alignment_baseline="bottom"
-    ))
-
-# Moon icon at center
-if ephem and track_moon:
-    moon_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☾"}]
-    layers.append(pdk.Layer(
-        "TextLayer", moon_icon,
-        get_position=["lon","lat"],
-        get_text="text", get_color=[200,200,200], get_size=32,
-        get_alignment_baseline="bottom"
-    ))
-
-# Alert circle polygon
+# Alert circle polygon (non-pickable)
 circle = []
 for ang in range(0, 360, 5):
     b = math.radians(ang)
@@ -238,17 +195,45 @@ for ang in range(0, 360, 5):
 circle.append(circle[0])
 layers.append(pdk.Layer(
     "PolygonLayer", [{"polygon": circle}],
-    get_polygon="polygon",
-    get_fill_color=[255,0,0,50],
-    stroked=True, get_line_color=[255,0,0], get_line_width=2
+    get_polygon="polygon", get_fill_color=[255,0,0,50], stroked=True,
+    get_line_color=[255,0,0], get_line_width=2, pickable=False
 ))
 
-# Tooltip config
+# Sun icon (non-pickable)
+if track_sun:
+    sun_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☀"}]
+    layers.append(pdk.Layer(
+        "TextLayer", sun_icon,
+        get_position=["lon","lat"], get_text="text", get_color=[255,215,0],
+        get_size=32, get_alignment_baseline="bottom", pickable=False
+    ))
+
+# Moon icon (non-pickable)
+if ephem and track_moon:
+    moon_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☾"}]
+    layers.append(pdk.Layer(
+        "TextLayer", moon_icon,
+        get_position=["lon","lat"], get_text="text", get_color=[200,200,200],
+        get_size=32, get_alignment_baseline="bottom", pickable=False
+    ))
+
+# Aircraft scatter layer (top, pickable with auto-highlight)
+if not df_ac.empty:
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", df_ac,
+        get_position=["lon","lat"], get_fill_color=[0,128,255,200],
+        get_radius=150, pickable=True, auto_highlight=True,
+        highlight_color=[255,255,0,255]
+    ))
+
+# Tooltip config for all layers
 tooltip = {
-    "html": "<b>Callsign:</b> {callsign}<br/>"
-            "<b>Alt:</b> {alt:.0f} m<br/>"
-            "<b>Speed:</b> {vel:.0f} m/s<br/>"
-            "<b>Heading:</b> {hdg:.0f}°",
+    "html": (
+        "<b>Callsign:</b> {callsign}<br/>"
+        "<b>Alt:</b> {alt:.0f} m<br/>"
+        "<b>Speed:</b> {vel:.0f} m/s<br/>"
+        "<b>Heading:</b> {hdg:.0f}°"
+    ),
     "style": {"backgroundColor":"black","color":"white"}
 }
 
@@ -260,6 +245,9 @@ deck = pdk.Deck(
     tooltip=tooltip
 )
 st.pydeck_chart(deck, use_container_width=True)
+
+# (rest of alert and test logic unchanged)
+
 
 # Alerts with screen, audio, and pushover
 beep_html = """
