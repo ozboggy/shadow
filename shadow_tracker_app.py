@@ -110,8 +110,8 @@ with st.sidebar:
         with open(home_config, "w") as f:
             json.dump({"lat": new_lat, "lon": new_lon}, f)
         st.success(f"Home updated to {new_lat:.6f}, {new_lon:.6f}")
+        # update in-memory center coordinates
         CENTER_LAT, CENTER_LON = new_lat, new_lon
-        st.experimental_rerun()
 
     st.markdown("---")
     # Map settings
@@ -329,4 +329,3 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
-
