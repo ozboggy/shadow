@@ -49,7 +49,6 @@ FORECAST_DURATION_MINUTES = 5
 # Sidebar
 with st.sidebar:
     st.header("Map Options")
-    data_source = st.selectbox("Data Source", ["OpenSky", "ADS-B Exchange"], index=0)
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", True)
     alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
@@ -59,101 +58,111 @@ with st.sidebar:
 # Time
 time_now = datetime.now(timezone.utc)
 
-st.title(f"✈️ Aircraft Shadow Tracker ({data_source})")
+st.title("✈️ Aircraft Shadow Tracker (ADS-B Exchange)")
 
-# Fetch
+# Fetch ADS-B Exchange data
 aircraft_list = []
-if data_source == "OpenSky":
-    dr = radius_km/111
-    south, north = CENTER_LAT-dr, CENTER_LAT+dr
-    dlon = dr/math.cos(math.radians(CENTER_LAT))
-    west, east = CENTER_LON-dlon, CENTER_LON+dlon
-    url = f"https://opensky-network.org/api/states/all?lamin={south}&lomin={west}&lamax={north}&lomax={east}"
+api_key = os.getenv("RAPIDAPI_KEY")
+adsb = []
+if api_key:
+    url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
+    headers = {
+        "x-rapidapi-key": api_key,
+        "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
+    }
     try:
-        r = requests.get(url); r.raise_for_status(); states = r.json().get("states",[])
+        r = requests.get(url, headers=headers)
+        r.raise_for_status()
+        adsb = r.json().get("ac", [])
+    except Exception:
+        st.warning("Failed to fetch ADS-B Exchange data.")
+for ac in adsb:
+    try:
+        lat = float(ac.get("lat")); lon = float(ac.get("lon"))
     except:
-        states = []
-    for s in states:
-        if len(s)<11: continue
-        cs = (s[1] or "").strip() or s[0]
-        lat, lon = s[6], s[5]
-        alt = s[13] or s[7] or 0.0
-        try: vel = float(s[9])
-        except: vel = 0.0
-        try: hdg = float(s[10])
-        except: hdg = 0.0
-        aircraft_list.append({"lat":lat,"lon":lon,"alt":float(alt),"vel":vel,"hdg":hdg,"callsign":cs})
-elif data_source == "ADS-B Exchange":
-    api_key=os.getenv("RAPIDAPI_KEY"); adsb=[]
-    if api_key:
-        url=f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-        headers={"x-rapidapi-key":api_key,"x-rapidapi-host":"adsbexchange-com1.p.rapidapi.com"}
-        try: r2=requests.get(url,headers=headers); r2.raise_for_status(); adsb=r2.json().get("ac",[])
-        except: adsb=[]
-    for ac in adsb:
-        try: lat=float(ac.get("lat")); lon=float(ac.get("lon"))
-        except: continue
-        cs = (ac.get("flight") or ac.get("hex") or "").strip()
-        alt_raw = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
-        try: alt_val=float(alt_raw)
-        except: alt_val=0.0
-        try: vel=float(ac.get("gs") or ac.get("spd") or 0)
-        except: vel=0.0
-        try: hdg=float(ac.get("track") or ac.get("trak") or 0)
-        except: hdg=0.0
-        aircraft_list.append({"lat":lat,"lon":lon,"alt":alt_val,"vel":vel,"hdg":hdg,"callsign":cs})
+        continue
+    cs = (ac.get("flight") or ac.get("hex") or "").strip()
+    alt_raw = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
+    try: alt_val = float(alt_raw)
+    except: alt_val = 0.0
+    try: vel = float(ac.get("gs") or ac.get("spd") or 0)
+    except: vel = 0.0
+    try: hdg = float(ac.get("track") or ac.get("trak") or 0)
+    except: hdg = 0.0
+    aircraft_list.append({
+        "lat": lat, "lon": lon,
+        "alt": alt_val, "vel": vel,
+        "hdg": hdg, "callsign": cs
+    })
 
 # DataFrame
-df_ac=pd.DataFrame(aircraft_list)
+df_ac = pd.DataFrame(aircraft_list)
 if df_ac.empty:
     st.warning("No aircraft data.")
 else:
-    df_ac[['alt','vel','hdg']]=df_ac[['alt','vel','hdg']].apply(pd.to_numeric,errors='coerce').fillna(0)
+    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric, errors='coerce').fillna(0)
 
 # Forecast trails
-trails=[]
+trails = []
 if track_sun and not df_ac.empty:
     for _, row in df_ac.iterrows():
-        cs=row['callsign']; path=[]
-        lat0,lon0=row['lat'],row['lon']
-        for i in range(0,FORECAST_INTERVAL_SECONDS*FORECAST_DURATION_MINUTES+1,FORECAST_INTERVAL_SECONDS):
-            ft=time_now+timedelta(seconds=i)
+        cs = row['callsign']; path = []
+        lat0, lon0 = row['lat'], row['lon']
+        for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
+            ft = time_now + timedelta(seconds=i)
             # move plane
-            dist_m=row['vel']*i
-            dlat=dist_m*math.cos(math.radians(row['hdg']))/111111
-            dlon=dist_m*math.sin(math.radians(row['hdg']))/(111111*math.cos(math.radians(lat0)))
-            lat_i=lat0+dlat; lon_i=lon0+dlon
-            sun_alt=get_altitude(lat_i,lon_i,ft); sun_az=get_azimuth(lat_i,lon_i,ft)
-            if sun_alt>0:
-                shadow_dist=row['alt']/math.tan(math.radians(sun_alt))
-                sh_lat=lat_i+(shadow_dist/111111)*math.cos(math.radians(sun_az+180))
-                sh_lon=lon_i+(shadow_dist/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(sun_az+180))
-                path.append([sh_lon,sh_lat])
-        if path: trails.append({'path':path,'callsign':cs})
+            dist_m = row['vel'] * i
+            dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
+            dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
+            lat_i, lon_i = lat0 + dlat, lon0 + dlon
+            sun_alt = get_altitude(lat_i, lon_i, ft)
+            sun_az = get_azimuth(lat_i, lon_i, ft)
+            if sun_alt > 0:
+                shadow_dist = row['alt'] / math.tan(math.radians(sun_alt))
+                sh_lat = lat_i + (shadow_dist / 111111) * math.cos(math.radians(sun_az + 180))
+                sh_lon = lon_i + (shadow_dist / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(sun_az + 180))
+                path.append([sh_lon, sh_lat])
+        if path:
+            trails.append({'path': path, 'callsign': cs})
 
 # Build map
-view=pdk.ViewState(latitude=CENTER_LAT,longitude=CENTER_LON,zoom=DEFAULT_RADIUS_KM)
-layers=[]
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
+layers = []
 if not df_ac.empty:
-    layers.append(pdk.Layer("ScatterplotLayer",df_ac,get_position=["lon","lat"],get_color=[0,128,255,200],get_radius=100,pickable=True))
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", df_ac,
+        get_position=["lon","lat"], get_color=[0,128,255,200],
+        get_radius=100, pickable=True
+    ))
 if track_sun and trails:
-    df_trails=pd.DataFrame(trails)
-    layers.append(pdk.Layer("PathLayer",df_trails,get_path="path",get_color=[0,0,0,150],width_scale=10,width_min_pixels=2,pickable=False))
-# home
-layers.append(pdk.Layer("ScatterplotLayer",pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),get_position=["lon","lat"],get_color=[255,0,0,200],get_radius=400))
+    df_trails = pd.DataFrame(trails)
+    layers.append(pdk.Layer(
+        "PathLayer", df_trails,
+        get_path="path", get_color=[0,0,0,150],
+        width_scale=10, width_min_pixels=2, pickable=False
+    ))
+# home marker
+layers.append(pdk.Layer(
+    "ScatterplotLayer",
+    pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
+    get_position=["lon","lat"], get_color=[255,0,0,200], get_radius=400
+))
 
-# render
-deck=pdk.Deck(layers=layers,initial_view_state=view,map_style="light")
+deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
 st.pydeck_chart(deck)
 
 # Alerts
 if track_sun and trails:
     for tr in trails:
-        for lon,lat in tr['path']:
-            if hav(lat,lon,CENTER_LAT,CENTER_LON)<=alert_width:
+        for lon, lat in tr['path']:
+            if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
                 st.error(f"🚨 Shadow of {tr['callsign']} over home!")
-                send_pushover("✈️ Shadow Alert",f"{tr['callsign']} shadow at home")
+                send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
                 break
-# test
-if test_alert: st.success("Test alert triggered")
-if test_pushover: st.info("Sending test Pushover")
+
+# test buttons
+if test_alert:
+    st.success("Test alert triggered")
+if test_pushover:
+    send_pushover("✈️ Test", "This is a test Pushover message")
+    st.info("Test Pushover sent")
