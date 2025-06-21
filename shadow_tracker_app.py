@@ -10,7 +10,7 @@ import pandas as pd
 import plotly.express as px
 import pydeck as pdk
 import folium
-from folium.plugins import LatLngPopup
+from folium import LatLngPopup
 from streamlit_folium import st_folium
 from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude, get_azimuth
