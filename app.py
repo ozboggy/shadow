@@ -7,7 +7,10 @@ import requests
 import pydeck as pdk
 import pandas as pd
 import numpy as np
+import math
+from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude as get_sun_altitude, get_azimuth as get_sun_azimuth
+from streamlit_autorefresh import st_autorefresh
 
 # Attempt to import astral for moon calculations
 try:
@@ -17,7 +20,10 @@ except ImportError:
     MOON_AVAILABLE = False
     moon = None
 
-# Load API credentials from .env
+# Auto-refresh data only
+st_autorefresh(interval=1000, key="datarefresh")
+
+# Load API credentials
 ADSBEX_USER = os.getenv("ADSBEXCHANGE_API_USER")
 ADSBEX_TOKEN = os.getenv("ADSBEXCHANGE_API_TOKEN")
 PUSH_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
@@ -26,133 +32,126 @@ PUSH_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 # Fixed home location
 HOME_LAT, HOME_LON = -33.7605327, 150.9715184
 
-# Streamlit page config
-st.set_page_config(page_title="Aircraft Shadow Forecast", layout="wide")
+# Forecast settings
+FORECAST_INTERVAL_SECONDS = st.sidebar.number_input("Forecast Interval (s)", min_value=1, max_value=60, value=30)
+FORECAST_DURATION_MINUTES = st.sidebar.number_input("Forecast Duration (min)", min_value=1, max_value=60, value=5)
 
 # Sidebar controls
 st.sidebar.title("Controls")
-search_radius_km = st.sidebar.slider("Search Radius (km)", 10, 200, 50)
-alert_radius_m = st.sidebar.slider("Alert Radius (meters)", 100, 5000, 1000)
-show_sun = st.sidebar.checkbox("Sun Shadows", value=True)
-show_moon = st.sidebar.checkbox("Moon Shadows", value=False, disabled=not MOON_AVAILABLE)
-if not MOON_AVAILABLE and show_moon:
-    st.sidebar.warning("Astral library not installed: Moon shadows disabled.")
-refresh_sec = st.sidebar.slider("Refresh Interval (seconds)", 1, 60, 5)
+radius_km = st.sidebar.slider("Search Radius (km)", 1, 200, 50)
+alert_width = st.sidebar.slider("Shadow Alert Width (m)", 0, 5000, 50)
+show_sun = st.sidebar.checkbox("Show Sun Shadows", True)
+show_moon = st.sidebar.checkbox("Show Moon Shadows", False, disabled=not MOON_AVAILABLE)
 
 st.sidebar.markdown("---")
 if st.sidebar.button("Test On-Screen Alert"):
-    st.warning("🔔 This is a test on-screen alert")
-
+    st.warning("🔔 Test on-screen alert")
 if st.sidebar.button("Test Pushover Alert"):
     def send_pushover(title, message):
-        payload = {
-            "token": PUSH_API_TOKEN,
-            "user": PUSH_USER_KEY,
-            "title": title,
-            "message": message
-        }
-        requests.post("https://api.pushover.net/1/messages.json", data=payload)
+        if not PUSH_USER_KEY or not PUSH_API_TOKEN:
+            st.error("Pushover credentials missing.")
+            return
+        try:
+            requests.post(
+                "https://api.pushover.net/1/messages.json",
+                data={"token": PUSH_API_TOKEN, "user": PUSH_USER_KEY, "title": title, "message": message}
+            )
+        except Exception as e:
+            st.error(f"Pushover failed: {e}")
     send_pushover("Test Alert", "This is a test pushover message.")
-    st.success("Pushover test sent!")
+    st.success("Pushover test sent")
 
-debug = st.sidebar.checkbox("Debug Raw Data")
+# Haversine for alerts
+def hav(lat1, lon1, lat2, lon2):
+    R = 6371000
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
 
-# Placeholder for the map / chart
-map_placeholder = st.empty()
-# Sidebar status
-status_placeholder = st.sidebar.empty()
-
-# Function to fetch live aircraft from ADSB-Exchange
-@st.cache_data(ttl=refresh_sec)
-def fetch_aircraft(lat, lon, radius_km):
-    url = "https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
-    params = {"lat": lat, "lng": lon, "fDstL": 0, "fDstU": radius_km}
+# Fetch ADS-B Exchange data
+@st.cache_data(ttl=1)
+def fetch_adsb():
+    url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
+    params = {"lat": HOME_LAT, "lng": HOME_LON, "fDstL": 0, "fDstU": radius_km}
     try:
         resp = requests.get(url, params=params, auth=(ADSBEX_USER, ADSBEX_TOKEN), timeout=10)
         resp.raise_for_status()
-        try:
-            data = resp.json().get('acList', [])
-        except ValueError:
-            st.sidebar.error("Error: Received invalid JSON from ADSB-Exchange. Response content:")
-            st.sidebar.code(resp.text)
-            data = []
-    except requests.exceptions.RequestException as e:
-        st.sidebar.error(f"Error fetching ADSB data: {e}")
-        data = []
-    return data
+        return resp.json().get('acList', [])
+    except Exception:
+        return []
 
-# Main rendering
-def main():
-    raw = fetch_aircraft(HOME_LAT, HOME_LON, search_radius_km)
-    if debug:
-        st.sidebar.json(raw)
+# Main logic
+st.title("✈️ Aircraft Shadow Tracker")
+raw = fetch_adsb()
+if not raw:
+    st.warning("No aircraft data.")
 
-    if not raw:
-        st.sidebar.info("No aircraft data available.")
+# Parse
+df = pd.DataFrame([{ 'lat': ac.get('Lat'), 'lon': ac.get('Long'), 'alt': ac.get('Alt'),
+                    'track': ac.get('Trak'), 'spd': ac.get('Spd') or 0, 'callsign': ac.get('Call') }
+                   for ac in raw])
+if not df.empty:
+    df[['alt','spd','track']] = df[['alt','spd','track']].apply(pd.to_numeric, errors='coerce').fillna(0)
 
-    df = pd.DataFrame([{ 'lat': ac.get('Lat'), 'lon': ac.get('Long'), 'alt': ac.get('Alt'),
-                         'track': ac.get('Trak'), 'callsign': ac.get('Call') } for ac in raw])
-
-    shadows = []
-    now = pd.Timestamp.utcnow()
+# Forecast trails
+trails = []
+now = datetime.now(timezone.utc)
+if show_sun or (show_moon and MOON_AVAILABLE):
     for _, row in df.iterrows():
-        lat, lon, alt = row['lat'], row['lon'], row['alt']
-        # Sun shadow
-        if show_sun:
-            solar_elev = get_sun_altitude(HOME_LAT, HOME_LON, now)
-            solar_azi = get_sun_azimuth(HOME_LAT, HOME_LON, now)
-            if solar_elev > 0:
-                d = alt / np.tan(np.radians(solar_elev))
-                bearing = solar_azi - 180
-                end_lat = lat + (d/111320) * np.cos(np.radians(bearing))
-                end_lon = lon + (d/(40075000*np.cos(np.radians(lat))/360)) * np.sin(np.radians(bearing))
-                shadows.append({'start_lat': lat, 'start_lon': lon,
-                                'end_lat': end_lat, 'end_lon': end_lon,
-                                'color': [212,175,55]})
-        # Moon shadow if available
-        if show_moon and MOON_AVAILABLE:
-            moon_azi = moon.azimuth(now, HOME_LAT, HOME_LON)
-            moon_elev = moon.altitude(now, HOME_LAT, HOME_LON)
-            if moon_elev > 0:
-                d = alt / np.tan(np.radians(moon_elev))
-                bearing = moon_azi - 180
-                end_lat = lat + (d/111320) * np.cos(np.radians(bearing))
-                end_lon = lon + (d/(40075000*np.cos(np.radians(lat))/360)) * np.sin(np.radians(bearing))
-                shadows.append({'start_lat': lat, 'start_lon': lon,
-                                'end_lat': end_lat, 'end_lon': end_lon,
-                                'color': [128,128,128]})
+        path = []
+        lat0, lon0 = row['lat'], row['lon']
+        for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
+            t = now + timedelta(seconds=i)
+            # Move aircraft
+            d_m = row['spd'] * i
+            dlat = d_m * math.cos(math.radians(row['track'])) / 111111
+            dlon = d_m * math.sin(math.radians(row['track'])) / (111111 * math.cos(math.radians(lat0)))
+            lat_i = lat0 + dlat; lon_i = lon0 + dlon
+            # Sun
+            if show_sun:
+                elev = get_sun_altitude(lat_i, lon_i, t)
+                azi = get_sun_azimuth(lat_i, lon_i, t)
+                if elev > 0:
+                    sd = row['alt'] / math.tan(math.radians(elev))
+                    sh_lat = lat_i + (sd/111111) * math.cos(math.radians(azi+180))
+                    sh_lon = lon_i + (sd/(111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(azi+180))
+                    path.append([sh_lon, sh_lat])
+        if path:
+            trails.append({'path': path, 'callsign': row['callsign']})
 
-    df_shadows = pd.DataFrame(shadows)
+# Build map layers
+layers = []
+layers.append(pdk.Layer("ScatterplotLayer", data=df,
+                         get_position=["lon","lat"], get_radius=50, radius_units="meters",
+                         get_fill_color=[0,0,255], pickable=True))
+if trails:
+    layers.append(pdk.Layer("PathLayer", data=pd.DataFrame(trails), get_path="path",
+                             get_color=[212,175,55], width_scale=10, width_min_pixels=2))
+layers.append(pdk.Layer("ScatterplotLayer", data=pd.DataFrame([{"lat": HOME_LAT, "lon": HOME_LON}]),
+                         get_position=["lon","lat"], get_radius=alert_width, radius_units="meters",
+                         get_fill_color=[255,0,0,50]))
 
-    layers = []
-    # Home
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", data=pd.DataFrame([{'lat': HOME_LAT, 'lon': HOME_LON}]),
-        get_position='[lon, lat]', get_radius=alert_radius_m, radius_units='meters',
-        get_fill_color=[255, 0, 0]
-    ))
-    # Aircraft
-    layers.append(pdk.Layer(
-        "ScatterplotLayer", data=df,
-        get_position='[lon, lat]', get_radius=50, radius_units='meters',
-        get_fill_color=[0, 0, 255], pickable=True, auto_highlight=True
-    ))
-    # Shadows
-    if not df_shadows.empty:
-        layers.append(pdk.Layer(
-            "LineLayer", data=df_shadows,
-            get_source_position='[start_lon, start_lat]',
-            get_target_position='[end_lon, end_lat]', get_color='color', get_width=2
-        ))
+view = pdk.ViewState(latitude=HOME_LAT, longitude=HOME_LON, zoom=12)
+deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="mapbox://styles/mapbox/light-v9")
+st.pydeck_chart(deck, use_container_width=False, width=600, height=600)
 
-    view_state = pdk.ViewState(latitude=HOME_LAT, longitude=HOME_LON, zoom=12)
-    deck = pdk.Deck(layers=layers, initial_view_state=view_state,
-                    map_style='mapbox://styles/mapbox/light-v9')
-    map_placeholder.pydeck_chart(deck, use_container_width=False, width=600, height=600)
+# Alerts
+if trails:
+    for tr in trails:
+        for lon, lat in tr['path']:
+            if hav(lat, lon, HOME_LAT, HOME_LON) <= alert_width:
+                st.error(f"🚨 Shadow of {tr['callsign']} over home!")
+                # Pushover
+                if PUSH_USER_KEY and PUSH_API_TOKEN:
+                    try:
+                        requests.post(
+                            "https://api.pushover.net/1/messages.json",
+                            data={"token": PUSH_API_TOKEN, "user": PUSH_USER_KEY,
+                                  "title": "✈️ Shadow Alert", "message": f"{tr['callsign']} shadow at home"}
+                        )
+                    except:
+                        pass
+                break
 
-    status_placeholder.markdown(f"**Tracked Aircraft:** {len(df)}")
-
-if __name__ == "__main__":
-    if not MOON_AVAILABLE:
-        st.warning("Install 'astral' via pip to enable moon shadow calculations.")
-    main()
+st.sidebar.markdown(f"**Tracked Aircraft:** {len(df)}")
