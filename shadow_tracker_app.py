@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude, get_azimuth
 from streamlit_autorefresh import st_autorefresh
 
-# Attempt to import PyEphem for moon alt/az
+# Optional moon computations
 try:
     import ephem
 except ImportError:
@@ -70,12 +70,11 @@ with st.sidebar:
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
 
-# Current time
+# Current UTC time
 now_utc = datetime.now(timezone.utc)
 
-# Compute sun altitude
+# Compute sun & moon altitude
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
-# Compute moon altitude if possible
 if ephem:
     obs = ephem.Observer()
     obs.lat, obs.lon = str(CENTER_LAT), str(CENTER_LON)
@@ -110,21 +109,19 @@ for ac in adsb:
     except:
         continue
     cs = (ac.get("flight") or ac.get("hex") or "").strip()
-    # robust fields
     try: alt_val = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
     except: alt_val = 0.0
     try: vel = float(ac.get("gs") or ac.get("spd") or 0)
     except: vel = 0.0
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
-
     aircraft_list.append({
         "lat": lat, "lon": lon,
         "alt": alt_val, "vel": vel,
         "hdg": hdg, "callsign": cs
     })
 
-# Total aircraft
+# Total aircraft count
 total_ac = len(aircraft_list)
 
 # Build DataFrame
@@ -134,7 +131,7 @@ if not df_ac.empty:
         pd.to_numeric, errors='coerce'
     ).fillna(0)
 
-# Shadow trails
+# Compute shadow trails
 sun_trails = []
 moon_trails = []
 if not df_ac.empty:
@@ -145,13 +142,13 @@ if not df_ac.empty:
         m_path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             t = now_utc + timedelta(seconds=i)
-            # project movement
+            # movement projection
             dist_m = row['vel'] * i
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
-            # sun
+            # sun trail
             sa = get_altitude(lat_i, lon_i, t)
             saz = get_azimuth(lat_i, lon_i, t)
             if sa > 0 and track_sun:
@@ -160,12 +157,12 @@ if not df_ac.empty:
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
                 s_path.append([sh_lon, sh_lat])
 
-            # moon
+            # moon trail
             if ephem and track_moon:
                 obs.date = t
                 m = ephem.Moon(obs)
                 ma = math.degrees(m.alt)
-                maz= math.degrees(m.az)
+                maz = math.degrees(m.az)
                 if ma > 0:
                     md = row['alt'] / math.tan(math.radians(ma))
                     mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
@@ -177,53 +174,41 @@ if not df_ac.empty:
         if m_path:
             moon_trails.append({"path": m_path, "callsign": cs})
 
-# Title
+# Title and sidebar status
 st.title("✈️ Aircraft Shadow Tracker")
-
-# Sidebar status
 st.sidebar.markdown("### Status")
-st.sidebar.markdown(
-    f"Sun altitude: {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°"
-)
+st.sidebar.markdown(f"Sun altitude: {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°")
 if moon_alt is not None:
-    st.sidebar.markdown(
-        f"Moon altitude: {'🟢' if moon_alt>0 else '🔴'} {moon_alt:.1f}°"
-    )
+    st.sidebar.markdown(f"Moon altitude: {'🟢' if moon_alt>0 else '🔴'} {moon_alt:.1f}°")
 else:
     st.sidebar.warning("Moon data unavailable")
 st.sidebar.markdown(f"Total aircraft tracked: **{total_ac}**")
 
-# Build pydeck map
+# Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
-        get_position=["lon","lat"],
-        get_color=[0,128,255,200],
-        get_radius=100,
-        pickable=True
+        get_position=["lon","lat"], get_color=[0,128,255,200],
+        get_radius=100, pickable=True
     ))
 
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_sun,
-        get_path="path",
-        get_color=[255,215,0,150],
-        width_scale=10, width_min_pixels=2,
-        pickable=True
+        get_path="path", get_color=[255,215,0,150],
+        width_scale=10, width_min_pixels=2, pickable=True
     ))
 
 if track_moon and moon_trails:
     df_moon = pd.DataFrame(moon_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_moon,
-        get_path="path",
-        get_color=[135,206,250,150],
-        width_scale=10, width_min_pixels=2,
-        pickable=True
+        get_path="path", get_color=[135,206,250,150],
+        width_scale=10, width_min_pixels=2, pickable=True
     ))
 
 # alert circle
@@ -232,9 +217,8 @@ for ang in range(0, 360, 5):
     b = math.radians(ang)
     dy = (alert_width / 111111) * math.cos(b)
     dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
-    circle.append([CENTER_LON+dx, CENTER_LAT+dy])
+    circle.append([CENTER_LON + dx, CENTER_LAT + dy])
 circle.append(circle[0])
-
 layers.append(pdk.Layer(
     "PolygonLayer", [{"polygon": circle}],
     get_polygon="polygon",
@@ -251,8 +235,14 @@ tooltip = {
     "style": {"backgroundColor": "black", "color": "white"}
 }
 
-deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light")
-st.pydeck_chart(deck, tooltip=tooltip)
+# Render map with tooltip on Deck
+deck = pdk.Deck(
+    layers=layers,
+    initial_view_state=view,
+    map_style="light",
+    tooltip=tooltip
+)
+st.pydeck_chart(deck, use_container_width=True)
 
 # Alerts with sound
 if track_sun and sun_trails:
@@ -262,9 +252,10 @@ if track_sun and sun_trails:
                 st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
                 st.markdown(
                     """<audio autoplay>
-                        <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
+                         <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
                        </audio>""",
-                    unsafe_allow_html=True)
+                    unsafe_allow_html=True
+                )
                 send_pushover("✈️ Shadow Alert", f"{tr['callsign']} shadow at home")
                 break
 
