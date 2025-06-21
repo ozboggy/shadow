@@ -10,7 +10,7 @@ import pandas as pd
 import plotly.express as px
 import pydeck as pdk
 import folium
-from folium import LatLngPopup
+from folium.plugins import ClickForMarker
 from streamlit_folium import st_folium
 from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude, get_azimuth
@@ -37,16 +37,17 @@ PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
 # Load or set default home location
-DEFAULT_CENTER = {'lat': -33.7602563, 'lon': 150.9717434}
-if os.path.exists(home_config):
-    try:
-        cfg = json.load(open(home_config))
-        CENTER_LAT = cfg.get('lat', DEFAULT_CENTER['lat'])
-        CENTER_LON = cfg.get('lon', DEFAULT_CENTER['lon'])
-    except Exception:
-        CENTER_LAT, CENTER_LON = DEFAULT_CENTER['lat'], DEFAULT_CENTER['lon']
-else:
-    CENTER_LAT, CENTER_LON = DEFAULT_CENTER['lat'], DEFAULT_CENTER['lon']
+def load_home():
+    default = {'lat': -33.7602563, 'lon': 150.9717434}
+    if os.path.exists(home_config):
+        try:
+            cfg = json.load(open(home_config))
+            return cfg.get('lat', default['lat']), cfg.get('lon', default['lon'])
+        except:
+            return default['lat'], default['lon']
+    return default['lat'], default['lon']
+
+CENTER_LAT, CENTER_LON = load_home()
 
 # Ensure the alert log exists
 if not os.path.exists(log_path):
@@ -72,7 +73,6 @@ def send_pushover(title: str, message: str) -> bool:
 
 
 def hav(lat1, lon1, lat2, lon2):
-    """Return haversine distance in meters."""
     R = 6_371_000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -81,17 +81,16 @@ def hav(lat1, lon1, lat2, lon2):
     return R * 2 * math.asin(math.sqrt(a))
 
 
-def log_alert(callsign: str, lat: float, lon: float, time_until: float, distance_mi: float):
+def log_alert(callsign, lat, lon, time_until, distance_mi):
     df = pd.read_csv(log_path)
-    new_row = pd.DataFrame([{
+    df = pd.concat([df, pd.DataFrame([{  
         "Time UTC": datetime.now(timezone.utc).isoformat(),
         "Callsign": callsign,
         "Lat": lat,
         "Lon": lon,
         "Time Until Alert (sec)": time_until,
         "Distance (mi)": distance_mi
-    }])
-    df = pd.concat([df, new_row], ignore_index=True)
+    }])], ignore_index=True)
     df.to_csv(log_path, index=False)
 
 # Defaults
@@ -103,14 +102,14 @@ FORECAST_DURATION_MIN = 5
 def handle_update_home():
     st.markdown("### Click map to set new home location")
     m = folium.Map(location=[CENTER_LAT, CENTER_LON], zoom_start=DEFAULT_RADIUS_KM)
-    m.add_child(LatLngPopup())
+    m.add_child(ClickForMarker())
     click_data = st_folium(m, width=700, height=500)
     if click_data and click_data.get('last_clicked'):
         lat = click_data['last_clicked']['lat']
         lon = click_data['last_clicked']['lng']
-        st.success(f"Home set to {lat:.6f}, {lon:.6f}")
         with open(home_config, 'w') as f:
             json.dump({'lat': lat, 'lon': lon}, f)
+        st.success(f"Home updated to {lat:.6f}, {lon:.6f}")
         return lat, lon
     return None, None
 
@@ -126,16 +125,11 @@ with st.sidebar:
     update_home = st.button("Update Home Location")
     st.markdown("---")
     if os.path.exists(log_path):
-        st.download_button(
-            "📥 Download alert_log.csv",
-            open(log_path, 'rb'),
-            "alert_log.csv",
-            "text/csv"
-        )
+        st.download_button("📥 Download alert_log.csv", open(log_path,'rb'), "alert_log.csv", "text/csv")
     else:
         st.info("No alert_log.csv yet")
 
-# Handle home update
+# Handle updating home before plotting
 if update_home:
     new = handle_update_home()
     if new[0] is not None:
