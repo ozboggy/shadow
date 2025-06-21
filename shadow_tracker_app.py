@@ -239,6 +239,31 @@ if not df_ac.empty and track_sun:
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
 
+# Distance rings (miles) – add concentric circles
+ring_miles = [1, 2, 5, 10, 20]
+for m in ring_miles:
+    # convert miles to km and then to approximate degrees
+    km = m * 1.60934
+    lat_diff = (km * 1000) / 111111
+    lon_diff = lat_diff / math.cos(math.radians(CENTER_LAT))
+    ring = []
+    for ang in range(0, 360, 5):
+        rad = math.radians(ang)
+        ring.append([
+            CENTER_LON + lon_diff * math.sin(rad),
+            CENTER_LAT + lat_diff * math.cos(rad)
+        ])
+    ring.append(ring[0])
+    layers.append(pdk.Layer(
+        "PolygonLayer", [{"polygon": ring}],
+        get_polygon="polygon",
+        get_fill_color=[0, 255, 0, 50],  # translucent green
+        stroked=True,
+        get_line_color=[0, 255, 0],
+        get_line_width=1,
+        pickable=False
+    ))
+
 # Prepare layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
