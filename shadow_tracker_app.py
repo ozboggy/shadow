@@ -286,4 +286,3 @@ if test_pushover:
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN: ph2.error("⚠️ Missing Pushover credentials")
     else: ok=send_pushover("✈️ Test","This is a test");ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(5);ph2.empty()
-```
