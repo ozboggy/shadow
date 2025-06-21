@@ -271,15 +271,14 @@ if not df_ac.empty:
                             get_radius=300, pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]))
 
 tooltip = {
-    "html": (\"<b>Callsign:</b> {callsign}<br/>" +
-              "<b>Alt:</b> {alt} m<br/>" +
-              "<b>Speed:</b> {vel} m/s<br/>" +
-              "<b>Heading:</b> {hdg}°"),
-    "style": {"backgroundColor":"black","color":"white"}
+    "html": "<b>Callsign:</b> {callsign}<br/>" +
+             "<b>Alt:</b> {alt} m<br/>" +
+             "<b>Speed:</b> {vel} m/s<br/>" +
+             "<b>Heading:</b> {hdg}°",
+    "style": {"backgroundColor": "black", "color": "white"}
 }
 
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light", tooltip=tooltip)
-
 st.pydeck_chart(deck, use_container_width=True)
 
 # ───────── Recent Alerts Section ─────────
@@ -333,17 +332,5 @@ if track_moon and moon_trails:
 if test_alert:
     ph = st.empty()
     ph.success("🔔 Test alert triggered!")
-    st.markdown(beep_html, unsafe_allow_html=True)
-    time.sleep(5)
-    ph.empty()
+    st.markdown(beep_html, unsafe
 
-# Test pushover button
-if test_pushover:
-    ph2 = st.empty()
-    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        ph2.error("⚠️ Missing Pushover credentials")
-    else:
-        ok = send_pushover("✈️ Test", "This is a test from your app.")
-        ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
-    time.sleep(5)
-    ph2.empty()
