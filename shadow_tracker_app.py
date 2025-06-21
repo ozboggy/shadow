@@ -247,7 +247,6 @@ tooltip = {
     "style": {"backgroundColor":"black","color":"white"}
 }
 
-}
 
 deck = pdk.Deck(
     layers=layers,
