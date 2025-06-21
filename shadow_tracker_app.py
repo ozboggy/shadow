@@ -240,7 +240,7 @@ if not df_ac.empty and track_sun:
             sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
 
 # Distance rings (miles) – add concentric circles
-# initialize layers if not already
+# initialize layers for map
 layers = []
 ring_miles = [1, 2, 5, 10, 20]
 for m in ring_miles:
@@ -257,14 +257,6 @@ for m in ring_miles:
         ])
     ring.append(ring[0])
     layers.append(pdk.Layer(
-        "PolygonLayer", [{"polygon": ring}],
-        get_polygon="polygon",
-        get_fill_color=[0, 255, 0, 50],  # translucent green
-        stroked=True,
-        get_line_color=[0, 255, 0],
-        get_line_width=1,
-        pickable=False
-    ))(pdk.Layer(
         "PolygonLayer", [{"polygon": ring}],
         get_polygon="polygon",
         get_fill_color=[0, 255, 0, 50],  # translucent green
