@@ -170,7 +170,12 @@ for ac in data:
     except:
         continue
     cs = (ac.get('flight') or ac.get('hex') or '').strip()
-    alt_val = float(ac.get('alt_geo') or ac.get('alt_baro') or 0)
+    # handle missing altitude gracefully
+    alt_raw = ac.get('alt_geo') if ac.get('alt_geo') not in (None, '') else ac.get('alt_baro')
+    try:
+        alt_val = float(alt_raw)
+    except (TypeError, ValueError):
+        alt_val = 0.0
     vel = float(ac.get('gs') or ac.get('spd') or 0)
     hdg = float(ac.get('track') or ac.get('trak') or 0)
     if alt_val > 0:
