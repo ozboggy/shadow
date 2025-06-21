@@ -80,15 +80,33 @@ else:
     adsb = []
 
 for ac in adsb:
+    # parse lat/lon
     try:
-        lat = float(ac.get("lat")); lon = float(ac.get("lon"))
-    except:
+        lat = float(ac.get("lat"))
+        lon = float(ac.get("lon"))
+    except Exception:
         continue
+
     cs = (ac.get("flight") or ac.get("hex") or "").strip()
+
+    # robust altitude
     alt_raw = ac.get("alt_geo") or ac.get("alt_baro") or 0.0
-    alt_val = float(alt_raw) if alt_raw else 0.0
-    vel = float(ac.get("gs") or ac.get("spd") or 0) if ac.get("gs") or ac.get("spd") else 0.0
-    hdg = float(ac.get("track") or ac.get("trak") or 0) if ac.get("track") or ac.get("trak") else 0.0
+    try:
+        alt_val = float(alt_raw)
+    except Exception:
+        alt_val = 0.0
+
+    # robust groundspeed
+    try:
+        vel = float(ac.get("gs") or ac.get("spd") or 0)
+    except Exception:
+        vel = 0.0
+
+    # robust heading
+    try:
+        hdg = float(ac.get("track") or ac.get("trak") or 0)
+    except Exception:
+        hdg = 0.0
 
     aircraft_list.append({
         "lat": lat, "lon": lon,
@@ -101,7 +119,9 @@ df_ac = pd.DataFrame(aircraft_list)
 if df_ac.empty:
     st.warning("No aircraft data.")
 else:
-    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric, errors='coerce').fillna(0)
+    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(
+        pd.to_numeric, errors='coerce'
+    ).fillna(0)
 
 # --- Compute shadow trails --------------------------------------------------
 trails = []
@@ -158,15 +178,12 @@ if track_sun and trails:
     ))
 
 # Alert‐radius circle polygon
-# generate ring of points every 5°
 circle = []
 for angle in range(0, 360, 5):
     bearing = math.radians(angle)
-    # approximate offsets
     dy = (alert_width / 111111) * math.cos(bearing)
     dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(bearing)
     circle.append([CENTER_LON + dx, CENTER_LAT + dy])
-# close the loop
 circle.append(circle[0])
 
 layers.append(pdk.Layer(
