@@ -283,4 +283,3 @@ if test_pushover:
     time.sleep(5);ph2.empty()
 ```
 
-Just drop this into your `shadow_tracker_app.py` and restart. The timeline now shows bubbles on a single line sized by proximity!」「Replace any existing content.」
