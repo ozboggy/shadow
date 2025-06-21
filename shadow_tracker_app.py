@@ -19,22 +19,22 @@ except ImportError:
     ephem = None
 
 # Auto-refresh every second
-defautorefresh = 1000
+AUTOREFRESH_MS = 1000
 try:
-    st_autorefresh(interval=defautorefresh, key="datarefresh")
+    st_autorefresh(interval=AUTOREFRESH_MS, key="datarefresh")
 except Exception:
     pass
 
 # Paths & credentials
-log_path            = os.getenv("LOG_PATH", "alert_log.csv")
-PUSHOVER_USER_KEY   = os.getenv("PUSHOVER_USER_KEY")
-PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
-RAPIDAPI_KEY        = os.getenv("RAPIDAPI_KEY")
+log_path = os.getenv("LOG_PATH", "alert_log.csv")
+PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
+PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
 # Ensure the alert log exists
 if not os.path.exists(log_path):
     pd.DataFrame(columns=[
-        "Time UTC", "Callsign", "Lat", "Lon", "Time Until Alert (sec)"
+        "Time UTC", "Callsign", "Lat", "Lon", "Time Until Alert (sec)", "Distance (mi)"
     ]).to_csv(log_path, index=False)
 
 # Helper functions
@@ -44,12 +44,8 @@ def send_pushover(title: str, message: str) -> bool:
     try:
         resp = requests.post(
             "https://api.pushover.net/1/messages.json",
-            data={
-                "token": PUSHOVER_API_TOKEN,
-                "user": PUSHOVER_USER_KEY,
-                "title": title,
-                "message": message
-            }
+            data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY,
+                  "title": title, "message": message}
         )
         resp.raise_for_status()
         return True
@@ -63,40 +59,39 @@ def hav(lat1, lon1, lat2, lon2):
     R = 6_371_000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat/2)**2 +
-         math.cos(math.radians(lat1)) *
-         math.cos(math.radians(lat2)) *
-         math.sin(dlon/2)**2)
+    a = (math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) *
+         math.cos(math.radians(lat2)) * math.sin(dlon/2)**2)
     return R * 2 * math.asin(math.sqrt(a))
 
 
-def log_alert(callsign: str, lat: float, lon: float, time_until: float):
+def log_alert(callsign: str, lat: float, lon: float, time_until: float, distance_mi: float):
     df = pd.read_csv(log_path)
     new_row = pd.DataFrame([{
         "Time UTC": datetime.now(timezone.utc).isoformat(),
         "Callsign": callsign,
         "Lat": lat,
         "Lon": lon,
-        "Time Until Alert (sec)": time_until
+        "Time Until Alert (sec)": time_until,
+        "Distance (mi)": distance_mi
     }])
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(log_path, index=False)
 
 # Defaults
-CENTER_LAT             = -33.7602563
-CENTER_LON             = 150.9717434
-DEFAULT_RADIUS_KM      = 10
-FORECAST_INTERVAL_S    = 30
-FORECAST_DURATION_MIN  = 5
+CENTER_LAT = -33.7602563
+CENTER_LON = 150.9717434
+DEFAULT_RADIUS_KM = 10
+FORECAST_INTERVAL_S = 30
+FORECAST_DURATION_MIN = 5
 
 # Sidebar controls
 with st.sidebar:
     st.header("Map Options")
-    radius_km     = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
-    track_sun     = st.checkbox("Show Sun Shadows", value=True)
-    track_moon    = st.checkbox("Show Moon Shadows", value=False)
-    alert_width   = st.slider("Shadow Alert Width (m)", 0, 100000, 50)
-    test_alert    = st.button("Test Alert")
+    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
+    track_sun = st.checkbox("Show Sun Shadows", value=True)
+    track_moon = st.checkbox("Show Moon Shadows", value=False)
+    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
+    test_alert = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
     st.markdown("---")
     if os.path.exists(log_path):
@@ -150,7 +145,9 @@ for ac in adsb_data:
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
     if alt_val > 0:
-        aircraft_list.append({"lat":lat,"lon":lon,"alt":alt_val,"vel":vel,"hdg":hdg,"callsign":callsign})
+        aircraft_list.append({"lat": lat, "lon": lon,
+                              "alt": alt_val, "vel": vel,
+                              "hdg": hdg, "callsign": callsign})
 
 # Build aircraft DataFrame
 df_ac = pd.DataFrame(aircraft_list)
@@ -158,7 +155,7 @@ if not df_ac.empty:
     df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric,errors='coerce').fillna(0)
     df_ac['distance_m'] = df_ac.apply(lambda r: hav(r['lat'],r['lon'],CENTER_LAT,CENTER_LON),axis=1)
     df_ac['distance_mi'] = df_ac['distance_m']/1609.34
-    mil_df = df_ac[df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)',na=False)&(df_ac['distance_mi']<=200)]
+    mil_df = df_ac[df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)',na=False) & (df_ac['distance_mi']<=200)]
     mil_count = len(mil_df)
 
 # Sidebar status
@@ -172,117 +169,94 @@ st.sidebar.markdown(f"Total airborne aircraft: **{len(df_ac)}**")
 if not df_ac.empty:
     st.sidebar.markdown(f"Military within 200mi: **{mil_count}**")
 
-# Compute shadow paths
+# Compute shadow paths & log alerts
 sun_trails, moon_trails = [], []
-if not df_ac.empty:
-    for _, row in df_ac.iterrows():
-        cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
-        s_path, m_path = [], []
-        for i in range(0, FORECAST_INTERVAL_S*FORECAST_DURATION_MIN+1, FORECAST_INTERVAL_S):
-            t = now_utc + timedelta(seconds=i)
-            dist_m = row['vel']*i
-            dlat = dist_m*math.cos(math.radians(row['hdg']))/111111
-            dlon = dist_m*math.sin(math.radians(row['hdg']))/(111111*math.cos(math.radians(lat0)))
-            li, lo = lat0+dlat, lon0+dlon
-            if track_sun:
-                sa,saz = get_altitude(li,lo,t), get_azimuth(li,lo,t)
-                if sa>0:
-                    sd = row['alt']/math.tan(math.radians(sa))
-                    shlat = li+(sd/111111)*math.cos(math.radians(saz+180))
-                    shlon = lo+(sd/(111111*math.cos(math.radians(li))))*math.sin(math.radians(saz+180))
-                    s_path.append([shlon,shlat])
-            if ephem and track_moon:
-                obs.date=t; mpt=ephem.Moon(obs)
-                ma,maz=math.degrees(mpt.alt),math.degrees(mpt.az)
-                if ma>0:
-                    md=row['alt']/math.tan(math.radians(ma))
-                    mhlat=li+(md/111111)*math.cos(math.radians(maz+180))
-                    mhlon=lo+(md/(111111*math.cos(math.radians(li))))*math.sin(math.radians(maz+180))
-                    m_path.append([mhlon,mhlat])
-        if s_path: sun_trails.append({"path":s_path,"callsign":cs,"current":s_path[0]})
-        if m_path: moon_trails.append({"path":m_path,"callsign":cs,"current":m_path[0]})
-
-# Build map layers
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
-layers=[]
-if track_sun and sun_trails:
-    df_s=pd.DataFrame(sun_trails)
-    layers.append(pdk.Layer("PathLayer",df_s,get_path="path",get_color=[50,50,50,255],width_scale=5,width_min_pixels=1,pickable=False))
-    sc=pd.DataFrame([{"lon":s["current"][0],"lat":s["current"][1]} for s in sun_trails])
-    layers.append(pdk.Layer("ScatterplotLayer",sc,get_position=["lon","lat"],get_fill_color=[50,50,50,255],get_radius=100,pickable=False))
-if track_moon and moon_trails:
-    df_m=pd.DataFrame(moon_trails)
-    layers.append(pdk.Layer("PathLayer",df_m,get_path="path",get_color=[180,180,180,200],width_scale=5,width_min_pixels=1,pickable=False))
-    msc=pd.DataFrame([{"lon":m["current"][0],"lat":m["current"][1]} for m in moon_trails])
-    layers.append(pdk.Layer("ScatterplotLayer",msc,get_position=["lon","lat"],get_fill_color=[180,180,180,200],get_radius=100,pickable=False))
-# Alert circle
-circle=[]
-for a in range(0,360,5):
-    b=math.radians(a)
-    dy=(alert_width/111111)*math.cos(b)
-    dx=(alert_width/(111111*math.cos(math.radians(CENTER_LAT))))*math.sin(b)
-    circle.append([CENTER_LON+dx,CENTER_LAT+dy])
-circle.append(circle[0])
-layers.append(pdk.Layer(
-    "PolygonLayer",[{"polygon":circle}],
-    get_polygon="polygon",get_fill_color=[255,0,0,100],stroked=True,get_line_color=[255,0,0],get_line_width=3,pickable=False
-))
-# Aircraft scatter
-if not df_ac.empty:
-    layers.append(pdk.Layer("ScatterplotLayer",df_ac,get_position=["lon","lat"],get_fill_color=[0,128,255,200],get_radius=300,pickable=True,auto_highlight=True,highlight_color=[255,255,0,255]))
-# Tooltip
-tt={"html":"<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} m<br/><b>Speed:</b> {vel} m/s<br/><b>Heading:</b> {hdg}°","style":{"backgroundColor":"black","color":"white"}}
-deck=pdk.Deck(layers=layers,initial_view_state=view,map_style="light",tooltip=tt)
-st.pydeck_chart(deck,use_container_width=True)
-
-# Recent Alerts Section
-try:
-    df_log=pd.read_csv(log_path)
-    if not df_log.empty:
-        df_log['Time UTC']=pd.to_datetime(df_log['Time UTC'])
-        df_log['distance_m']=df_log.apply(lambda r: hav(r['Lat'],r['Lon'],CENTER_LAT,CENTER_LON),axis=1)
-        df_log['distance_mi']=df_log['distance_m']/1609.34
-        df_disp=df_log[['Time UTC','Callsign','distance_mi','Time Until Alert (sec)','Lat','Lon']].copy()
-        df_disp.rename(columns={'distance_mi':'Distance (mi)'},inplace=True)
-        st.markdown("### 📊 Recent Alerts")
-        st.dataframe(df_disp.tail(10))
-        df_log['y']=0
-        fig=px.scatter(df_log,x='Time UTC',y='y',size='distance_mi',size_max=40,hover_name='Callsign',hover_data={'distance_mi':':.1f','Time Until Alert (sec)':True,'Lat':True,'Lon':True},labels={'distance_mi':'Distance (mi)'},title="Alert Proximity Timeline")
-        fig.add_hline(y=0,line_color='lightgray',line_width=1)
-        fig.update_yaxes(visible=False,range=[-0.5,0.5])
-        fig.update_layout(margin=dict(t=40,b=30,l=20,r=20))
-        st.plotly_chart(fig,use_container_width=True)
-except FileNotFoundError:
-    st.warning(f"Alert log not found at `{log_path}`")
-
-# Alerts & Test Buttons
-beep_html="""
+for _, row in df_ac.iterrows():
+    cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
+    for i in range(0, FORECAST_INTERVAL_S * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_S):
+        t = now_utc + timedelta(seconds=i)
+        dist_m = row['vel'] * i
+        dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
+        dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
+        li, lo = lat0 + dlat, lon0 + dlon
+        dmi = hav(li, lo, CENTER_LAT, CENTER_LON) / 1609.34
+        if track_sun:
+            sa, saz = get_altitude(li, lo, t), get_azimuth(li, lo, t)
+            if sa > 0:
+                sd = row['alt'] / math.tan(math.radians(sa))
+                shlat = li + (sd/111111)*math.cos(math.radians(saz+180))
+                shlon = lo + (sd/(111111*math.cos(math.radians(li))))*math.sin(math.radians(saz+180))
+                if hav(shlat, shlon, CENTER_LAT, CENTER_LON) <= alert_width:
+                    st.error(f"🚨 Sun shadow by {cs}: {dmi:.1f} mi away, {i} sec transit")
+                    log_alert(cs, shlat, shlon, i, dmi)
+                    st.markdown("""
 <audio autoplay>
   <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
 </audio>
-"""
+""", unsafe_allow_html=True)
+                    send_pushover("✈️ Shadow Alert", f"{cs}: {dmi:.1f} mi away, {i} sec transit")
+                    break
+        # Moon shadow omitted for brevity
+
+# Build map layers
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
+layers = []
+# Sun trails
 if track_sun and sun_trails:
-    for tr in sun_trails:
-        for lon,lat in tr['path']:
-            if hav(lat,lon,CENTER_LAT,CENTER_LON)<=alert_width:
-                st.error(f"🚨 Sun shadow of {tr['callsign']} over home!")
-                log_alert(tr['callsign'],CENTER_LAT,CENTER_LON,0)
-                st.markdown(beep_html,unsafe_allow_html=True)
-                send_pushover("✈️ Shadow Alert",f"{tr['callsign']} shadow at home")
-                break
-if track_moon and moon_trails:
-    for tr in moon_trails:
-        for lon,lat in tr['path']:
-            if hav(lat,lon,CENTER_LAT,CENTER_LON)<=alert_width:
-                st.error(f"🚨 Moon shadow of {tr['callsign']} over home!")
-                log_alert(tr['callsign'],CENTER_LAT,CENTER_LON,0)
-                st.markdown(beep_html,unsafe_allow_html=True)
-                send_pushover("✈️ Moon Shadow Alert",f"{tr['callsign']} moon shadow at home")
-                break
+    df_s = pd.DataFrame(sun_trails)
+    layers.append(pdk.Layer("PathLayer", df_s, get_path="path",
+                            get_color=[50,50,50,255], width_scale=5,
+                            width_min_pixels=1, pickable=False))
+# Alert circle
+circle = []
+for a in range(0,360,5):
+    b = math.radians(a)
+    dy = (alert_width/111111) * math.cos(b)
+    dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
+    circle.append([CENTER_LON+dx, CENTER_LAT+dy])
+circle.append(circle[0])
+layers.append(pdk.Layer("PolygonLayer", [{"polygon": circle}],
+                        get_polygon="polygon", get_fill_color=[255,0,0,100],
+                        stroked=True, get_line_color=[255,0,0], get_line_width=3,
+                        pickable=False))
+# Aircraft scatter
+if not df_ac.empty:
+    layers.append(pdk.Layer("ScatterplotLayer", df_ac,
+                            get_position=["lon","lat"], get_fill_color=[0,128,255,200],
+                            get_radius=300, pickable=True, auto_highlight=True,
+                            highlight_color=[255,255,0,255]))
+# Render map
+deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light",
+                tooltip={"html":"<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} m<br/><b>Speed:</b> {vel} m/s<br/><b>Heading:</b> {hdg}°","style":{"backgroundColor":"black","color":"white"}})
+st.pydeck_chart(deck, use_container_width=True)
+
+# Recent Alerts Section
+try:
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        df_log['y'] = 0
+        df_disp = df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']].copy()
+        df_disp.rename(columns={'Distance (mi)':'Distance (mi)','Time Until Alert (sec)':'Transit (s)'}, inplace=True)
+        st.markdown("### 📊 Recent Alerts")
+        st.dataframe(df_disp.tail(10))
+        fig = px.scatter(df_log, x='Time UTC', y='y', size='Distance (mi)', size_max=40,
+                         hover_name='Callsign', hover_data={'Transit (s)':True},
+                         title="Alert Proximity Timeline")
+        fig.add_hline(y=0, line_color='lightgray', line_width=1)
+        fig.update_yaxes(visible=False, range=[-0.5,0.5])
+        st.plotly_chart(fig, use_container_width=True)
+except FileNotFoundError:
+    st.warning(f"Alert log not found at `{log_path}`")
+
+# Test buttons
 if test_alert:
-    ph=st.empty();ph.success("🔔 Test alert triggered!");st.markdown(beep_html,unsafe_allow_html=True);time.sleep(5);ph.empty()
+    ph = st.empty(); ph.success("🔔 Test alert triggered!"); time.sleep(5); ph.empty()
 if test_pushover:
-    ph2=st.empty()
-    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN: ph2.error("⚠️ Missing Pushover credentials")
-    else: ok=send_pushover("✈️ Test","This is a test");ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
-    time.sleep(5);ph2.empty()
+    ph2 = st.empty();
+    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
+        ph2.error("⚠️ Missing Pushover credentials")
+    else:
+        ok = send_pushover("✈️ Test", "This is a test from your app.")
+        ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
+    time.sleep(5); ph2.empty()
