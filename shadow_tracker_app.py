@@ -10,7 +10,6 @@ import pandas as pd
 import plotly.express as px
 import pydeck as pdk
 import folium
-from folium.plugins import ClickForMarker
 from streamlit_folium import st_folium
 from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude, get_azimuth
@@ -102,7 +101,6 @@ FORECAST_DURATION_MIN = 5
 def handle_update_home():
     st.markdown("### Click map to set new home location")
     m = folium.Map(location=[CENTER_LAT, CENTER_LON], zoom_start=DEFAULT_RADIUS_KM)
-    m.add_child(ClickForMarker())
     click_data = st_folium(m, width=700, height=500)
     if click_data and click_data.get('last_clicked'):
         lat = click_data['last_clicked']['lat']
@@ -138,14 +136,12 @@ if update_home:
 # Current UTC time
 now_utc = datetime.now(timezone.utc)
 
-# Sun & Moon altitude
+# Sun & moon altitude
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
 moon_alt = None
 if ephem:
-    obs = ephem.Observer()
-    obs.lat, obs.lon, obs.date = str(CENTER_LAT), str(CENTER_LON), now_utc
-    moon = ephem.Moon(obs)
-    moon_alt = math.degrees(moon.alt)
+    obs = ephem.Observer(); obs.lat, obs.lon, obs.date = str(CENTER_LAT), str(CENTER_LON), now_utc
+    moon = ephem.Moon(obs); moon_alt = math.degrees(moon.alt)
 
 # Fetch ADS-B data
 aircraft_list = []
@@ -153,19 +149,14 @@ if RAPIDAPI_KEY:
     url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
     try:
-        r = requests.get(url, headers=headers)
-        r.raise_for_status()
-        data = r.json().get("ac", [])
+        r = requests.get(url, headers=headers); r.raise_for_status(); data = r.json().get("ac", [])
     except Exception:
-        st.warning("Failed to fetch ADS-B data.")
-        data = []
+        st.warning("Failed to fetch ADS-B data."); data = []
 else:
     data = []
 for ac in data:
-    try:
-        lat, lon = float(ac.get('lat')), float(ac.get('lon'))
-    except:
-        continue
+    try: lat, lon = float(ac.get('lat')), float(ac.get('lon'))
+    except: continue
     cs = (ac.get('flight') or ac.get('hex') or '').strip()
     alt_val = float(ac.get('alt_geo') or ac.get('alt_baro') or 0)
     vel = float(ac.get('gs') or ac.get('spd') or 0)
@@ -173,7 +164,6 @@ for ac in data:
     if alt_val > 0:
         aircraft_list.append({'lat': lat, 'lon': lon, 'alt': alt_val,
                               'vel': vel, 'hdg': hdg, 'callsign': cs})
-
 # Aircraft DataFrame & metrics
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
