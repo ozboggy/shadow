@@ -236,7 +236,8 @@ for ang in range(0, 360, 5):
     dy = (alert_width / 111111) * math.cos(b)
     dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
     circle.append([CENTER_LON + dx, CENTER_LAT + dy])
-circle.append(circle[0])\layers.append(pdk.Layer("PolygonLayer", [{"polygon": circle}], get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True, get_line_color=[255,0,0], get_line_width=3, pickable=False))
+circle.append(circle[0])
+layers.append(pdk.Layer("PolygonLayer", [{"polygon": circle}], get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True, get_line_color=[255,0,0], get_line_width=3, pickable=False))(pdk.Layer("PolygonLayer", [{"polygon": circle}], get_polygon="polygon", get_fill_color=[255,0,0,100], stroked=True, get_line_color=[255,0,0], get_line_width=3, pickable=False))
 
 # Aircraft layers
 if not df_ac.empty:
