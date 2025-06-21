@@ -25,7 +25,7 @@ except Exception:
     pass
 
 # Paths & credentials
-log_path = os.getenv("LOG_PATH", "alert_log.csv")
+log_path            = os.getenv("LOG_PATH", "alert_log.csv")
 PUSHOVER_USER_KEY   = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN  = os.getenv("PUSHOVER_API_TOKEN")
 RAPIDAPI_KEY        = os.getenv("RAPIDAPI_KEY")
@@ -70,8 +70,8 @@ FORECAST_DURATION_MIN  = 5
 with st.sidebar:
     st.header("Map Options")
     radius_km     = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
-    track_sun     = st.checkbox("Show Sun Shadows", value=True)
-    track_moon    = st.checkbox("Show Moon Shadows", value=False)
+    track_sun     = st.checkbox("Show Sun Shadows",   value=True)
+    track_moon    = st.checkbox("Show Moon Shadows",  value=False)
     alert_width   = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
     test_alert    = st.button("Test Alert")
     test_pushover = st.button("Test Pushover")
@@ -96,8 +96,8 @@ if ephem:
     obs = ephem.Observer()
     obs.lat, obs.lon = str(CENTER_LAT), str(CENTER_LON)
     obs.date = now_utc
-    m = ephem.Moon(obs)
-    moon_alt = math.degrees(m.alt)
+    moon = ephem.Moon(obs)
+    moon_alt = math.degrees(moon.alt)
 
 # ───────── Fetch ADS-B Exchange Data ─────────
 aircraft_list = []
@@ -110,38 +110,38 @@ if RAPIDAPI_KEY:
     try:
         r = requests.get(url, headers=headers)
         r.raise_for_status()
-        adsb = r.json().get("ac", [])
+        adsb_data = r.json().get("ac", [])
     except Exception:
         st.warning("Failed to fetch ADS-B data.")
-        adsb = []
+        adsb_data = []
 else:
-    adsb = []
+    adsb_data = []
 
-for ac in adsb:
-    # ignore entries without lat/lon
+for ac in adsb_data:
+    # parse lat/lon
     try:
         lat = float(ac.get("lat"))
         lon = float(ac.get("lon"))
     except (TypeError, ValueError):
         continue
 
-    cs = (ac.get("flight") or ac.get("hex") or "").strip()
+    callsign = (ac.get("flight") or ac.get("hex") or "").strip()
 
-    # safe altitude
+    # safe altitude parsing
     raw_alt = ac.get("alt_geo") or ac.get("alt_baro") or 0
     try:
         alt_val = float(raw_alt)
     except (TypeError, ValueError):
         alt_val = 0.0
 
-    # safe ground speed
+    # safe ground speed parsing
     raw_vel = ac.get("gs") or ac.get("spd") or 0
     try:
         vel = float(raw_vel)
     except (TypeError, ValueError):
         vel = 0.0
 
-    # safe heading
+    # safe heading parsing
     raw_hdg = ac.get("track") or ac.get("trak") or 0
     try:
         hdg = float(raw_hdg)
@@ -150,14 +150,17 @@ for ac in adsb:
 
     if alt_val > 0:
         aircraft_list.append({
-            "lat": lat, "lon": lon,
-            "alt": alt_val, "vel": vel,
-            "hdg": hdg, "callsign": cs
+            "lat": lat,
+            "lon": lon,
+            "alt": alt_val,
+            "vel": vel,
+            "hdg": hdg,
+            "callsign": callsign
         })
 
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
-    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(
+    df_ac[['alt', 'vel', 'hdg']] = df_ac[['alt','vel','hdg']].apply(
         pd.to_numeric, errors='coerce'
     ).fillna(0)
 
@@ -178,26 +181,27 @@ if not df_ac.empty:
         s_path, m_path = [], []
         for i in range(0, FORECAST_INTERVAL_S * FORECAST_DURATION_MIN + 1, FORECAST_INTERVAL_S):
             t = now_utc + timedelta(seconds=i)
-            # Move aircraft
+            # projected aircraft movement
             dist_m = row['vel'] * i
             dlat   = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon   = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             lat_i, lon_i = lat0 + dlat, lon0 + dlon
 
-            # Sun shadow
+            # sun shadow
             if track_sun:
-                sa, saz = get_altitude(lat_i, lon_i, t), get_azimuth(lat_i, lon_i, t)
+                sa  = get_altitude(lat_i, lon_i, t)
+                saz = get_azimuth(lat_i, lon_i, t)
                 if sa > 0:
                     sd = row['alt'] / math.tan(math.radians(sa))
                     sh_lat = lat_i + (sd/111111)*math.cos(math.radians(saz+180))
                     sh_lon = lon_i + (sd/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(saz+180))
                     s_path.append([sh_lon, sh_lat])
 
-            # Moon shadow
+            # moon shadow
             if ephem and track_moon:
                 obs.date = t
-                m = ephem.Moon(obs)
-                ma, maz = math.degrees(m.alt), math.degrees(m.az)
+                moon_pt = ephem.Moon(obs)
+                ma, maz = math.degrees(moon_pt.alt), math.degrees(moon_pt.az)
                 if ma > 0:
                     md = row['alt'] / math.tan(math.radians(ma))
                     mh_lat = lat_i + (md/111111)*math.cos(math.radians(maz+180))
@@ -209,15 +213,72 @@ if not df_ac.empty:
         if m_path:
             moon_trails.append({"path": m_path, "callsign": cs, "current": m_path[0]})
 
-# ───────── Build Map Layers & Render ─────────
+# ───────── Build Map Layers ─────────
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
 # Sun trails
 if track_sun and sun_trails:
-    ...
-# Moon trails, alert circle, aircraft scatter, tooltip as before
-# (unchanged from prior version)
+    df_sun = pd.DataFrame(sun_trails)
+    layers.append(pdk.Layer(
+        "PathLayer", df_sun,
+        get_path="path", get_color=[50,50,50,255],
+        width_scale=5, width_min_pixels=1, pickable=False
+    ))
+    sun_current = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", sun_current,
+        get_position=["lon","lat"], get_fill_color=[50,50,50,255],
+        get_radius=100, pickable=False
+    ))
+
+# Moon trails
+if track_moon and moon_trails:
+    df_moon = pd.DataFrame(moon_trails)
+    layers.append(pdk.Layer(
+        "PathLayer", df_moon,
+        get_path="path", get_color=[180,180,180,200],
+        width_scale=5, width_min_pixels=1, pickable=False
+    ))
+    moon_current = pd.DataFrame([{"lon": m["current"][0], "lat": m["current"][1]} for m in moon_trails])
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", moon_current,
+        get_position=["lon","lat"], get_fill_color=[180,180,180,200],
+        get_radius=100, pickable=False
+    ))
+
+# Alert circle
+circle = []
+for ang in range(0, 360, 5):
+    b  = math.radians(ang)
+    dy = (alert_width / 111111) * math.cos(b)
+    dx = (alert_width / (111111 * math.cos(math.radians(CENTER_LAT)))) * math.sin(b)
+    circle.append([CENTER_LON + dx, CENTER_LAT + dy])
+circle.append(circle[0])
+layers.append(pdk.Layer(
+    "PolygonLayer", [{"polygon": circle}],
+    get_polygon="polygon", get_fill_color=[255,0,0,100],
+    stroked=True, get_line_color=[255,0,0], get_line_width=3, pickable=False
+))
+
+# Aircraft scatter
+if not df_ac.empty:
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", df_ac,
+        get_position=["lon","lat"], get_fill_color=[0,128,255,200],
+        get_radius=300, pickable=True, auto_highlight=True,
+        highlight_color=[255,255,0,255]
+    ))
+
+tooltip = {
+    "html": (
+        "<b>Callsign:</b> {callsign}<br/>"
+        "<b>Alt:</b> {alt} m<br/>"
+        "<b>Speed:</b> {vel} m/s<br/>"
+        "<b>Heading:</b> {hdg}°"
+    ),
+    "style": {"backgroundColor":"black","color":"white"}
+}
 
 deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light", tooltip=tooltip)
 st.pydeck_chart(deck, use_container_width=True)
@@ -231,7 +292,9 @@ try:
         st.dataframe(df_log.tail(10))
 
         fig = px.scatter(
-            df_log, x="Time UTC", y="Callsign",
+            df_log,
+            x="Time UTC",
+            y="Callsign",
             size="Time Until Alert (sec)",
             hover_data=["Lat", "Lon"],
             title="Shadow Alerts Over Time"
@@ -239,10 +302,6 @@ try:
         st.plotly_chart(fig, use_container_width=True)
 except FileNotFoundError:
     st.warning(f"Alert log not found at `{log_path}`")
-
-# ───────── Alerts & Test Buttons ─────────
-# (same as before)
-
 
 # ───────── Alerts & Test Buttons ─────────
 beep_html = """
