@@ -236,14 +236,17 @@ if not df_ac.empty:
         highlight_color=[255,255,0,255]
     ))
 # tooltip showing callsign, alt (ft), speed (kt), heading
+# tooltip showing callsign, alt (ft), speed (kt), heading
 tooltip = {
     "html": (
         "<b>Callsign:</b> {callsign}<br/>"
-        "<b>Alt:</b> {alt_ft:.0f} ft<br/>"
-        "<b>Speed:</b> {vel_kt:.0f} kt<br/>"
-        "<b>Heading:</b> {hdg:.0f}\u00B0"
+        "<b>Alt:</b> {alt_ft} ft<br/>"
+        "<b>Speed:</b> {vel_kt} kt<br/>"
+        "<b>Heading:</b> {hdg}°"
     ),
     "style": {"backgroundColor":"black","color":"white"}
+}
+
 }
 
 deck = pdk.Deck(
