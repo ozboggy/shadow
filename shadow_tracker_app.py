@@ -122,21 +122,16 @@ for ac in adsb:
 # Build DataFrame
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
-    df_ac[['alt','vel','hdg']] = (
-        df_ac[['alt','vel','hdg']]
-        .apply(pd.to_numeric, errors='coerce')
-        .fillna(0)
-    )
+    df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(pd.to_numeric, errors='coerce').fillna(0)
 
 # Sidebar status
-total_ac = len(df_ac)
 st.sidebar.markdown("### Status")
 st.sidebar.markdown(f"Sun altitude: {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°")
 if moon_alt is not None:
     st.sidebar.markdown(f"Moon altitude: {'🟢' if moon_alt>0 else '🔴'} {moon_alt:.1f}°")
 else:
     st.sidebar.warning("Moon data unavailable")
-st.sidebar.markdown(f"Total airborne aircraft: **{total_ac}**")
+st.sidebar.markdown(f"Total airborne aircraft: **{len(df_ac)}**")
 
 # Compute shadow trails
 sun_trails, moon_trails = [], []
@@ -158,45 +153,42 @@ if not df_ac.empty:
                 sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
                 s_path.append([sh_lon, sh_lat])
-            # Moon path
-            if ephem and track_moon:
-                obs.date = t
-                m = ephem.Moon(obs)
-                ma = math.degrees(m.alt)
-                maz = math.degrees(m.az)
-                if ma > 0:
-                    md = row['alt'] / math.tan(math.radians(ma))
-                    mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
-                    mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
-                    m_path.append([mh_lon, mh_lat])
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs})
-        if m_path:
-            moon_trails.append({"path": m_path, "callsign": cs})
+        if ephem and track_moon:
+            # Moon path computations
+            m = ephem.Moon(obs)
+            try:
+                ma = math.degrees(m.alt); maz = math.degrees(m.az)
+                if ma > 0:
+                    md = row['alt'] / math.tan(math.radians(ma))
+                    mh_lat = lat0 + (md / 111111) * math.cos(math.radians(maz + 180))
+                    mh_lon = lon0 + (md / (111111 * math.cos(math.radians(lat0)))) * math.sin(math.radians(maz + 180))
+                    moon_trails.append({"path": [[mh_lon,mh_lat]], "callsign": cs})
+            except:
+                pass
 
 # Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
 
-# Sun trails (non-pickable)
+# Sun trails as almost-black line (non-pickable)
 if track_sun and sun_trails:
     df_sun = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_sun,
-        get_path="path", get_color=[255,215,0,150], width_scale=10,
-        width_min_pixels=2, pickable=False
+        get_path="path", get_color=[0,0,0,200], width_scale=10, width_min_pixels=2, pickable=False
     ))
 
-# Moon trails (non-pickable)
+# Moon trails
 if track_moon and moon_trails:
     df_moon = pd.DataFrame(moon_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_moon,
-        get_path="path", get_color=[135,206,250,150], width_scale=10,
-        width_min_pixels=2, pickable=False
+        get_path="path", get_color=[135,206,250,150], width_scale=10, width_min_pixels=2, pickable=False
     ))
 
-# Alert circle polygon (non-pickable)
+# Alert circle polygon
 circle = []
 for ang in range(0, 360, 5):
     b = math.radians(ang)
@@ -206,40 +198,30 @@ for ang in range(0, 360, 5):
 circle.append(circle[0])
 layers.append(pdk.Layer(
     "PolygonLayer", [{"polygon": circle}],
-    get_polygon="polygon", get_fill_color=[255,0,0,50], stroked=True,
-    get_line_color=[255,0,0], get_line_width=2, pickable=False
+    get_polygon="polygon", get_fill_color=[255,0,0,50], stroked=True, get_line_color=[255,0,0], get_line_width=2, pickable=False
 ))
 
-# Sun icon (non-pickable)
+# Sun and Moon icons
 if track_sun:
-    sun_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☀"}]
     layers.append(pdk.Layer(
-        "TextLayer", sun_icon,
-        get_position=["lon","lat"], get_text="text",
-        get_color=[255,215,0], get_size=32,
-        get_alignment_baseline="bottom", pickable=False
+        "TextLayer", [{"lon":CENTER_LON, "lat":CENTER_LAT, "text":"☀"}],
+        get_position=["lon","lat"], get_text="text", get_color=[255,215,0], get_size=32, pickable=False
     ))
-
-# Moon icon (non-pickable)
 if ephem and track_moon:
-    moon_icon = [{"lon": CENTER_LON, "lat": CENTER_LAT, "text": "☾"}]
     layers.append(pdk.Layer(
-        "TextLayer", moon_icon,
-        get_position=["lon","lat"], get_text="text",
-        get_color=[200,200,200], get_size=32,
-        get_alignment_baseline="bottom", pickable=False
+        "TextLayer", [{"lon":CENTER_LON, "lat":CENTER_LAT, "text":"☾"}],
+        get_position=["lon","lat"], get_text="text", get_color=[200,200,200], get_size=32, pickable=False
     ))
 
-# Aircraft scatter layer (pickable)
+# Aircraft scatter layer (hover-enabled)
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", df_ac,
-        get_position=["lon","lat"], get_fill_color=[0,128,255,200],
-        get_radius=150, pickable=True, auto_highlight=True,
-        highlight_color=[255,255,0,255]
+        get_position=["lon","lat"], get_fill_color=[0,128,255,200], get_radius=150,
+        pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]
     ))
 
-# Tooltip config
+# Tooltip
 tooltip = {
     "html": (
         "<b>Callsign:</b> {callsign}<br/>"
