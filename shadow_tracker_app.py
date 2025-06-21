@@ -110,10 +110,26 @@ with st.sidebar:
         with open(home_config, "w") as f:
             json.dump({"lat": new_lat, "lon": new_lon}, f)
         st.success(f"Home updated to {new_lat:.6f}, {new_lon:.6f}")
-        # update in-memory center coordinates
         CENTER_LAT, CENTER_LON = new_lat, new_lon
 
     st.markdown("---")
+    # Alert preferences
+    on_screen_alerts = st.checkbox("Enable On-Screen Alerts", value=True)
+    pushover_alerts = st.checkbox("Enable Pushover Alerts", value=True)
+    st.markdown("---")
+    # Map settings
+    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
+    track_sun = st.checkbox("Show Sun Shadows", value=True)
+    track_moon = st.checkbox("Show Moon Shadows", value=False)
+    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
+    # Test buttons
+    test_alert = st.button("Test Alert")
+    test_pushover = st.button("Test Pushover")
+    st.markdown("---")
+    if os.path.exists(log_path):
+        st.download_button("📥 Download alert_log.csv", open(log_path, 'rb'), "alert_log.csv", "text/csv")
+    else:
+        st.info("No alert_log.csv yet")
     # Map settings
     radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", value=True)
@@ -294,10 +310,15 @@ for trail in sun_trails:
             dist_mi = hav(lat, lon, CENTER_LAT, CENTER_LON)/1609.34
             idx = trail['path'].index([lon, lat])
             transit = idx * FORECAST_INTERVAL_S
-            st.error(f"🚨 Sun shadow by {cs}: {dist_mi:.1f} mi away, {transit} sec transit")
+            # on-screen alert
+            if on_screen_alerts:
+                st.error(f"🚨 Sun shadow by {cs}: {dist_mi:.1f} mi away, {transit} sec transit")
+                st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg")
+            # log
             log_alert(cs, lat, lon, transit, dist_mi)
-            st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg")
-            send_pushover("✈️ Shadow Alert", f"{cs}: {dist_mi:.1f} mi away, {transit} sec transit")
+            # pushover
+            if pushover_alerts:
+                send_pushover("✈️ Shadow Alert", f"{cs}: {dist_mi:.1f} mi away, {transit} sec transit")
             break
 
 # Recent Alerts Section
