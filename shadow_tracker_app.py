@@ -115,21 +115,32 @@ for ac in adsb:
     except: vel = 0.0
     try: hdg = float(ac.get("track") or ac.get("trak") or 0)
     except: hdg = 0.0
+
     aircraft_list.append({
         "lat": lat, "lon": lon,
         "alt": alt_val, "vel": vel,
         "hdg": hdg, "callsign": cs
     })
 
-# Total aircraft count
-total_ac = len(aircraft_list)
-
-# Build DataFrame
+# Build DataFrame and filter out ground (altitude ≤ 0)
 df_ac = pd.DataFrame(aircraft_list)
 if not df_ac.empty:
     df_ac[['alt','vel','hdg']] = df_ac[['alt','vel','hdg']].apply(
         pd.to_numeric, errors='coerce'
     ).fillna(0)
+    df_ac = df_ac[df_ac['alt'] > 0]
+
+# Total airborne aircraft count
+total_ac = len(df_ac)
+
+# Sidebar status
+st.sidebar.markdown("### Status")
+st.sidebar.markdown(f"Sun altitude: {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°")
+if moon_alt is not None:
+    st.sidebar.markdown(f"Moon altitude: {'🟢' if moon_alt>0 else '🔴'} {moon_alt:.1f}°")
+else:
+    st.sidebar.warning("Moon data unavailable")
+st.sidebar.markdown(f"Total airborne aircraft: **{total_ac}**")
 
 # Compute shadow trails
 sun_trails = []
@@ -142,7 +153,6 @@ if not df_ac.empty:
         m_path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             t = now_utc + timedelta(seconds=i)
-            # movement projection
             dist_m = row['vel'] * i
             dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
             dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
@@ -174,16 +184,6 @@ if not df_ac.empty:
         if m_path:
             moon_trails.append({"path": m_path, "callsign": cs})
 
-# Title and sidebar status
-st.title("✈️ Aircraft Shadow Tracker")
-st.sidebar.markdown("### Status")
-st.sidebar.markdown(f"Sun altitude: {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°")
-if moon_alt is not None:
-    st.sidebar.markdown(f"Moon altitude: {'🟢' if moon_alt>0 else '🔴'} {moon_alt:.1f}°")
-else:
-    st.sidebar.warning("Moon data unavailable")
-st.sidebar.markdown(f"Total aircraft tracked: **{total_ac}**")
-
 # Build pydeck layers
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
 layers = []
@@ -211,7 +211,7 @@ if track_moon and moon_trails:
         width_scale=10, width_min_pixels=2, pickable=True
     ))
 
-# alert circle
+# Alert circle polygon
 circle = []
 for ang in range(0, 360, 5):
     b = math.radians(ang)
@@ -226,7 +226,7 @@ layers.append(pdk.Layer(
     stroked=True, get_line_color=[255,0,0], get_line_width=2
 ))
 
-# tooltip config
+# Tooltip configuration
 tooltip = {
     "html": "<b>Callsign:</b> {callsign}<br/>"
             "<b>Alt:</b> {alt:.0f} m<br/>"
@@ -235,7 +235,7 @@ tooltip = {
     "style": {"backgroundColor": "black", "color": "white"}
 }
 
-# Render map with tooltip on Deck
+# Render map with tooltip
 deck = pdk.Deck(
     layers=layers,
     initial_view_state=view,
@@ -262,6 +262,7 @@ if track_sun and sun_trails:
 # Test buttons
 if test_alert:
     st.success("Test alert triggered")
+
 if test_pushover:
     ph = st.empty()
     if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
