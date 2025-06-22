@@ -170,16 +170,23 @@ for ac in data:
     except:
         continue
     cs = (ac.get('flight') or ac.get('hex') or '').strip()
-    # handle missing altitude gracefully
-    alt_raw = ac.get('alt_geo') if ac.get('alt_geo') not in (None, '') else ac.get('alt_baro')
+    # altitude: prefer barometric altitude (ft) if available, else convert geo altitude (m) to ft
+    baro = ac.get('alt_baro')
+    geo = ac.get('alt_geo')
     try:
-        alt_val = float(alt_raw)
-    except (TypeError, ValueError):
-        alt_val = 0.0
+        if baro not in (None, ''):
+            alt_ft = int(float(baro))
+        elif geo not in (None, ''):
+            alt_ft = int(float(geo) * 3.28084)
+        else:
+            alt_ft = 0
+    except:
+        alt_ft = 0
     vel = float(ac.get('gs') or ac.get('spd') or 0)
     hdg = float(ac.get('track') or ac.get('trak') or 0)
-    if alt_val > 0:
-        aircraft_list.append({'lat': lat, 'lon': lon, 'alt': alt_val,
+    if alt_ft > 0:
+        aircraft_list.append({'lat': lat, 'lon': lon, 'alt_ft': alt_ft,
+                              'vel': vel, 'hdg': hdg, 'callsign': cs})({'lat': lat, 'lon': lon, 'alt': alt_val,
                               'vel': vel, 'hdg': hdg, 'callsign': cs})
 
 # Create DataFrame & metrics
