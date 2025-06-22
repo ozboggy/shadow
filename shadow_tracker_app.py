@@ -220,26 +220,43 @@ st.sidebar.metric(label="Military (≤200 mi)", value=f"{mil_count}")
 
 # Build shadow trails
 sun_trails = []
-if not df_ac.empty and track_sun:
+moon_trails = []
+if not df_ac.empty:
     for _, row in df_ac.iterrows():
         cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
-        s_path = []
+        s_path, m_path = [], []
         for i in range(0, FORECAST_INTERVAL_S*FORECAST_DURATION_MIN+1, FORECAST_INTERVAL_S):
             t = now_utc + timedelta(seconds=i)
             d = row['vel'] * i
             dlat = d * math.cos(math.radians(row['hdg'])) / 111111
             dlon = d * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
             li, lo = lat0 + dlat, lon0 + dlon
-            sa, saz = get_altitude(li, lo, t), get_azimuth(li, lo, t)
-            if sa > 0:
-                sd = row['alt'] / math.tan(math.radians(sa))
-                shlat = li + (sd/111111) * math.cos(math.radians(saz+180))
-                shlon = lo + (sd/(111111 * math.cos(math.radians(li)))) * math.sin(math.radians(saz+180))
-                s_path.append([shlon, shlat])
+            # sun shadow
+            if track_sun:
+                sa, saz = get_altitude(li, lo, t), get_azimuth(li, lo, t)
+                if sa > 0:
+                    sd = row['alt'] / math.tan(math.radians(sa))
+                    shlat = li + (sd/111111) * math.cos(math.radians(saz+180))
+                    shlon = lo + (sd/(111111 * math.cos(math.radians(li)))) * math.sin(math.radians(saz+180))
+                    s_path.append([shlon, shlat])
+            # moon shadow
+            if track_moon and ephem:
+                obs = ephem.Observer()
+                obs.lat, obs.lon, obs.date = str(li), str(lo), t
+                pm = ephem.Moon(obs)
+                ma = math.degrees(pm.alt)
+                maz = math.degrees(pm.az)
+                if ma > 0:
+                    md = row['alt'] / math.tan(math.radians(ma))
+                    mlat = li + (md/111111) * math.cos(math.radians(maz+180))
+                    mlon = lo + (md/(111111 * math.cos(math.radians(li)))) * math.sin(math.radians(maz+180))
+                    m_path.append([mlon, mlat])
         if s_path:
             sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
+        if m_path:
+            moon_trails.append({"path": m_path, "callsign": cs, "current": m_path[0]})
 
-# Prepare layers: distance rings, shadows, aircraft, etc.
+# Prepare layers: distance rings, shadows, aircraft, etc., shadows, aircraft, etc.
 # initialize layers list
 layers = []
 
@@ -279,18 +296,32 @@ for m in ring_miles:
         pickable=False
     ))
 
-# Shadow trails layer
+# Shadow trails layers
 if sun_trails:
     df_s = pd.DataFrame(sun_trails)
     layers.append(pdk.Layer(
         "PathLayer", df_s, get_path="path",
         get_color=[50,50,50,255], width_scale=5, width_min_pixels=1
     ))
-    curr = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
+    curr_s = pd.DataFrame([{"lon": s["current"][0], "lat": s["current"][1]} for s in sun_trails])
     layers.append(pdk.Layer(
-        "ScatterplotLayer", curr,
+        "ScatterplotLayer", curr_s,
         get_position=["lon","lat"],
         get_fill_color=[50,50,50,255], get_radius=100,
+        pickable=True
+    ))
+
+if moon_trails:
+    df_m = pd.DataFrame(moon_trails)
+    layers.append(pdk.Layer(
+        "PathLayer", df_m, get_path="path",
+        get_color=[200,200,200,200], width_scale=5, width_min_pixels=1
+    ))
+    curr_m = pd.DataFrame([{"lon": m["current"][0], "lat": m["current"][1]} for m in moon_trails])
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", curr_m,
+        get_position=["lon","lat"],
+        get_fill_color=[200,200,200,200], get_radius=100,
         pickable=True
     ))
 
