@@ -94,7 +94,8 @@ def log_alert(callsign, lat, lon, time_until, distance_mi):
     df.to_csv(log_path, index=False)
 
 # Defaults
-DEFAULT_RADIUS_KM = 10
+DEFAULT_RADIUS_KM = 10  # default radius
+MAX_RADIUS_KM = 25  # maximum allowed search radius
 # Predict shadows up to 60 seconds, step 1s
 FORECAST_INTERVAL_S = 1
 FORECAST_DURATION_S = 60
@@ -120,7 +121,7 @@ with st.sidebar:
 
     st.markdown("---")
     # Map settings
-    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
+    radius_km = radius_km = st.slider("Search Radius (km)", 1, MAX_RADIUS_KM, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
     alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
@@ -466,3 +467,4 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
+
