@@ -394,14 +394,15 @@ tooltip = {
     ),
     "style": {"backgroundColor":"black","color":"white"}
 }
-st.pydeck_chart(pdk.Deck(
-    layers=layers,
-    initial_view_state=view,
-    map_style="mapbox://styles/mapbox/light-v10",
-    tooltip=tooltip
-),
-    tooltip=tooltip
-), use_container_width=True)
+st.pydeck_chart(
+    pdk.Deck(
+        layers=layers,
+        initial_view_state=view,
+        map_style="mapbox://styles/mapbox/light-v10",
+        tooltip=tooltip
+    ),
+    use_container_width=True
+)
 
 # 📊 Recent Alerts (moved below map)
 try:
