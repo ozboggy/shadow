@@ -397,7 +397,9 @@ tooltip = {
 st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view,
-    map_style="light",
+    map_style="mapbox://styles/mapbox/light-v10",
+    tooltip=tooltip
+),
     tooltip=tooltip
 ), use_container_width=True)
 
@@ -467,4 +469,3 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
-
