@@ -400,6 +400,24 @@ st.pydeck_chart(pdk.Deck(
     tooltip=tooltip
 ), use_container_width=True)
 
+# 📊 Recent Alerts (moved below map)
+try:
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        df_log['y'] = 0
+        df_disp = df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']].copy()
+        df_disp.rename(columns={'Time Until Alert (sec)':'Transit (s)'}, inplace=True)
+        st.markdown("### 📊 Recent Alerts")
+        st.dataframe(df_disp.tail(10))
+        fig = px.scatter(df_log, x='Time UTC', y='y', size='Distance (mi)', size_max=40,
+                         hover_name='Callsign', hover_data={'Transit (s)':True}, title="Alert Proximity Timeline")
+        fig.add_hline(y=0, line_color='lightgray', line_width=1)
+        fig.update_yaxes(visible=False, range=[-0.5,0.5])
+        st.plotly_chart(fig, use_container_width=True)
+except FileNotFoundError:
+    st.warning(f"Alert log not found at `{log_path}`")
+
 # Alert detection & logging
 for trail in sun_trails:
     for lon, lat in trail['path']:
