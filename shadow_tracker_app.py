@@ -212,12 +212,12 @@ df_ac = pd.DataFrame(aircraft_list)
 mil_count = 0
 if not df_ac.empty:
     # ensure numeric types
-    df_ac[['alt', 'vel', 'hdg']] = df_ac[['alt', 'vel', 'hdg']].apply(
+    df_ac[['alt_ft', 'vel', 'hdg']] = df_ac[['alt_ft', 'vel', 'hdg']].apply(
         pd.to_numeric, errors='coerce').fillna(0)
-    # convert altitude to feet and round to nearest ft
-    df_ac['alt_ft'] = (df_ac['alt'] * 3.28084).round().astype(int)
-    # assume speed from ADS-B is already in knots; round to nearest kt
+    # speed in kt, rounded
     df_ac['vel_kt'] = df_ac['vel'].round().astype(int)
+    # altitude already in ft
+    df_ac['alt_ft'] = df_ac['alt_ft'].astype(int)
     # compute distances
     df_ac['distance_m'] = df_ac.apply(
         lambda r: hav(r['lat'], r['lon'], CENTER_LAT, CENTER_LON), axis=1
