@@ -37,7 +37,7 @@ RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
 # Load or set default home location
 def load_home():
-    default = {'lat': -33.7602563, 'lon': 150.9717434}
+    default = {'lat': -33.8544014, 'lon': 151.2087668}
     if os.path.exists(home_config):
         try:
             cfg = json.load(open(home_config))
