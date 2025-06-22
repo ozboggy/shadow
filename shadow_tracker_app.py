@@ -195,7 +195,7 @@ if not df_ac.empty:
     # convert altitude to feet and round to nearest ft
     df_ac['alt_ft'] = (df_ac['alt'] * 3.28084).round().astype(int)
     # assume speed from ADS-B is already in knots; round to nearest kt
-df_ac['vel_kt'] = df_ac['vel'].round().astype(int)
+    df_ac['vel_kt'] = df_ac['vel'].round().astype(int)
     # compute distances
     df_ac['distance_m'] = df_ac.apply(
         lambda r: hav(r['lat'], r['lon'], CENTER_LAT, CENTER_LON), axis=1
