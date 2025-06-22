@@ -95,8 +95,9 @@ def log_alert(callsign, lat, lon, time_until, distance_mi):
 
 # Defaults
 DEFAULT_RADIUS_KM = 10
-FORECAST_INTERVAL_S = 30
-FORECAST_DURATION_MIN = 5
+# Predict shadows up to 60 seconds, step 1s
+FORECAST_INTERVAL_S = 1
+FORECAST_DURATION_S = 60
 
 # Sidebar: Home & Map Options
 with st.sidebar:
@@ -418,4 +419,3 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
-
