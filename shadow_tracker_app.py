@@ -226,7 +226,8 @@ if not df_ac.empty:
     for _, row in df_ac.iterrows():
         cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
         s_path, m_path = [], []
-        for i in range(0, FORECAST_INTERVAL_S*FORECAST_DURATION_MIN+1, FORECAST_INTERVAL_S):
+        # iterate each second up to FORECAST_DURATION_S
+        for i in range(0, FORECAST_DURATION_S + 1, FORECAST_INTERVAL_S):
             t = now_utc + timedelta(seconds=i)
             d = row['vel'] * i
             dlat = d * math.cos(math.radians(row['hdg'])) / 111111
