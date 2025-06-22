@@ -284,8 +284,11 @@ for m in ring_miles:
         width_min_pixels=1,
         pickable=False
     ))
-    # add label at top of ring
-    label_lon, label_lat = ring[0]
+    # add label just outside the ring at north
+    # compute a slightly larger offset
+    offset_factor = 1.02
+    label_lon = CENTER_LON
+    label_lat = CENTER_LAT + lat_diff * offset_factor
     layers.append(pdk.Layer(
         "TextLayer",
         data=[{"text": f"{m} mi", "position": [label_lon, label_lat]}],
@@ -415,3 +418,4 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
+
