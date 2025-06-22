@@ -377,7 +377,13 @@ if not df_ac.empty:
     ))
 
 # Prepare deck view and render map
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=DEFAULT_RADIUS_KM)
+# auto-adjust zoom based on search radius
+# approximate: zoom decreases as radius increases
+if radius_km <= 1:
+    zoom = 14
+else:
+    zoom = max(1, min(16, 14 - math.log(radius_km, 2)))
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=zoom))
 tooltip = {
     "html": (
         "<b>Callsign:</b> {callsign}<br/>"
@@ -442,3 +448,4 @@ if test_pushover:
         ok = send_pushover("✈️ Test", "This is a test from your app.")
         ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
     time.sleep(2); ph2.empty()
+
