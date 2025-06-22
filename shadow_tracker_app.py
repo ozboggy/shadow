@@ -165,12 +165,14 @@ else:
     data = []
 
 for ac in data:
+    # parse basic position and callsign
     try:
-        lat, lon = float(ac.get('lat')), float(ac.get('lon'))
-    except:
+        lat = float(ac.get('lat'))
+        lon = float(ac.get('lon'))
+    except (TypeError, ValueError):
         continue
     cs = (ac.get('flight') or ac.get('hex') or '').strip()
-    # altitude: prefer barometric altitude (ft) if available, else convert geo altitude (m) to ft
+    # altitude: barometric in feet preferred, else convert geo (meters) to ft
     baro = ac.get('alt_baro')
     geo = ac.get('alt_geo')
     try:
@@ -182,12 +184,25 @@ for ac in data:
             alt_ft = 0
     except:
         alt_ft = 0
-    vel = float(ac.get('gs') or ac.get('spd') or 0)
-    hdg = float(ac.get('track') or ac.get('trak') or 0)
+    # ground speed from ADS-B, assume in knots
+    try:
+        vel = float(ac.get('gs') or ac.get('spd') or 0)
+    except:
+        vel = 0.0
+    # heading
+    try:
+        hdg = float(ac.get('track') or ac.get('trak') or 0)
+    except:
+        hdg = 0.0
     if alt_ft > 0:
-        aircraft_list.append({'lat': lat, 'lon': lon, 'alt_ft': alt_ft,
-                              'vel': vel, 'hdg': hdg, 'callsign': cs})({'lat': lat, 'lon': lon, 'alt': alt_val,
-                              'vel': vel, 'hdg': hdg, 'callsign': cs})
+        aircraft_list.append({
+            'lat': lat,
+            'lon': lon,
+            'alt_ft': alt_ft,
+            'vel': vel,
+            'hdg': hdg,
+            'callsign': cs
+        })
 
 # Create DataFrame & metrics
 import pandas as pd
