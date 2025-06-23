@@ -119,22 +119,21 @@ with st.sidebar:
     st.markdown("---")
     # Alert preferences
     on_screen_alerts = st.checkbox("Enable On-Screen Alerts", value=True, key="on_screen")
-    pushover_alerts = st.checkbox("Enable Pushover Alerts", value=True, key="pushover")
 
     st.markdown("---")
     # Map settings
-    radius_km = st.slider("Search Radius (km)", 1, MAX_RADIUS_KM, DEFAULT_RADIUS_KM, key="radius")
     track_sun = st.checkbox("Show Sun Shadows", value=True, key="track_sun")
     track_moon = st.checkbox("Show Moon Shadows", value=False, key="track_moon")
-    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50, key="alert_width")
+    # Fixed search radius (25 miles)
+    radius_km = DEFAULT_RADIUS_KM
+    st.markdown(f"Search Radius: {radius_km/1.60934:.0f} mi ({radius_km:.1f} km)")
 
     # Toggle recent alerts panel
     show_alerts = st.checkbox("Show Recent Alerts", value=True, key="show_alerts")
 
     st.markdown("---")
-    # Test buttons
+    # Test alert button
     test_alert = st.button("Test Alert", key="test_alert")
-    test_pushover = st.button("Test Pushover", key="test_pushover")
 
     st.markdown("---")
     # Download
