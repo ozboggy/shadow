@@ -177,7 +177,7 @@ layers.append(pdk.Layer(
     pickable=False
 ))
 
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=radius_km)
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=12)
 deck = pdk.Deck(
     layers=layers,
     initial_view_state=view,
@@ -205,3 +205,44 @@ if test_alert:
 if test_push:
     ok = send_pushover("✈️ Test", "Test pushover alert")
     st.success("Sent!" if ok else "Failed")
+
+
+
+# Moon trail
+if show_moon and ephem:
+    for _, row in df_ac.iterrows():
+        m_path = []
+        for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
+            t = now_utc + timedelta(seconds=i)
+            dist_m = row['vel'] * i
+            dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
+            dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(row['lat'])))
+            lat_i, lon_i = row['lat'] + dlat, row['lon'] + dlon
+            try:
+                obs.date = t
+                moon = ephem.Moon(obs)
+                ma = math.degrees(moon.alt)
+                maz = math.degrees(moon.az)
+                if ma > 0:
+                    md = row['alt'] / math.tan(math.radians(ma))
+                    mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
+                    mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
+                    m_path.append((mh_lat, mh_lon, i))
+            except:
+                continue
+        if m_path:
+            for lat, lon, sec in m_path:
+                if sec in alert_times:
+                    dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
+                    if dist <= alert_width:
+                        msg = (
+                            f"🌕 {row['callsign']} moon shadow alert\n"
+                            f"⏱ Transit in {sec}s\n"
+                            f"📏 Distance: {int(dist)}m\n"
+                            f"🛬 Altitude: {int(row['alt'])} ft\n"
+                            f"🚀 Speed: {int(row['vel'])} knots"
+                        )
+                        st.error(f"🚨 Moon shadow of {row['callsign']} over home in {sec}s!")
+                        st.markdown(beep_html, unsafe_allow_html=True)
+                        send_pushover("🌕 Moon Shadow Alert", msg)
+                        break
