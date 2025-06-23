@@ -137,7 +137,7 @@ layers.append(pdk.Layer(
     data=home_df,
     get_position=["lon", "lat"],
     get_fill_color=[255, 0, 0],
-    get_radius=100,
+    get_radius=alert_width,
     pickable=False
 ))
 
