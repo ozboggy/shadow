@@ -12,19 +12,16 @@ from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude, get_azimuth
 from streamlit_autorefresh import st_autorefresh
 
-# Optional moon computations
 try:
     import ephem
 except ImportError:
     ephem = None
 
-# Auto-refresh every second
 try:
     st_autorefresh(interval=1_000, key="datarefresh")
 except Exception:
     pass
 
-# Pushover credentials
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 
@@ -140,7 +137,6 @@ if not df_ac.empty:
         if m_path:
             moon_trails.append({"path": m_path, "callsign": cs, "current": m_path[0]})
 
-# Alerts
 beep_html = '''
 <audio autoplay>
   <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
@@ -159,14 +155,10 @@ for trail_list, label in [(sun_trails, "Sun"), (moon_trails, "Moon")]:
                 dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
                 if dist <= alert_width:
                     msg = (
-                        f"✈️ {cs} {label.lower()} shadow alert
-"
-                        f"⏱ Transit in {time_to_transit}s
-"
-                        f"📏 Distance: {int(dist)}m
-"
-                        f"🛬 Altitude: {int(row['alt'])} ft
-"
+                        f"✈️ {cs} {label.lower()} shadow alert\n"
+                        f"⏱ Transit in {time_to_transit}s\n"
+                        f"📏 Distance: {int(dist)}m\n"
+                        f"🛬 Altitude: {int(row['alt'])} ft\n"
                         f"🚀 Speed: {int(row['vel'])} knots"
                     )
                     st.error(f"🚨 {label} shadow of {cs} over home in {time_to_transit}s!")
