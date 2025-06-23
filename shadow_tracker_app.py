@@ -163,3 +163,66 @@ deck = pdk.Deck(
 )
 
 st.pydeck_chart(deck, use_container_width=True)
+
+
+
+# === Shadow Trails and Alerts ===
+sun_trails, moon_trails = [], []
+for _, row in df_ac.iterrows():
+    cs, lat0, lon0 = row['callsign'], row['lat'], row['lon']
+    s_path, m_path = [], []
+    for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
+        t = now_utc + timedelta(seconds=i)
+        dist_m = row['vel'] * i
+        dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
+        dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(lat0)))
+        lat_i, lon_i = lat0 + dlat, lon0 + dlon
+
+        # Sun
+        sa = get_altitude(lat_i, lon_i, t); saz = get_azimuth(lat_i, lon_i, t)
+        if sa > 0 and track_sun:
+            sd = row['alt'] / math.tan(math.radians(sa))
+            sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
+            sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
+            s_path.append([sh_lon, sh_lat])
+
+        # Moon
+        if ephem and track_moon:
+            obs.date = t; m = ephem.Moon(obs)
+            ma = math.degrees(m.alt); maz = math.degrees(m.az)
+            if ma > 0:
+                md = row['alt'] / math.tan(math.radians(ma))
+                mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
+                mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
+                m_path.append([mh_lon, mh_lat])
+
+    if s_path:
+        sun_trails.append({"path": s_path, "callsign": cs, "current": s_path[0]})
+    if m_path:
+        moon_trails.append({"path": m_path, "callsign": cs, "current": m_path[0]})
+
+beep_html = '''
+<audio autoplay><source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg"></audio>
+'''
+
+for trail_list, label in [(sun_trails, "Sun"), (moon_trails, "Moon")]:
+    for tr in trail_list:
+        cs = tr['callsign']
+        if cs not in df_ac['callsign'].values: continue
+        row = df_ac[df_ac['callsign'] == cs].iloc[0]
+        for i, (lon, lat) in enumerate(tr["path"]):
+            time_to_transit = i * FORECAST_INTERVAL_SECONDS
+            if time_to_transit in alert_times:
+                dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
+                if dist <= alert_width:
+                    msg = (
+                        f"✈️ {cs} {label.lower()} shadow alert\n"
+                        f"⏱ Transit in {time_to_transit}s\n"
+                        f"📏 Distance: {int(dist)}m\n"
+                        f"🛬 Altitude: {int(row['alt'])} ft\n"
+                        f"🚀 Speed: {int(row['vel'])} knots"
+                    )
+                    st.error(f"🚨 {label} shadow of {cs} over home in {time_to_transit}s!")
+                    st.markdown(beep_html, unsafe_allow_html=True)
+                    send_pushover(f"✈️ {label} Shadow Alert: {cs}", msg)
+                    break
