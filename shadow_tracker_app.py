@@ -94,8 +94,10 @@ def log_alert(callsign, lat, lon, time_until, distance_mi):
     df.to_csv(log_path, index=False)
 
 # Defaults
-DEFAULT_RADIUS_KM = 10  # default radius
-MAX_RADIUS_KM = 25  # maximum allowed search radius
+# Default search radius: 25 miles in km
+DEFAULT_RADIUS_KM = 25 * 1.60934  # ~40.23 km  # default radius
+# Maximum search radius: 50 miles in km
+MAX_RADIUS_KM = 50 * 1.60934  # ~80.47 km  # maximum allowed search radius
 # Predict shadows up to 60 seconds, step 1s
 FORECAST_INTERVAL_S = 1
 FORECAST_DURATION_S = 60
