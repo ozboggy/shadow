@@ -169,7 +169,7 @@ if track_moon and moon_trails:
 
 layers.append(pdk.Layer("ScatterplotLayer", df_ac, get_position=["lon", "lat"], get_fill_color=[0, 128, 255], get_radius=300))
 
-deck = pdk.Deck(layers=layers, initial_view_state=view, map_style="light", tooltip={"text": "{callsign} {alt}ft {vel}kts"})
+    tooltip={"html": "<b>Callsign:</b> {callsign}<br/><b>Altitude:</b> {alt} ft<br/><b>Speed:</b> {vel} kts", "style": {"backgroundColor": "black", "color": "white", "cursor": "pointer"}}
 st.pydeck_chart(deck, use_container_width=True)
 
 # --- [Alert Triggers] ---
