@@ -216,8 +216,8 @@ if not df_ac.empty:
 # Tooltip
 tooltip = {"html": (
     "<b>Callsign:</b> {callsign}<br/>"
-    "<b>Alt:</b> {alt} m<br/>"
-    "<b>Speed:</b> {vel} m/s<br/>"
+    "<b>Alt:</b> {alt} ft<br/>"
+    "<b>Speed:</b> {vel} knts<br/>"
     "<b>Heading:</b> {hdg}°"), "style": {"backgroundColor":"black","color":"white"}}
 # Render
 
