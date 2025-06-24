@@ -251,9 +251,22 @@ if test_alert:
     st.warning("Test alert triggered")
     st.markdown(beep_html, unsafe_allow_html=True)
 
+
 if test_push:
-    ok = send_pushover("✈️ Test", "Test pushover alert")
+    if not df_ac.empty:
+        sample = df_ac.sample(1).iloc[0]
+        msg = (
+            f"✈️ Test Alert: {sample['callsign']}\n"
+            f"📍 Lat/Lon: {sample['lat']:.4f}, {sample['lon']:.4f}\n"
+            f"🛬 Altitude: {int(sample['alt'])} ft\n"
+            f"🚀 Speed: {int(sample['vel'])} knots\n"
+            f"🧭 Heading: {int(sample['hdg'])}°"
+        )
+    else:
+        msg = "✈️ Test alert with no aircraft data available."
+    ok = send_pushover("✈️ Test", msg)
     st.success("Sent!" if ok else "Failed")
+
 
 # Export
 if sun_export or moon_export:
