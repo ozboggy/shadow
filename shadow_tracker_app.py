@@ -255,19 +255,30 @@ if test_alert:
 if test_push:
     if not df_ac.empty:
         sample = df_ac.sample(1).iloc[0]
-        distance = hav(CENTER_LAT, CENTER_LON, sample['lat'], sample['lon'])
+        home_lat, home_lon = CENTER_LAT, CENTER_LON
+        ac_lat, ac_lon = sample['lat'], sample['lon']
+        distance = hav(home_lat, home_lon, ac_lat, ac_lon)
+
         msg = (
             f"✈️ Test Alert: {sample['callsign']}\n"
-            f"📍 Lat/Lon: {sample['lat']:.4f}, {sample['lon']:.4f}\n"
+            f"📍 Lat/Lon: {ac_lat:.4f}, {ac_lon:.4f}\n"
+            f"🏠 Home: {home_lat:.4f}, {home_lon:.4f}\n"
             f"🛬 Altitude: {int(sample['alt'])} ft\n"
             f"🚀 Speed: {int(sample['vel'])} knots\n"
             f"🧭 Heading: {int(sample['hdg'])}°\n"
             f"📏 Distance from home: {distance:.1f} meters"
         )
-        st.info(f"Random aircraft selected: {sample['callsign']} — Distance: {distance:.1f} m")
+        st.info(f"""
+        **Random Aircraft Selected**
+        - Callsign: {sample['callsign']}
+        - Aircraft Lat/Lon: {ac_lat:.4f}, {ac_lon:.4f}
+        - Home Lat/Lon: {home_lat:.4f}, {home_lon:.4f}
+        - Distance: {distance:.1f} meters
+        """)
     else:
         msg = "✈️ Test alert with no aircraft data available."
     ok = send_pushover("✈️ Test", msg)
+
 
 
 
