@@ -307,6 +307,7 @@ if st.button("🔍 Check Sun and Moon Shadow Prediction"):
 
             shadow_report += "\n"
         st.code(shadow_report)
+        time.sleep(10)
 
         # Show sun and moon shadow positions as dots on map
         if sun_dots:
@@ -315,6 +316,7 @@ if st.button("🔍 Check Sun and Moon Shadow Prediction"):
             st.map(pd.DataFrame(moon_dots))
     else:
         st.info("No aircraft available for prediction.")
+
 
 
 
