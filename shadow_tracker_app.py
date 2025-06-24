@@ -1,4 +1,3 @@
-# ✈️ shadow_tracker_app.py
 
 import time
 import streamlit as st
@@ -45,7 +44,7 @@ def send_pushover(title, message):
     except:
         return False
 
-# Haversine distance
+# Helpers
 def hav(lat1, lon1, lat2, lon2):
     R = 6371000
     dlat = math.radians(lat2 - lat1)
@@ -72,6 +71,7 @@ with st.sidebar:
     test_alert = st.button("Test Alert")
     test_push = st.button("Test Pushover")
 
+# Current time
 now_utc = datetime.now(timezone.utc)
 
 # Sun & moon alt
@@ -111,7 +111,7 @@ if RAPIDAPI_KEY:
 
 df_ac = pd.DataFrame(aircraft_list)
 
-# Shadow calculations
+# Shadow calculation
 sun_trails, moon_trails = [], []
 sun_export, moon_export = [], []
 
@@ -138,7 +138,7 @@ for _, row in df_ac.iterrows():
 
 # Alerts
 beep_html = """<audio autoplay>
-  <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
+  <source src=\"https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg\" type=\"audio/ogg\">
 </audio>"""
 
 for row, trail in sun_trails:
@@ -176,7 +176,7 @@ layers.append(pdk.Layer(
     "ScatterplotLayer",
     data=pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
     get_position=["lon", "lat"],
-    get_fill_color=[255, 0, 0],
+    get_fill_color=[255, 0, 0, 128],
     get_radius=alert_width,
     pickable=False
 ))
@@ -255,7 +255,7 @@ if test_push:
     ok = send_pushover("✈️ Test", "Test pushover alert")
     st.success("Sent!" if ok else "Failed")
 
-# CSV + ZIP export
+# Export
 if sun_export or moon_export:
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
