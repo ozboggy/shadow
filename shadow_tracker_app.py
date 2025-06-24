@@ -284,30 +284,24 @@ if st.button("🔍 Check Sun and Moon Shadow Prediction"):
                 moon = ephem.Moon(obs)
                 moon_alt = math.degrees(moon.alt)
 
-            shadow_report += f"✈️ {row['callsign']}
-☀️ Sun Alt: {sun_alt:.2f}°
-"
+            shadow_report += f"✈️ {row['callsign']}\n☀️ Sun Alt: {sun_alt:.2f}°\n"
             if sun_alt > 0:
                 saz = get_azimuth(row['lat'], row['lon'], now)
                 sd = row['alt'] / math.tan(math.radians(sun_alt))
                 sh_lat = row['lat'] + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = row['lon'] + (sd / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(saz + 180))
-                shadow_report += f"☀️ Sun Shadow at: {sh_lat:.5f}, {sh_lon:.5f}
-"
+                shadow_report += f"☀️ Sun Shadow at: {sh_lat:.5f}, {sh_lon:.5f}\n"
 
             if moon_alt is not None:
-                shadow_report += f"🌕 Moon Alt: {moon_alt:.2f}°
-"
+                shadow_report += f"🌕 Moon Alt: {moon_alt:.2f}°\n"
                 if moon_alt > 0:
                     maz = math.degrees(moon.az)
                     md = row['alt'] / math.tan(math.radians(moon_alt))
                     mh_lat = row['lat'] + (md / 111111) * math.cos(math.radians(maz + 180))
                     mh_lon = row['lon'] + (md / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(maz + 180))
-                    shadow_report += f"🌕 Moon Shadow at: {mh_lat:.5f}, {mh_lon:.5f}
-"
+                    shadow_report += f"🌕 Moon Shadow at: {mh_lat:.5f}, {mh_lon:.5f}\n"
 
-            shadow_report += "
-"
+            shadow_report += "\n"
         st.code(shadow_report)
     else:
         st.info("No aircraft available for prediction.")
