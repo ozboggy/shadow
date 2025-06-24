@@ -274,6 +274,8 @@ if st.button("🔍 Check Sun and Moon Shadow Prediction"):
     if not df_ac.empty:
         shadow_report = ""
         now = datetime.now(timezone.utc)
+        sun_dots = []
+        moon_dots = []
         for _, row in df_ac.iterrows():
             sun_alt = get_altitude(row['lat'], row['lon'], now)
             moon_alt = None
@@ -291,6 +293,7 @@ if st.button("🔍 Check Sun and Moon Shadow Prediction"):
                 sh_lat = row['lat'] + (sd / 111111) * math.cos(math.radians(saz + 180))
                 sh_lon = row['lon'] + (sd / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(saz + 180))
                 shadow_report += f"☀️ Sun Shadow at: {sh_lat:.5f}, {sh_lon:.5f}\n"
+                sun_dots.append({"lat": sh_lat, "lon": sh_lon, "callsign": row['callsign']})
 
             if moon_alt is not None:
                 shadow_report += f"🌕 Moon Alt: {moon_alt:.2f}°\n"
@@ -300,11 +303,19 @@ if st.button("🔍 Check Sun and Moon Shadow Prediction"):
                     mh_lat = row['lat'] + (md / 111111) * math.cos(math.radians(maz + 180))
                     mh_lon = row['lon'] + (md / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(maz + 180))
                     shadow_report += f"🌕 Moon Shadow at: {mh_lat:.5f}, {mh_lon:.5f}\n"
+                    moon_dots.append({"lat": mh_lat, "lon": mh_lon, "callsign": row['callsign']})
 
             shadow_report += "\n"
         st.code(shadow_report)
+
+        # Show sun and moon shadow positions as dots on map
+        if sun_dots:
+            st.map(pd.DataFrame(sun_dots))
+        if moon_dots:
+            st.map(pd.DataFrame(moon_dots))
     else:
         st.info("No aircraft available for prediction.")
+
 
 
 
