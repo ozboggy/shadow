@@ -255,17 +255,20 @@ if test_alert:
 if test_push:
     if not df_ac.empty:
         sample = df_ac.sample(1).iloc[0]
+        distance = hav(CENTER_LAT, CENTER_LON, sample['lat'], sample['lon'])
         msg = (
             f"✈️ Test Alert: {sample['callsign']}\n"
             f"📍 Lat/Lon: {sample['lat']:.4f}, {sample['lon']:.4f}\n"
             f"🛬 Altitude: {int(sample['alt'])} ft\n"
             f"🚀 Speed: {int(sample['vel'])} knots\n"
-            f"🧭 Heading: {int(sample['hdg'])}°"
+            f"🧭 Heading: {int(sample['hdg'])}°\n"
+            f"📏 Distance from home: {distance:.1f} meters"
         )
+        st.info(f"Random aircraft selected: {sample['callsign']} — Distance: {distance:.1f} m")
     else:
         msg = "✈️ Test alert with no aircraft data available."
     ok = send_pushover("✈️ Test", msg)
-    st.success("Sent!" if ok else "Failed")
+
 
 
 # Export
