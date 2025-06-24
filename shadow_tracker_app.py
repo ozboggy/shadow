@@ -255,29 +255,63 @@ if test_alert:
 if test_push:
     if not df_ac.empty:
         sample = df_ac.sample(1).iloc[0]
-        home_lat, home_lon = CENTER_LAT, CENTER_LON
-        ac_lat, ac_lon = sample['lat'], sample['lon']
-        distance = hav(home_lat, home_lon, ac_lat, ac_lon)
-
+        distance = hav(CENTER_LAT, CENTER_LON, sample['lat'], sample['lon'])
         msg = (
             f"✈️ Test Alert: {sample['callsign']}\n"
-            f"📍 Lat/Lon: {ac_lat:.4f}, {ac_lon:.4f}\n"
-            f"🏠 Home: {home_lat:.4f}, {home_lon:.4f}\n"
+            f"📍 Lat/Lon: {sample['lat']:.4f}, {sample['lon']:.4f}\n"
             f"🛬 Altitude: {int(sample['alt'])} ft\n"
             f"🚀 Speed: {int(sample['vel'])} knots\n"
             f"🧭 Heading: {int(sample['hdg'])}°\n"
             f"📏 Distance from home: {distance:.1f} meters"
         )
-        st.info(f"""
-        **Random Aircraft Selected**
-        - Callsign: {sample['callsign']}
-        - Aircraft Lat/Lon: {ac_lat:.4f}, {ac_lon:.4f}
-        - Home Lat/Lon: {home_lat:.4f}, {home_lon:.4f}
-        - Distance: {distance:.1f} meters
-        """)
+        st.info(f"Random aircraft selected: {sample['callsign']} — Distance: {distance:.1f} m")
     else:
         msg = "✈️ Test alert with no aircraft data available."
     ok = send_pushover("✈️ Test", msg)
+
+# Add a button to check shadow prediction
+if st.button("🔍 Check Sun and Moon Shadow Prediction"):
+    if not df_ac.empty:
+        shadow_report = ""
+        now = datetime.now(timezone.utc)
+        for _, row in df_ac.iterrows():
+            sun_alt = get_altitude(row['lat'], row['lon'], now)
+            moon_alt = None
+            if ephem:
+                obs = ephem.Observer()
+                obs.lat, obs.lon = str(row['lat']), str(row['lon'])
+                obs.date = now
+                moon = ephem.Moon(obs)
+                moon_alt = math.degrees(moon.alt)
+
+            shadow_report += f"✈️ {row['callsign']}
+☀️ Sun Alt: {sun_alt:.2f}°
+"
+            if sun_alt > 0:
+                saz = get_azimuth(row['lat'], row['lon'], now)
+                sd = row['alt'] / math.tan(math.radians(sun_alt))
+                sh_lat = row['lat'] + (sd / 111111) * math.cos(math.radians(saz + 180))
+                sh_lon = row['lon'] + (sd / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(saz + 180))
+                shadow_report += f"☀️ Sun Shadow at: {sh_lat:.5f}, {sh_lon:.5f}
+"
+
+            if moon_alt is not None:
+                shadow_report += f"🌕 Moon Alt: {moon_alt:.2f}°
+"
+                if moon_alt > 0:
+                    maz = math.degrees(moon.az)
+                    md = row['alt'] / math.tan(math.radians(moon_alt))
+                    mh_lat = row['lat'] + (md / 111111) * math.cos(math.radians(maz + 180))
+                    mh_lon = row['lon'] + (md / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(maz + 180))
+                    shadow_report += f"🌕 Moon Shadow at: {mh_lat:.5f}, {mh_lon:.5f}
+"
+
+            shadow_report += "
+"
+        st.code(shadow_report)
+    else:
+        st.info("No aircraft available for prediction.")
+
 
 
 
