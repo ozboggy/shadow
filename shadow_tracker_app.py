@@ -1,4 +1,3 @@
-```python
 import time
 import streamlit as st
 from dotenv import load_dotenv
@@ -237,4 +236,3 @@ if sun_export or moon_export:
             z.writestr("moon_shadows.csv", pd.DataFrame(moon_export).to_csv(index=False))
     buf.seek(0)
     st.download_button("Download Shadow Exports", buf, file_name="shadow_exports.zip")
-```
