@@ -45,7 +45,7 @@ SUN_FORECAST_MINUTES = int(FORECAST_DURATION_MINUTES * 1.5)
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
-    alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
+    alert_width = st.slider("Shadow Alert Width (m)", 10, 10000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
     show_sun_lines = st.checkbox("Show Sun Shadows", True)
