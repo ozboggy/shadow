@@ -407,7 +407,7 @@ for trail in sun_trails:
             # log
             log_alert(cs, lat, lon, transit, dist_mi)
             # pushover
-                        if pushover_alerts:
+            if pushover_alerts:
                 send_pushover("✈️ Shadow Alert", f"{cs}: {dist_mi:.2f} mi away, {transit} sec transit")
             break  # Only trigger alert once per shadow per run
 
