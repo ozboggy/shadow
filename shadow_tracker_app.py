@@ -40,7 +40,7 @@ def send_pushover(title, message):
     except:
         return False
 
-# Audio snippet for on-screen alert
+# Audio snippet
 dot_html = """<audio autoplay>
   <source src=\"https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg\" type=\"audio/ogg\">
 </audio>"""
@@ -60,7 +60,7 @@ FORECAST_INTERVAL_SECONDS = 5
 FORECAST_DURATION_MINUTES = 5
 SUN_FORECAST_MINUTES = int(FORECAST_DURATION_MINUTES * 1.5)
 
-# Sidebar controls
+# Sidebar
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
@@ -69,10 +69,10 @@ with st.sidebar:
     show_moon = st.checkbox("Track Moon", False)
     show_sun_lines = st.checkbox("Show Sun Shadows", True)
     show_moon_lines = st.checkbox("Show Moon Shadows", True)
-    test_alert = st.button("Test Alert")
+    test_alert = st.button("Test Predictive Alert")
     test_push = st.button("Test Pushover")
 
-# Current time
+# Current UTC time
 now_utc = datetime.now(timezone.utc)
 
 # Fetch aircraft via RapidAPI
@@ -83,26 +83,26 @@ if RAPIDAPI_KEY:
     try:
         r = requests.get(url, headers=headers)
         r.raise_for_status()
-        for ac in r.json().get("ac", []):
-            try:
-                lat = float(ac.get("lat", 0)); lon = float(ac.get("lon", 0))
-                alt = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
-                vel = float(ac.get("gs") or 0); hdg = float(ac.get("track") or 0)
-                cs = ac.get("flight") or ac.get("hex") or ""
-                if alt > 0:
-                    aircraft_list.append({"lat": lat, "lon": lon, "alt": alt, "vel": vel, "hdg": hdg, "callsign": cs})
-            except:
-                continue
+        ac_list = r.json().get("ac", [])
+        for ac in ac_list:
+            lat = float(ac.get("lat", 0))
+            lon = float(ac.get("lon", 0))
+            alt = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
+            vel = float(ac.get("gs") or 0)
+            hdg = float(ac.get("track") or 0)
+            cs = ac.get("flight") or ac.get("hex") or ""
+            if alt > 0:
+                aircraft_list.append({"lat": lat, "lon": lon, "alt": alt, "vel": vel, "hdg": hdg, "callsign": cs})
     except:
-        st.warning("Failed to fetch aircraft data.")
+        st.warning("Failed to fetch aircraft data via RapidAPI.")
 
-# DataFrame of aircraft
+# DataFrame
 df_ac = pd.DataFrame(aircraft_list)
 
-# Compute shadow trails
+# Calculate shadow trails
 sun_trails, moon_trails = [], []
 for _, row in df_ac.iterrows():
-    # Sun shadows
+    # Sun trails
     if show_sun:
         path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * SUN_FORECAST_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
@@ -115,69 +115,116 @@ for _, row in df_ac.iterrows():
             if sa > 0:
                 saz = get_azimuth(lat_i, lon_i, t)
                 sd = row['alt'] / math.tan(math.radians(sa))
-                sh_lat = lat_i + (sd/111111) * math.cos(math.radians(saz + 180))
-                sh_lon = lon_i + (sd/(111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
+                sh_lat = lat_i + (sd/111111) * math.cos(math.radians(saz+180))
+                sh_lon = lon_i + (sd/(111111*math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz+180))
                 path.append((sh_lat, sh_lon, i))
         if path:
             sun_trails.append((row, path))
-    # Moon shadows
+    # Moon trails
     if show_moon and ephem:
         path = []
-        obs = ephem.Observer(); obs.lat, obs.lon = str(CENTER_LAT), str(CENTER_LON)
+        obs = ephem.Observer()
+        obs.lat, obs.lon = str(CENTER_LAT), str(CENTER_LON)
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             t = now_utc + timedelta(seconds=i)
             dx = row['vel'] * i * math.sin(math.radians(row['hdg']))
             dy = row['vel'] * i * math.cos(math.radians(row['hdg']))
             lat_i = row['lat'] + dy/111111
             lon_i = row['lon'] + dx/(111111 * math.cos(math.radians(row['lat'])))
-            obs.date = t; moon = ephem.Moon(obs)
+            obs.date = t
+            moon = ephem.Moon(obs)
             ma = math.degrees(moon.alt)
             if ma > 0:
                 maz = math.degrees(moon.az)
                 md = row['alt'] / math.tan(math.radians(ma))
-                mh_lat = lat_i + (md/111111) * math.cos(math.radians(maz + 180))
-                mh_lon = lon_i + (md/(111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
+                mh_lat = lat_i + (md/111111) * math.cos(math.radians(maz+180))
+                mh_lon = lon_i + (md/(111111*math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz+180))
                 path.append((mh_lat, mh_lon, i))
         if path:
             moon_trails.append((row, path))
 
-# Build pydeck layers
+# Build layers
 layers = []
 if not df_ac.empty:
+    # Aircraft positions
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=df_ac,
         get_position=["lon","lat"], get_fill_color=[0,0,255,200], get_radius=100,
         pickable=True, auto_highlight=True
     ))
+    # Heading arrows
     layers.append(pdk.Layer(
         "TextLayer", data=df_ac,
-        get_position=["lon","lat"], get_text="'➤'",
-        get_color=[255,255,255], get_size=16, get_angle="hdg",
-        billboard=False, get_alignment_baseline="'center'"
+        get_position=["lon","lat"], get_text="'➤'", get_color=[255,255,255],
+        get_size=16, get_angle="hdg", billboard=False, get_alignment_baseline="'center'"
     ))
+# Home radius
 layers.append(pdk.Layer(
     "ScatterplotLayer", data=pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
     get_position=["lon","lat"], get_fill_color=[255,0,0,128], get_radius=alert_width, pickable=False
 ))
+# Sun trail paths
 if show_sun_lines:
     for ac, trail in sun_trails:
         layers.append(pdk.Layer(
-            "PathLayer", data=[{"path": [(lon,lat) for lat,lon,_ in trail]}],
-            get_path="path", get_color=[0,0,0], width_scale=(ac['alt']/10000+1)*0.5, width_min_pixels=1,
-            pickable=False
+            "PathLayer", data=[{"path": [(lon,lat) for lat,lon,_ in trail]}], get_path="path",
+            get_color=[0,0,0], width_scale=(ac['alt']/10000+1)*0.5, width_min_pixels=1, pickable=False
         ))
+        # start dot
         slat, slon, _ = trail[0]
         layers.append(pdk.Layer(
             "ScatterplotLayer", data=pd.DataFrame([{"lat":slat,"lon":slon}]),
             get_position=["lon","lat"], get_fill_color=[0,0,0,255], get_radius=50, pickable=False
         ))
+# Moon trail paths
 if show_moon_lines:
     for ac, trail in moon_trails:
         layers.append(pdk.Layer(
-            "PathLayer", data=[{"path": [(lon,lat) for lat,lon,_ in trail]}],
-            get_path="path", get_color=[128,128,128], width_scale=ac['alt']/10000+1, width_min_pixels=2,
-            pickable=False
+            "PathLayer", data=[{"path": [(lon,lat) for lat,lon,_ in trail]}], get_path="path",
+            get_color=[128,128,128], width_scale=ac['alt']/10000+1, width_min_pixels=2, pickable=False
         ))
 
 # Render map
-view =
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=12)
+st.pydeck_chart(pdk.Deck(
+    layers=layers,
+    initial_view_state=view,
+    map_style="light",
+    tooltip={"html": "<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} ft", "style": {"backgroundColor":"black","color":"white"}}
+), use_container_width=True)
+
+# Predictive shadow alerts
+for row, trail in sun_trails:
+    for lat, lon, sec in trail:
+        if sec in alert_times:
+            dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
+            if dist <= alert_width:
+                msg = (
+                    f"✈️ {row['callsign']} predicted shadow\n"
+                    f"⏱ Shadow over home in {sec}s\n"
+                    f"📏 Distance: {int(dist)} m\n"
+                    f"🛬 Altitude: {int(row['alt'])} ft\n"
+                    f"🚀 Speed: {int(row['vel'])} knots"
+                )
+                st.warning(f"🔮 Predictive: shadow in {sec}s! ({row['callsign']})")
+                st.markdown(dot_html, unsafe_allow_html=True)
+                send_pushover("🔮 Predicted Shadow", msg)
+                break
+
+# Actual shadow alerts
+for _, row in df_ac.iterrows():
+    sa = get_altitude(row['lat'], row['lon'], now_utc)
+    if sa > 0:
+        saz = get_azimuth(row['lat'], row['lon'], now_utc)
+        sd = row['alt'] / math.tan(math.radians(sa))
+        sh_lat = row['lat'] + (sd/111111) * math.cos(math.radians(saz+180))
+        sh_lon = row['lon'] + (sd/(111111*math.cos(math.radians(row['lat'])))) * math.sin(math.radians(saz+180))
+        dist_now = hav(sh_lat, sh_lon, CENTER_LAT, CENTER_LON)
+        if dist_now <= alert_width:
+            msg = f"✈️ {row['callsign']} actual shadow over home\n📏 Distance: {int(dist_now)} m"
+            st.error(f"🛑 Actual: shadow over home! ({row['callsign']})")
+            st.markdown(dot_html, unsafe_allow_html=True)
+            send_pushover("🛑 Actual Shadow", msg)
+            break
+
+# Export remains unchanged
