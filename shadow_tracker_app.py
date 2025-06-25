@@ -215,11 +215,16 @@ for row, trail in sun_trails:
             dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
             if dist <= alert_width:
                 msg = (
-                    f"✈️ {row['callsign']} shadow alert
+    f"✈️ {row['callsign']} shadow alert
 "
-                    f"⏱ Shadow over home in {sec}s
+    f"⏱ Shadow over home in {sec}s
 "
-                    f"📏 Distance: {int(dist)} m
+    f"📏 Distance: {int(dist)} m
+"
+    f"🛬 Altitude: {int(row['alt'])} ft
+"
+    f"🚀 Speed: {int(row['vel'])} knots"
+)} m
 "
                     f"🛬 Altitude: {int(row['alt'])} ft
 "
