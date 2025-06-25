@@ -69,7 +69,7 @@ def send_pushover(title, message):
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
-    alert_width = st.slider("Shadow Alert Width (m)", 10, 10000, 100)
+    alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
     show_sun_lines = st.checkbox("Show Sun Shadows", True)
@@ -230,11 +230,16 @@ st.pydeck_chart(
     use_container_width=True
 )
 
+# Handle Test Alert as on-screen warning
+if test_alert:
+    alert_msgs.append("✈️ Test alert triggered!")
+
 # Display on-screen alerts
 for msg in alert_msgs:
     st.warning(msg)
 
 # Test buttons
+# (Test Pushover remains separate)
 if test_alert:
     st.success("Test shadow alert triggered!")
 if test_push:
