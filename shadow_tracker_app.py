@@ -64,7 +64,7 @@ SUN_FORECAST_MINUTES = int(FORECAST_DURATION_MINUTES * 1.5)
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
-    alert_width = st.slider("Shadow Alert Width (m)", 10, 10000, 100)
+    alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
     show_sun_lines = st.checkbox("Show Sun Shadows", True)
@@ -208,22 +208,44 @@ st.pydeck_chart(pdk.Deck(
     tooltip={"html": "<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} ft", "style": {"backgroundColor": "black", "color": "white"}}
 ), use_container_width=True)
 
-# Shadow proximity alerts based on shadow trails
+# Predictive shadow alerts based on forecast trails
 for row, trail in sun_trails:
     for lat, lon, sec in trail:
         if sec in alert_times:
             dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
             if dist <= alert_width:
                 msg = (
-                    f"✈️ {row['callsign']} shadow alert\n"
-                    f"⏱ Shadow over home in {sec}s\n"
-                    f"📏 Distance: {int(dist)} m\n"
-                    f"🛬 Altitude: {int(row['alt'])} ft\n"
+                    f"✈️ {row['callsign']} predicted shadow
+"
+                    f"⏱ Shadow over home in {sec}s
+"
+                    f"📏 Distance: {int(dist)} m
+"
+                    f"🛬 Altitude: {int(row['alt'])} ft
+"
                     f"🚀 Speed: {int(row['vel'])} knots"
                 )
-                st.error(f"🚨 Shadow in {sec}s! ({row['callsign']})")
+                st.warning(f"🔮 Predictive alert: shadow in {sec}s! ({row['callsign']})")
                 st.markdown(dot_html, unsafe_allow_html=True)
-                send_pushover("✈️ Shadow Alert", msg)
-                # only alert once per plane per interval
+                send_pushover("🔮 Predicted Shadow", msg)
                 break
+
+# Actual shadow alert (current)
+for _, row in df_ac.iterrows():
+    # calculate current shadow position
+    sa = get_altitude(row['lat'], row['lon'], now_utc)
+    if sa > 0:
+        saz = get_azimuth(row['lat'], row['lon'], now_utc)
+        sd = row['alt'] / math.tan(math.radians(sa))
+        sh_lat = row['lat'] + (sd/111111) * math.cos(math.radians(saz + 180))
+        sh_lon = row['lon'] + (sd/(111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(saz + 180))
+        dist_now = hav(sh_lat, sh_lon, CENTER_LAT, CENTER_LON)
+        if dist_now <= alert_width:
+            msg = f"✈️ {row['callsign']} actual shadow over home
+📏 Distance: {int(dist_now)} m"
+            st.error(f"🛑 Actual shadow over home! ({row['callsign']})")
+            st.markdown(dot_html, unsafe_allow_html=True)
+            send_pushover("🛑 Actual Shadow", msg)
+            break
+
 # Export unchanged
