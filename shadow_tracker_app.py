@@ -94,7 +94,8 @@ def log_alert(callsign, lat, lon, time_until, distance_mi):
     df.to_csv(log_path, index=False)
 
 # Defaults
-DEFAULT_RADIUS_KM = 10
+DEFAULT_RADIUS_KM = 10  # default radius
+MAX_RADIUS_KM = 25  # maximum allowed search radius
 # Predict shadows up to 60 seconds, step 1s
 FORECAST_INTERVAL_S = 1
 FORECAST_DURATION_S = 60
@@ -120,7 +121,7 @@ with st.sidebar:
 
     st.markdown("---")
     # Map settings
-    radius_km = st.slider("Search Radius (km)", 1, 100, DEFAULT_RADIUS_KM)
+    radius_km = radius_km = st.slider("Search Radius (km)", 1, MAX_RADIUS_KM, DEFAULT_RADIUS_KM)
     track_sun = st.checkbox("Show Sun Shadows", value=True)
     track_moon = st.checkbox("Show Moon Shadows", value=False)
     alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
@@ -393,12 +394,33 @@ tooltip = {
     ),
     "style": {"backgroundColor":"black","color":"white"}
 }
-st.pydeck_chart(pdk.Deck(
-    layers=layers,
-    initial_view_state=view,
-    map_style="light",
-    tooltip=tooltip
-), use_container_width=True)
+st.pydeck_chart(
+    pdk.Deck(
+        layers=layers,
+        initial_view_state=view,
+        map_style="light",
+        tooltip=tooltip
+    ),
+    use_container_width=True
+)
+
+# 📊 Recent Alerts (moved below map)
+try:
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        df_log['y'] = 0
+        df_disp = df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']].copy()
+        df_disp.rename(columns={'Time Until Alert (sec)':'Transit (s)'}, inplace=True)
+        st.markdown("### 📊 Recent Alerts")
+        st.dataframe(df_disp.tail(10))
+        fig = px.scatter(df_log, x='Time UTC', y='y', size='Distance (mi)', size_max=40,
+                         hover_name='Callsign', hover_data={'Transit (s)':True}, title="Alert Proximity Timeline")
+        fig.add_hline(y=0, line_color='lightgray', line_width=1)
+        fig.update_yaxes(visible=False, range=[-0.5,0.5])
+        st.plotly_chart(fig, use_container_width=True)
+except FileNotFoundError:
+    st.warning(f"Alert log not found at `{log_path}`")
 
 # Alert detection & logging
 for trail in sun_trails:
