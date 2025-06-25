@@ -69,7 +69,7 @@ def send_pushover(title, message):
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
-    alert_width = st.slider("Shadow Alert Width (m)", 10, 10000, 100)
+    alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
     show_sun_lines = st.checkbox("Show Sun Shadows", True)
@@ -230,23 +230,29 @@ st.pydeck_chart(
     use_container_width=True
 )
 
-# Handle Test Alert as on-screen warning
+# Handle Test Alert (inject into alerts)
 if test_alert:
-    alert_msgs.append("✈️ Test alert triggered!")
+    test_msg = "✈️ Test alert triggered!"
+    if test_msg not in st.session_state.alerted:
+        st.session_state.alerted.add(test_msg)
+        alert_msgs.append(test_msg)
 
-# Display on-screen alerts with 2s duration and sound
-for msg in alert_msgs:
-    container = st.empty()
-    container.warning(msg)
-    # play beep
-    st.markdown(
-        "<audio autoplay><source src='https://www.soundjay.com/buttons/sounds/beep-07.mp3' type='audio/mpeg'></audio>",
-        unsafe_allow_html=True
-    )
-    time.sleep(2)
-    container.empty()
+# Persistent on-screen alerts with single-play sound
+def play_alerts(msgs):
+    if 'played_alerts' not in st.session_state:
+        st.session_state.played_alerts = set()
+    for msg in msgs:
+        st.warning(msg)
+        if msg not in st.session_state.played_alerts:
+            st.markdown(
+                "<audio autoplay><source src='https://www.soundjay.com/buttons/sounds/beep-07.mp3' type='audio/mpeg'></audio>",
+                unsafe_allow_html=True
+            )
+            st.session_state.played_alerts.add(msg)
 
-# Test buttons
+play_alerts(alert_msgs)
+
+# Test Pushover remains
 # (Test Pushover remains separate)
 if test_alert:
     st.success("Test shadow alert triggered!")
