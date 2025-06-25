@@ -162,19 +162,23 @@ for _, row in df_ac.iterrows():
 
 # Build map layers
 layers = []
-# Aircraft icon layer (arrow)
+# Aircraft icon layer (IconLayer)
 if not df_ac.empty:
+    df_ac['icon'] = [{
+        "url": "https://img.icons8.com/emoji/48/000000/airplane-emoji.png",
+        "width": 48,
+        "height": 48,
+        "anchorY": 24
+    }] * len(df_ac)
     layers.append(pdk.Layer(
-        "TextLayer",
+        "IconLayer",
         data=df_ac,
+        get_icon="icon",
         get_position=["lon", "lat"],
-        get_text="'▲'",
+        get_size=4,
+        size_scale=15,
         get_angle="hdg",
-        get_size=24,
-        get_color=[0, 128, 255],
-        billboard=False,
-        pickable=True,
-        get_alignment_baseline="'bottom'"
+        pickable=True
     ))
 # Home boundary
 layers.append(pdk.Layer(
