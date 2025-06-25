@@ -64,7 +64,7 @@ SUN_FORECAST_MINUTES = int(FORECAST_DURATION_MINUTES * 1.5)
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
-    alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
+    alert_width = st.slider("Shadow Alert Width (m)", 10, 10000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
     show_sun_lines = st.checkbox("Show Sun Shadows", True)
@@ -113,13 +113,13 @@ for _, row in df_ac.iterrows():
             dx = row['vel'] * i * math.sin(math.radians(row['hdg']))
             dy = row['vel'] * i * math.cos(math.radians(row['hdg']))
             lat_i = row['lat'] + dy/111111
-            lon_i = row['lon'] + dx/(111111*math.cos(math.radians(row['lat'])))
+            lon_i = row['lon'] + dx/(111111 * math.cos(math.radians(row['lat'])))
             sa = get_altitude(lat_i, lon_i, t)
             if sa > 0:
                 saz = get_azimuth(lat_i, lon_i, t)
                 sd = row['alt'] / math.tan(math.radians(sa))
-                sh_lat = lat_i + (sd/111111)*math.cos(math.radians(saz+180))
-                sh_lon = lon_i + (sd/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(saz+180))
+                sh_lat = lat_i + (sd/111111) * math.cos(math.radians(saz + 180))
+                sh_lon = lon_i + (sd/(111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
                 sun_path.append((sh_lat, sh_lon, i))
         if sun_path:
             sun_trails.append((row, sun_path))
@@ -133,15 +133,15 @@ for _, row in df_ac.iterrows():
             dx = row['vel'] * i * math.sin(math.radians(row['hdg']))
             dy = row['vel'] * i * math.cos(math.radians(row['hdg']))
             lat_i = row['lat'] + dy/111111
-            lon_i = row['lon'] + dx/(111111*math.cos(math.radians(row['lat'])))
+            lon_i = row['lon'] + dx/(111111 * math.cos(math.radians(row['lat'])))
             obs.date = t
             moon = ephem.Moon(obs)
             ma = math.degrees(moon.alt)
             if ma > 0:
                 maz = math.degrees(moon.az)
                 md = row['alt'] / math.tan(math.radians(ma))
-                mh_lat = lat_i + (md/111111)*math.cos(math.radians(maz+180))
-                mh_lon = lon_i + (md/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(maz+180))
+                mh_lat = lat_i + (md/111111) * math.cos(math.radians(maz + 180))
+                mh_lon = lon_i + (md/(111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
                 moon_path.append((mh_lat, mh_lon, i))
         if moon_path:
             moon_trails.append((row, moon_path))
@@ -201,39 +201,3 @@ if show_moon_lines:
 
 # Render map
 view = pdk.ViewState(latitude=CENTER_LAT,longitude=CENTER_LON,zoom=12)
-st.pydeck_chart(pdk.Deck(
-    layers=layers,
-    initial_view_state=view,
-    map_style="light",
-    tooltip={"html":"<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} ft","style":{"backgroundColor":"black","color":"white"}}
-),use_container_width=True)
-
-# Shadow proximity alerts based on shadow trails
-for row, trail in sun_trails:
-    for lat, lon, sec in trail:
-        if sec in alert_times:
-            dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
-            if dist <= alert_width:
-                msg = (
-                    f"✈️ {row['callsign']} shadow alert
-"
-                    f"⏱ Shadow over home in {sec}s
-"
-                    f"📏 Distance: {int(dist)} m
-"
-                    f"🛬 Altitude: {int(row['alt'])} ft
-"
-                    f"🚀 Speed: {int(row['vel'])} knots"
-                )} m
-"
-                    f"🛬 Altitude: {int(row['alt'])} ft
-"
-                    f"🚀 Speed: {int(row['vel'])} knots"
-                )
-                st.error(f"🚨 Shadow in {sec}s! ({row['callsign']})")
-                st.markdown(dot_html, unsafe_allow_html=True)
-                send_pushover("✈️ Shadow Alert", msg)
-                # stop further alerts for this interval
-                break
-# Export unchanged
-
