@@ -1,3 +1,4 @@
+```python
 import time
 import streamlit as st
 from dotenv import load_dotenv
@@ -112,6 +113,7 @@ if RAPIDAPI_KEY:
     except:
         st.warning("Failed to fetch aircraft data.")
 df_ac = pd.DataFrame(aircraft_list)
+# Aircraft count\ nst.sidebar.markdown(f"**Tracked Aircraft:** {len(df_ac)}")
 
 # Prepare exports and on-screen alerts
 sun_export, moon_export = [], []
@@ -235,4 +237,4 @@ if sun_export or moon_export:
             z.writestr("moon_shadows.csv", pd.DataFrame(moon_export).to_csv(index=False))
     buf.seek(0)
     st.download_button("Download Shadow Exports", buf, file_name="shadow_exports.zip")
-
+```
