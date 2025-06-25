@@ -65,10 +65,8 @@ with st.sidebar:
     st.header("Shadow Tracker")
     # Allow override of RapidAPI key
     rap_key_input = st.text_input("RapidAPI Key", value=RAPIDAPI_KEY or "", type="password")
-    # Use override if provided
     rap_key = rap_key_input.strip() if rap_key_input.strip() else RAPIDAPI_KEY
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
-("Search Radius (km)", 1, 100, 10)
     alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
