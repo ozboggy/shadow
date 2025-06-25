@@ -63,7 +63,12 @@ SUN_FORECAST_MINUTES = int(FORECAST_DURATION_MINUTES * 1.5)
 # Sidebar
 with st.sidebar:
     st.header("Shadow Tracker")
+    # Allow override of RapidAPI key
+    rap_key_input = st.text_input("RapidAPI Key", value=RAPIDAPI_KEY or "", type="password")
+    # Use override if provided
+    rap_key = rap_key_input.strip() if rap_key_input.strip() else RAPIDAPI_KEY
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
+("Search Radius (km)", 1, 100, 10)
     alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
@@ -77,9 +82,9 @@ now_utc = datetime.now(timezone.utc)
 
 # Fetch aircraft via RapidAPI
 aircraft_list = []
-if RAPIDAPI_KEY:
+if rap_key:
     url = f"https://adsbexchange-com1.p.rapidapi.com/v2/lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{radius_km}/"
-    headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
+    headers = {"x-rapidapi-key": rap_key, "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"}
     try:
         r = requests.get(url, headers=headers)
         r.raise_for_status()
@@ -93,10 +98,13 @@ if RAPIDAPI_KEY:
             cs = ac.get("flight") or ac.get("hex") or ""
             if alt > 0:
                 aircraft_list.append({"lat": lat, "lon": lon, "alt": alt, "vel": vel, "hdg": hdg, "callsign": cs})
-    except:
-        st.warning("Failed to fetch aircraft data via RapidAPI.")
+    except Exception as e:
+        st.error(f"Failed to fetch aircraft data via RapidAPI: {e}")
+else:
+    st.error("RapidAPI key not set. Please enter your RapidAPI Key in the sidebar.")
 
 # DataFrame
+
 df_ac = pd.DataFrame(aircraft_list)
 
 # Calculate shadow trails
