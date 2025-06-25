@@ -57,6 +57,8 @@ CENTER_LON = 150.9717434
 alert_times = [60, 30, 15, 10, 5, 0]
 FORECAST_INTERVAL_SECONDS = 5
 FORECAST_DURATION_MINUTES = 5
+# make sun prediction 50% longer
+tal SUN_FORECAST_MINUTES = int(FORECAST_DURATION_MINUTES * 1.5)
 
 # Sidebar
 with st.sidebar:
@@ -116,7 +118,9 @@ sun_export, moon_export = [], []
 
 for _, row in df_ac.iterrows():
     path = []
-    for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
+    # use extended duration for sun
+    sun_duration = SUN_FORECAST_MINUTES
+    for i in range(0, FORECAST_INTERVAL_SECONDS * sun_duration + 1, FORECAST_INTERVAL_SECONDS):
         t = now_utc + timedelta(seconds=i)
         dist_m = row['vel'] * i
         dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
@@ -135,194 +139,5 @@ for _, row in df_ac.iterrows():
     if path:
         sun_trails.append((row, path))
 
-# Alerts
-beep_html = """<audio autoplay>
-  <source src=\"https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg\" type=\"audio/ogg\">
-</audio>"""
+# Alerts\...
 
-for row, trail in sun_trails:
-    for lat, lon, sec in trail:
-        if sec in alert_times:
-            dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
-            if dist <= alert_width:
-                msg = (
-                    f"✈️ {row['callsign']} sun shadow alert\n"
-                    f"⏱ Transit in {sec}s\n"
-                    f"📏 Distance: {int(dist)}m\n"
-                    f"🛬 Altitude: {int(row['alt'])} ft\n"
-                    f"🚀 Speed: {int(row['vel'])} knots"
-                )
-                st.error(f"🚨 Shadow over home in {sec}s!")
-                st.markdown(beep_html, unsafe_allow_html=True)
-                send_pushover("✈️ Shadow Alert", msg)
-                break
-
-# Layers
-layers = []
-
-if not df_ac.empty:
-    layers.append(pdk.Layer(
-        "ScatterplotLayer",
-        data=df_ac,
-        get_position=["lon", "lat"],
-        get_fill_color=[0, 128, 255, 200],
-        get_radius=300,
-        pickable=True,
-        auto_highlight=True
-    ))
-
-layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    data=pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
-    get_position=["lon", "lat"],
-    get_fill_color=[255, 0, 0, 128],
-    get_radius=alert_width,
-    pickable=False
-))
-
-if show_sun_lines:
-    for ac, trail in sun_trails:
-        layers.append(pdk.Layer(
-            "PathLayer",
-            data=[{
-                "path": [(lon, lat) for lat, lon, _ in trail],
-                "callsign": ac["callsign"]
-            }],
-            get_path="path",
-            get_color=[0, 0, 0],        # Sun trails in black
-            width_scale=ac["alt"] / 10000 + 1,
-            width_min_pixels=2,
-            pickable=False
-        ))
-
-if show_moon and ephem:
-    for _, row in df_ac.iterrows():
-        m_path = []
-        for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
-            t = now_utc + timedelta(seconds=i)
-            dist_m = row['vel'] * i
-            dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
-            dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(row['lat'])))
-            lat_i, lon_i = row['lat'] + dlat, row['lon'] + dlon
-            try:
-                obs.date = t
-                moon = ephem.Moon(obs)
-                ma = math.degrees(moon.alt)
-                maz = math.degrees(moon.az)
-                if ma > 0:
-                    md = row['alt'] / math.tan(math.radians(ma))
-                    mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
-                    mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
-                    m_path.append((mh_lat, mh_lon, i))
-                    moon_export.append({"callsign": row['callsign'], "lat": mh_lat, "lon": mh_lon, "time_offset_sec": i})
-            except:
-                continue
-        if m_path:
-            moon_trails.append((row, m_path))
-            if show_moon_lines:
-                layers.append(pdk.Layer(
-                    "PathLayer",
-                    data=[{
-                        "path": [(lon, lat) for lat, lon, _ in m_path],
-                        "callsign": row["callsign"]
-                    }],
-                    get_path="path",
-                    get_color=[128, 128, 128],  # Moon trails in grey
-                    width_scale=row["alt"] / 10000 + 1,
-                    width_min_pixels=2,
-                    pickable=False
-                ))
-
-# Map
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=12)
-st.pydeck_chart(pdk.Deck(
-    layers=layers,
-    initial_view_state=view,
-    map_style="light",
-    tooltip={
-        "html": "<b>Callsign:</b> {callsign}<br/><b>Altitude:</b> {alt} ft<br/><b>Speed:</b> {vel} kts<br/><b>Heading:</b> {hdg}°",
-        "style": {"backgroundColor": "black", "color": "white", "cursor": "pointer"}
-    }
-), use_container_width=True)
-
-# Buttons
-if test_alert:
-    st.warning("Test alert triggered")
-    st.markdown(beep_html, unsafe_allow_html=True)
-
-if test_push:
-    if not df_ac.empty:
-        sample = df_ac.sample(1).iloc[0]
-        distance = hav(CENTER_LAT, CENTER_LON, sample['lat'], sample['lon'])
-        msg = (
-            f"✈️ Test Alert: {sample['callsign']}\n"
-            f"📍 Lat/Lon: {sample['lat']:.4f}, {sample['lon']:.4f}\n"
-            f"🛬 Altitude: {int(sample['alt'])} ft\n"
-            f"🚀 Speed: {int(sample['vel'])} knots\n"
-            f"🧭 Heading: {int(sample['hdg'])}°\n"
-            f"📏 Distance from home: {distance:.1f} meters"
-        )
-        st.info(f"Random aircraft selected: {sample['callsign']} — Distance: {distance:.1f} m")
-    else:
-        msg = "✈️ Test alert with no aircraft data available."
-    ok = send_pushover("✈️ Test", msg)
-
-# Add a button to check shadow prediction
-if st.button("🔍 Check Sun and Moon Shadow Prediction"):
-    if not df_ac.empty:
-        shadow_report = ""
-        now = datetime.now(timezone.utc)
-        sun_dots = []
-        moon_dots = []
-        for _, row in df_ac.iterrows():
-            sun_alt = get_altitude(row['lat'], row['lon'], now)
-            moon_alt = None
-            if ephem:
-                obs = ephem.Observer()
-                obs.lat, obs.lon = str(row['lat']), str(row['lon'])
-                obs.date = now
-                moon = ephem.Moon(obs)
-                moon_alt = math.degrees(moon.alt)
-
-            shadow_report += f"✈️ {row['callsign']}\n☀️ Sun Alt: {sun_alt:.2f}°\n"
-            if sun_alt > 0:
-                saz = get_azimuth(row['lat'], row['lon'], now)
-                sd = row['alt'] / math.tan(math.radians(sun_alt))
-                sh_lat = row['lat'] + (sd / 111111) * math.cos(math.radians(saz + 180))
-                sh_lon = row['lon'] + (sd / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(saz + 180))
-                shadow_report += f"☀️ Sun Shadow at: {sh_lat:.5f}, {sh_lon:.5f}\n"
-                sun_dots.append({"lat": sh_lat, "lon": sh_lon, "callsign": row['callsign']})
-
-            if moon_alt is not None:
-                shadow_report += f"🌕 Moon Alt: {moon_alt:.2f}°\n"
-                if moon_alt > 0:
-                    maz = math.degrees(moon.az)
-                    md = row['alt'] / math.tan(math.radians(moon_alt))
-                    mh_lat = row['lat'] + (md / 111111) * math.cos(math.radians(maz + 180))
-                    mh_lon = row['lon'] + (md / (111111 * math.cos(math.radians(row['lat'])))) * math.sin(math.radians(maz + 180))
-                    shadow_report += f"🌕 Moon Shadow at: {mh_lat:.5f}, {mh_lon:.5f}\n"
-                    moon_dots.append({"lat": mh_lat, "lon": mh_lon, "callsign": row['callsign']})
-
-            shadow_report += "\n"
-        st.code(shadow_report)
-        time.sleep(10)
-
-        # Show sun and moon shadow positions as dots on map
-        if sun_dots:
-            st.map(pd.DataFrame(sun_dots))
-        if moon_dots:
-            st.map(pd.DataFrame(moon_dots))
-    else:
-        st.info("No aircraft available for prediction.")
-
-# Export
-if sun_export or moon_export:
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-        if sun_export:
-            df_sun = pd.DataFrame(sun_export)
-            zip_file.writestr("sun_shadows.csv", df_sun.to_csv(index=False))
-        if moon_export:
-            df_moon = pd.DataFrame(moon_export)
-            zip_file.writestr("moon_shadows.csv", df_moon.to_csv(index=False))
-    st.download_button("Download Shadow Trails (ZIP)", zip_buffer.getvalue(), "shadow_trails.zip", "application/zip")
