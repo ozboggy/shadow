@@ -129,13 +129,23 @@ for _, row in df_ac.iterrows():
 
 # Build pydeck layers
 layers = []
-# Aircraft arrows
+# Base aircraft dots in blue
+if not df_ac.empty:
+    layers.append(pdk.Layer(
+        "ScatterplotLayer", data=df_ac,
+        get_position=["lon", "lat"],
+        get_fill_color=[0, 0, 255, 200],
+        get_radius=100,
+        pickable=True,
+        auto_highlight=True
+    ))
+# Aircraft arrows on top
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "TextLayer", data=df_ac,
         get_position=["lon", "lat"],
         get_text="'➤'",
-        get_color=[0, 0, 255],
+        get_color=[255, 255, 255],
         get_size=16,
         get_angle="hdg",
         billboard=False,
