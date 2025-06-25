@@ -407,4 +407,4 @@ for trail in sun_trails:
             # log
             log_alert(cs, lat, lon, transit, dist_mi)
             # pushover
-            if pushover_alerts:
+            if pushover_alert
