@@ -64,7 +64,7 @@ SUN_FORECAST_MINUTES = int(FORECAST_DURATION_MINUTES * 1.5)
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
-    alert_width = st.slider("Shadow Alert Width (m)", 10, 10000, 100)
+    alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
     show_sun_lines = st.checkbox("Show Sun Shadows", True)
@@ -200,4 +200,34 @@ if show_moon_lines:
         ))
 
 # Render map
-view = pdk.ViewState(latitude=CENTER_LAT,longitude=CENTER_LON,zoom=12)
+view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=12)
+st.pydeck_chart(pdk.Deck(
+    layers=layers,
+    initial_view_state=view,
+    map_style="light",
+    tooltip={"html": "<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} ft", "style": {"backgroundColor": "black", "color": "white"}}
+), use_container_width=True)
+
+# Shadow proximity alerts based on shadow trails
+for row, trail in sun_trails:
+    for lat, lon, sec in trail:
+        if sec in alert_times:
+            dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
+            if dist <= alert_width:
+                msg = (
+                    f"✈️ {row['callsign']} shadow alert
+"
+                    f"⏱ Shadow over home in {sec}s
+"
+                    f"📏 Distance: {int(dist)} m
+"
+                    f"🛬 Altitude: {int(row['alt'])} ft
+"
+                    f"🚀 Speed: {int(row['vel'])} knots"
+                )
+                st.error(f"🚨 Shadow in {sec}s! ({row['callsign']})")
+                st.markdown(dot_html, unsafe_allow_html=True)
+                send_pushover("✈️ Shadow Alert", msg)
+                break
+
+# Export unchanged
