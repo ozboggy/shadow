@@ -398,4 +398,8 @@ for trail in sun_trails:
         if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
             cs = trail['callsign']
             dist_mi = hav(lat, lon, CENTER_LAT, CENTER_LON)/1609.34
-            idx = trail['path
+            idx = trail['path'].index([lon, lat])
+            transit = idx * FORECAST_INTERVAL_S
+            # on-screen alert
+            if on_screen_alerts:
+                st.error(f"🚨 Sun shadow by {cs}: {dist_mi:.2f} mi away, {transit
