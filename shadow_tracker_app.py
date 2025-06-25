@@ -397,9 +397,7 @@ tooltip = {
 st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view,
-    map_style="mapbox://styles/mapbox/light-v10",
-    tooltip=tooltip
-),
+    map_style="light",
     tooltip=tooltip
 ), use_container_width=True)
 
