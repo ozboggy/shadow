@@ -16,6 +16,7 @@ try:
 except ImportError:
     ephem = None
 
+# Auto-refresh every second
 try:
     st_autorefresh(interval=1000, key="refresh")
 except:
@@ -25,6 +26,24 @@ except:
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+
+# Alert function
+def send_pushover(title, message):
+    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
+        return False
+    try:
+        resp = requests.post(
+            "https://api.pushover.net/1/messages.json",
+            data={"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "title": title, "message": message}
+        )
+        return resp.status_code == 200
+    except:
+        return False
+
+# Audio snippet for on-screen alert
+dot_html = """<audio autoplay>
+  <source src=\"https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg\" type=\"audio/ogg\">
+</audio>"""
 
 # Helpers
 def hav(lat1, lon1, lat2, lon2):
@@ -41,7 +60,7 @@ FORECAST_INTERVAL_SECONDS = 5
 FORECAST_DURATION_MINUTES = 5
 SUN_FORECAST_MINUTES = int(FORECAST_DURATION_MINUTES * 1.5)
 
-# Sidebar
+# Sidebar controls
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
@@ -80,31 +99,31 @@ if RAPIDAPI_KEY:
     except:
         st.warning("Failed to fetch aircraft data.")
 
-# DataFrame
+# DataFrame of aircraft
 df_ac = pd.DataFrame(aircraft_list)
 
 # Compute shadow trails
 sun_trails, moon_trails = [], []
 for _, row in df_ac.iterrows():
-    # Sun trails
+    # Sun shadows
     if show_sun:
         sun_path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * SUN_FORECAST_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             t = now_utc + timedelta(seconds=i)
             dx = row['vel'] * i * math.sin(math.radians(row['hdg']))
             dy = row['vel'] * i * math.cos(math.radians(row['hdg']))
-            lat_i = row['lat'] + dy / 111111
-            lon_i = row['lon'] + dx / (111111 * math.cos(math.radians(row['lat'])))
+            lat_i = row['lat'] + dy/111111
+            lon_i = row['lon'] + dx/(111111*math.cos(math.radians(row['lat'])))
             sa = get_altitude(lat_i, lon_i, t)
             if sa > 0:
                 saz = get_azimuth(lat_i, lon_i, t)
                 sd = row['alt'] / math.tan(math.radians(sa))
-                sh_lat = lat_i + (sd / 111111) * math.cos(math.radians(saz + 180))
-                sh_lon = lon_i + (sd / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz + 180))
+                sh_lat = lat_i + (sd/111111)*math.cos(math.radians(saz+180))
+                sh_lon = lon_i + (sd/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(saz+180))
                 sun_path.append((sh_lat, sh_lon, i))
         if sun_path:
             sun_trails.append((row, sun_path))
-    # Moon trails
+    # Moon shadows
     if show_moon and ephem:
         moon_path = []
         obs = ephem.Observer()
@@ -113,49 +132,50 @@ for _, row in df_ac.iterrows():
             t = now_utc + timedelta(seconds=i)
             dx = row['vel'] * i * math.sin(math.radians(row['hdg']))
             dy = row['vel'] * i * math.cos(math.radians(row['hdg']))
-            lat_i = row['lat'] + dy / 111111
-            lon_i = row['lon'] + dx / (111111 * math.cos(math.radians(row['lat'])))
+            lat_i = row['lat'] + dy/111111
+            lon_i = row['lon'] + dx/(111111*math.cos(math.radians(row['lat'])))
             obs.date = t
             moon = ephem.Moon(obs)
             ma = math.degrees(moon.alt)
             if ma > 0:
                 maz = math.degrees(moon.az)
                 md = row['alt'] / math.tan(math.radians(ma))
-                mh_lat = lat_i + (md / 111111) * math.cos(math.radians(maz + 180))
-                mh_lon = lon_i + (md / (111111 * math.cos(math.radians(lat_i)))) * math.sin(math.radians(maz + 180))
+                mh_lat = lat_i + (md/111111)*math.cos(math.radians(maz+180))
+                mh_lon = lon_i + (md/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(maz+180))
                 moon_path.append((mh_lat, mh_lon, i))
         if moon_path:
             moon_trails.append((row, moon_path))
 
 # Build pydeck layers
 layers = []
-# Base aircraft dots in blue
+# Blue aircraft dots
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "ScatterplotLayer", data=df_ac,
-        get_position=["lon", "lat"],
-        get_fill_color=[0, 0, 255, 200],
+        get_position=["lon","lat"],
+        get_fill_color=[0,0,255,200],
         get_radius=100,
         pickable=True,
         auto_highlight=True
     ))
-# Aircraft arrows on top
+# White arrows on top
 if not df_ac.empty:
     layers.append(pdk.Layer(
         "TextLayer", data=df_ac,
-        get_position=["lon", "lat"],
+        get_position=["lon","lat"],
         get_text="'➤'",
-        get_color=[255, 255, 255],
+        get_color=[255,255,255],
         get_size=16,
         get_angle="hdg",
         billboard=False,
         get_alignment_baseline="'center'"
     ))
-# Home boundary
+# Home radius
 layers.append(pdk.Layer(
-    "ScatterplotLayer", data=pd.DataFrame([{"lat": CENTER_LAT, "lon": CENTER_LON}]),
-    get_position=["lon", "lat"],
-    get_fill_color=[255, 0, 0, 128],
+    "ScatterplotLayer",
+    data=pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
+    get_position=["lon","lat"],
+    get_fill_color=[255,0,0,128],
     get_radius=alert_width,
     pickable=False
 ))
@@ -163,41 +183,50 @@ layers.append(pdk.Layer(
 if show_sun_lines:
     for ac, trail in sun_trails:
         layers.append(pdk.Layer(
-            "PathLayer", data=[{"path": [(lon, lat) for lat, lon, _ in trail]}],
-            get_path="path",
-            get_color=[0, 0, 0],
-            width_scale=(ac['alt']/10000 + 1)*0.5,
-            width_min_pixels=1,
-            pickable=False
+            "PathLayer", data=[{"path": [(lon,lat) for lat,lon,_ in trail]}],
+            get_path="path", get_color=[0,0,0], width_scale=(ac['alt']/10000+1)*0.5, width_min_pixels=1, pickable=False
         ))
-        # start dot
-        slat, slon, _ = trail[0]
+        slat, slon,_ = trail[0]
         layers.append(pdk.Layer(
-            "ScatterplotLayer", data=pd.DataFrame([{"lat": slat, "lon": slon}]),
-            get_position=["lon", "lat"],
-            get_fill_color=[0, 0, 0, 255],
-            get_radius=50,
-            pickable=False
+            "ScatterplotLayer", data=pd.DataFrame([{"lat":slat,"lon":slon}]),
+            get_position=["lon","lat"], get_fill_color=[0,0,0,255], get_radius=50, pickable=False
         ))
 # Moon shadow trails
 if show_moon_lines:
     for ac, trail in moon_trails:
         layers.append(pdk.Layer(
-            "PathLayer", data=[{"path": [(lon, lat) for lat, lon, _ in trail]}],
-            get_path="path",
-            get_color=[128, 128, 128],
-            width_scale=ac['alt']/10000 + 1,
-            width_min_pixels=2,
-            pickable=False
+            "PathLayer", data=[{"path": [(lon,lat) for lat,lon,_ in trail]}],
+            get_path="path", get_color=[128,128,128], width_scale=ac['alt']/10000+1, width_min_pixels=2, pickable=False
         ))
 
 # Render map
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=12)
+view = pdk.ViewState(latitude=CENTER_LAT,longitude=CENTER_LON,zoom=12)
 st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view,
     map_style="light",
-    tooltip={"html": "<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} ft", "style": {"backgroundColor": "black", "color": "white"}}
-), use_container_width=True)
+    tooltip={"html":"<b>Callsign:</b> {callsign}<br/><b>Alt:</b> {alt} ft","style":{"backgroundColor":"black","color":"white"}}
+),use_container_width=True)
 
-# ... alerts, buttons, export unchanged ...
+# Proximity alerts for aircraft
+for _, row in df_ac.iterrows():
+    dist = hav(row['lat'], row['lon'], CENTER_LAT, CENTER_LON)
+    if dist <= radius_km * 1000:
+        st.error(f"🚨 Aircraft {row['callsign']} within {int(dist)} m!")
+        st.markdown(dot_html, unsafe_allow_html=True)
+        send_pushover("✈️ Proximity Alert", f"Aircraft {row['callsign']} is {int(dist)} m away.")
+        break
+
+# Test buttons
+if test_alert:
+    st.warning("Test proximity alert")
+    st.markdown(dot_html, unsafe_allow_html=True)
+if test_push:
+    if not df_ac.empty:
+        sample = df_ac.sample(1).iloc[0]
+        d = hav(sample['lat'], sample['lon'], CENTER_LAT, CENTER_LON)
+        st.info(f"Random: {sample['callsign']} at {int(d)} m")
+        send_pushover("✈️ Test Alert", f"{sample['callsign']} at {int(d)} m from home.")
+
+# Export unchanged
+
