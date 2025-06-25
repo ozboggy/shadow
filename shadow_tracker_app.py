@@ -1,4 +1,4 @@
-```python
+
 import time
 import streamlit as st
 from dotenv import load_dotenv
@@ -115,4 +115,3 @@ if RAPIDAPI_KEY:
 df_ac = pd.DataFrame(aircraft_list)
 # Aircraft count
 st.sidebar.markdown(f"**Tracked Aircraft:** {len(df_ac)}")
-```
