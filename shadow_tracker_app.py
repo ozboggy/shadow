@@ -1,3 +1,4 @@
+```python
 import time
 import streamlit as st
 from dotenv import load_dotenv
@@ -41,10 +42,8 @@ CENTER_LAT = -33.7602563
 CENTER_LON = 150.9717434
 
 # Session-state for alerts
-def init_alert_state():
-    if 'alerted' not in st.session_state:
-        st.session_state.alerted = set()
-init_alert_state()
+if 'alerted' not in st.session_state:
+    st.session_state.alerted = set()
 
 # Helper: haversine distance
 def hav(lat1, lon1, lat2, lon2):
@@ -71,7 +70,7 @@ def send_pushover(title, message):
 with st.sidebar:
     st.header("Shadow Tracker")
     radius_km = st.slider("Search Radius (km)", 1, 100, 10)
-    alert_width = st.slider("Shadow Alert Width (m)", 10, 10000, 100)
+    alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 100)
     show_sun = st.checkbox("Track Sun", True)
     show_moon = st.checkbox("Track Moon", False)
     show_sun_lines = st.checkbox("Show Sun Shadows", True)
@@ -115,13 +114,13 @@ if RAPIDAPI_KEY:
         st.warning("Failed to fetch aircraft data.")
 df_ac = pd.DataFrame(aircraft_list)
 
-# Prepare exports
+# Prepare exports and on-screen alerts
 sun_export, moon_export = [], []
+alert_msgs = []
 
 # Compute shadow trails & alerts
 sun_trails, moon_trails = [], []
 for _, row in df_ac.iterrows():
-    # Sun prediction & alerts
     if show_sun:
         path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * SUN_FORECAST_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
@@ -136,20 +135,17 @@ for _, row in df_ac.iterrows():
                 sd = row['alt'] / math.tan(math.radians(sa))
                 sh_lat = lat_i + (sd/111111) * math.cos(math.radians(saz+180))
                 sh_lon = lon_i + (sd/(111111*math.cos(math.radians(lat_i)))) * math.sin(math.radians(saz+180))
-                # log
                 sun_export.append({"callsign":row['callsign'],"lat":sh_lat,"lon":sh_lon,"time_offset_sec":i})
-                # check alert
                 dist_center = hav(sh_lat, sh_lon, CENTER_LAT, CENTER_LON)
                 key = f"sun-{row['callsign']}-{i}"
                 if dist_center <= alert_width and i in alert_times and key not in st.session_state.alerted:
                     msg = f"✈️ {row['callsign']} sun shadow in {i}s"
-                    st.warning(msg)
+                    alert_msgs.append(msg)
                     send_pushover("Sun Shadow Alert", msg)
                     st.session_state.alerted.add(key)
                 path.append((sh_lat, sh_lon, i))
         if path:
             sun_trails.append((row, path))
-    # Moon prediction & alerts
     if show_moon and ephem:
         path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
@@ -166,12 +162,11 @@ for _, row in df_ac.iterrows():
                 mh_lat = lat_i + (md/111111)*math.cos(math.radians(maz+180))
                 mh_lon = lon_i + (md/(111111*math.cos(math.radians(lat_i))))*math.sin(math.radians(maz+180))
                 moon_export.append({"callsign":row['callsign'],"lat":mh_lat,"lon":mh_lon,"time_offset_sec":i})
-                # check alert
                 dist_center = hav(mh_lat, mh_lon, CENTER_LAT, CENTER_LON)
                 key = f"moon-{row['callsign']}-{i}"
                 if dist_center <= alert_width and i in alert_times and key not in st.session_state.alerted:
                     msg = f"✈️ {row['callsign']} moon shadow in {i}s"
-                    st.warning(msg)
+                    alert_msgs.append(msg)
                     send_pushover("Moon Shadow Alert", msg)
                     st.session_state.alerted.add(key)
                 path.append((mh_lat, mh_lon, i))
@@ -180,70 +175,49 @@ for _, row in df_ac.iterrows():
 
 # Build map layers
 layers = []
-# Aircraft layer as scatter
 if not df_ac.empty:
     layers.append(pdk.Layer(
-        "ScatterplotLayer",
-        data=df_ac,
-        get_position=["lon","lat"],
-        get_fill_color=[0,128,255,255],
-        get_radius=200,
-        pickable=True
+        "ScatterplotLayer", data=df_ac,
+        get_position=["lon","lat"], get_fill_color=[0,128,255,255],
+        get_radius=200, pickable=True
     ))
-# Home alert boundary
 layers.append(pdk.Layer(
-    "ScatterplotLayer",
-    data=pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
-    get_position=["lon","lat"],
-    get_fill_color=[255,0,0,128],
-    get_radius=alert_width,
+    "ScatterplotLayer", data=pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
+    get_position=["lon","lat"], get_fill_color=[255,0,0,128], get_radius=alert_width,
     pickable=False
 ))
-# Sun shadow trails
 if show_sun_lines:
     for ac, trail in sun_trails:
         layers.append(pdk.Layer(
-            "PathLayer",
-            data=[{"path":[(lon,lat) for lat,lon,_ in trail]}],
-            get_path="path",
-            get_color=[0,0,0],
-            width_scale=(ac["alt"]/10000+1)*0.5,
-            width_min_pixels=1,
-            pickable=False
+            "PathLayer", data=[{"path":[(lon,lat) for lat,lon,_ in trail]}],
+            get_path="path", get_color=[0,0,0], width_scale=(ac["alt"]/10000+1)*0.5,
+            width_min_pixels=1, pickable=False
         ))
         slat, slon, _ = trail[0]
         layers.append(pdk.Layer(
-            "ScatterplotLayer",
-            data=pd.DataFrame([{"lat":slat,"lon":slon}]),
-            get_position=["lon","lat"],
-            get_fill_color=[0,0,0,255],
-            get_radius=50,
+            "ScatterplotLayer", data=pd.DataFrame([{"lat":slat,"lon":slon}]),
+            get_position=["lon","lat"], get_fill_color=[0,0,0,255], get_radius=50,
             pickable=False
         ))
-# Moon shadow trails
 if show_moon_lines:
     for ac, trail in moon_trails:
         layers.append(pdk.Layer(
-            "PathLayer",
-            data=[{"path":[(lon,lat) for lat,lon,_ in trail]}],
-            get_path="path",
-            get_color=[128,128,128],
-            width_scale=ac["alt"]/10000+1,
-            width_min_pixels=2,
-            pickable=False
+            "PathLayer", data=[{"path":[(lon,lat) for lat,lon,_ in trail]}],
+            get_path="path", get_color=[128,128,128], width_scale=ac["alt"]/10000+1,
+            width_min_pixels=2, pickable=False
         ))
 
 # Render pydeck map
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=12)
 st.pydeck_chart(
-    pdk.Deck(
-        layers=layers,
-        initial_view_state=view,
-        map_style="light",
-        tooltip={"html":"<b>Callsign:</b> {callsign}<br/><b>Altitude:</b> {alt} ft<br/><b>Speed:</b> {vel} kts<br/><b>Heading:</b> {hdg}°","style":{"backgroundColor":"black","color":"white"}}
-    ),
+    pdk.Deck(layers=layers, initial_view_state=view, map_style="light",
+             tooltip={"html":"<b>Callsign:</b> {callsign}<br/><b>Altitude:</b> {alt} ft<br/><b>Speed:</b> {vel} kts<br/><b>Heading:</b> {hdg}°","style":{"backgroundColor":"black","color":"white"}}),
     use_container_width=True
 )
+
+# On-screen alerts
+for msg in alert_msgs:
+    st.warning(msg)
 
 # Trigger test alerts
 if test_alert:
@@ -262,3 +236,4 @@ if sun_export or moon_export:
             z.writestr("moon_shadows.csv", pd.DataFrame(moon_export).to_csv(index=False))
     buf.seek(0)
     st.download_button("Download Shadow Exports", buf, file_name="shadow_exports.zip")
+```
