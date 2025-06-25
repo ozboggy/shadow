@@ -1,4 +1,3 @@
-
 import time
 import streamlit as st
 from dotenv import load_dotenv
@@ -190,7 +189,7 @@ if show_sun_lines:
                 "callsign": ac["callsign"]
             }],
             get_path="path",
-            get_color=[255, 255, 0],
+            get_color=[0, 0, 0],        # Sun trails in black
             width_scale=ac["alt"] / 10000 + 1,
             width_min_pixels=2,
             pickable=False
@@ -228,7 +227,7 @@ if show_moon and ephem:
                         "callsign": row["callsign"]
                     }],
                     get_path="path",
-                    get_color=[200, 200, 255],
+                    get_color=[128, 128, 128],  # Moon trails in grey
                     width_scale=row["alt"] / 10000 + 1,
                     width_min_pixels=2,
                     pickable=False
@@ -250,7 +249,6 @@ st.pydeck_chart(pdk.Deck(
 if test_alert:
     st.warning("Test alert triggered")
     st.markdown(beep_html, unsafe_allow_html=True)
-
 
 if test_push:
     if not df_ac.empty:
@@ -316,12 +314,6 @@ if st.button("🔍 Check Sun and Moon Shadow Prediction"):
             st.map(pd.DataFrame(moon_dots))
     else:
         st.info("No aircraft available for prediction.")
-
-
-
-
-
-
 
 # Export
 if sun_export or moon_export:
