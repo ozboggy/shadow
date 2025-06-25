@@ -402,4 +402,9 @@ for trail in sun_trails:
             transit = idx * FORECAST_INTERVAL_S
             # on-screen alert
             if on_screen_alerts:
-                st.error(f"🚨 Sun shadow by {cs}: {dist_mi:.2f} mi away, {transit
+                st.error(f"🚨 Sun shadow by {cs}: {dist_mi:.2f} mi away, {transit} sec transit")
+                st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg")
+            # log
+            log_alert(cs, lat, lon, transit, dist_mi)
+            # pushover
+            if pushover_alerts:
