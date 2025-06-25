@@ -237,6 +237,12 @@ if test_alert:
 # Display on-screen alerts
 for msg in alert_msgs:
     st.warning(msg)
+# Play a beep sound when alerts appear
+if alert_msgs:
+    st.markdown(
+        "<audio autoplay><source src='https://www.soundjay.com/buttons/sounds/beep-07.mp3' type='audio/mpeg'></audio>",
+        unsafe_allow_html=True
+    )
 
 # Test buttons
 # (Test Pushover remains separate)
@@ -256,3 +262,4 @@ if sun_export or moon_export:
             z.writestr("moon_shadows.csv", pd.DataFrame(moon_export).to_csv(index=False))
     buf.seek(0)
     st.download_button("Download Shadow Exports", buf, file_name="shadow_exports.zip")
+```
