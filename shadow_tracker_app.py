@@ -77,7 +77,8 @@ with st.sidebar:
     test_alert = st.button("Test Alert")
     test_push = st.button("Test Pushover")
     # Aircraft count
-    st.markdown(f"**Tracked Aircraft:** {len(st.session_state.get('df_ac', []))}")
+    count = len(st.session_state.get('df_ac', []))
+    st.markdown(f"**Tracked Aircraft:** {count}")
     # Sun/Moon heights
     now = datetime.now(timezone.utc)
     sa = get_altitude(CENTER_LAT, CENTER_LON, now)
@@ -89,23 +90,19 @@ with st.sidebar:
         moon_ob = ephem.Moon(obs)
         ma = math.degrees(moon_ob.alt)
     sun_col = "green" if sa > 0 else "red"
-    st.markdown(f"<span style='color:{sun_col}'>Sun Altitude: {sa:.1f}°</span>", unsafe_allow_html=True)
+    st.markdown(
+        f"<span style='color:{sun_col}'>Sun Altitude: {sa:.1f}°</span>",
+        unsafe_allow_html=True
+    )
     if ma is not None:
         moon_col = "green" if ma > 0 else "red"
-        st.markdown(f"<span style='color:{moon_col}'>Moon Altitude: {ma:.1f}°</span>", unsafe_allow_html=True))}")
+        st.markdown(
+            f"<span style='color:{moon_col}'>Moon Altitude: {ma:.1f}°</span>",
+            unsafe_allow_html=True
+        )
 
 # Current UTC time
 now_utc = datetime.now(timezone.utc)
-
-# Sun & Moon altitudes
-sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
-moon_alt = None
-if ephem:
-    obs = ephem.Observer()
-    obs.lat, obs.lon = str(CENTER_LAT), str(CENTER_LON)
-    obs.date = now_utc
-    moon_obs = ephem.Moon(obs)
-    moon_alt = math.degrees(moon_obs.alt)
 
 # Fetch aircraft data
 aircraft_list = []
@@ -117,7 +114,8 @@ if RAPIDAPI_KEY:
         r.raise_for_status()
         for ac in r.json().get("ac", []):
             try:
-                lat = float(ac.get("lat", 0)); lon = float(ac.get("lon", 0))
+                lat = float(ac.get("lat", 0))
+                lon = float(ac.get("lon", 0))
                 alt = float(ac.get("alt_geo") or ac.get("alt_baro") or 0)
                 vel = float(ac.get("gs") or 0)
                 hdg = float(ac.get("track") or 0)
@@ -128,12 +126,12 @@ if RAPIDAPI_KEY:
                 continue
     except:
         st.warning("Failed to fetch aircraft data.")
-# Convert to DataFrame and store for sidebar count
-import pandas as __pd
+# Store for sidebar count
 st.session_state['df_ac'] = aircraft_list
-df_ac = __pd.DataFrame(aircraft_list)
+# DataFrame for map
+df_ac = pd.DataFrame(aircraft_list)
 
-# Prepare exports and on-screen alerts
+# Prepare exports and alerts
 sun_export, moon_export, alert_msgs = [], [], []
 
 # Compute shadow trails & alerts
@@ -143,9 +141,9 @@ for _, row in df_ac.iterrows():
         path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * SUN_FORECAST_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             t = now_utc + timedelta(seconds=i)
-            dist = row['vel'] * i
-            dlat = dist * math.cos(math.radians(row['hdg'])) / 111111
-            dlon = dist * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(row['lat'])))
+            dist_m = row['vel'] * i
+            dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
+            dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(row['lat'])))
             lat_i, lon_i = row['lat'] + dlat, row['lon'] + dlon
             sa = get_altitude(lat_i, lon_i, t)
             if sa > 0:
@@ -168,13 +166,14 @@ for _, row in df_ac.iterrows():
         path = []
         for i in range(0, FORECAST_INTERVAL_SECONDS * FORECAST_DURATION_MINUTES + 1, FORECAST_INTERVAL_SECONDS):
             t = now_utc + timedelta(seconds=i)
-            dist = row['vel'] * i
-            dlat = dist * math.cos(math.radians(row['hdg'])) / 111111
-            dlon = dist * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(row['lat'])))
+            dist_m = row['vel'] * i
+            dlat = dist_m * math.cos(math.radians(row['hdg'])) / 111111
+            dlon = dist_m * math.sin(math.radians(row['hdg'])) / (111111 * math.cos(math.radians(row['lat'])))
             lat_i, lon_i = row['lat'] + dlat, row['lon'] + dlon
             obs.date = t
             moon = ephem.Moon(obs)
-            ma = math.degrees(moon.alt); maz = math.degrees(moon.az)
+            ma = math.degrees(moon.alt)
+            maz = math.degrees(moon.az)
             if ma > 0:
                 md = row['alt']/math.tan(math.radians(ma))
                 mh_lat = lat_i + (md/111111)*math.cos(math.radians(maz+180))
@@ -198,10 +197,12 @@ if not df_ac.empty:
         "ScatterplotLayer", data=df_ac,
         get_position=["lon","lat"], get_fill_color=[0,128,255,255], get_radius=200, pickable=True
     ))
+# Home boundary layer
 layers.append(pdk.Layer(
-    "ScatterplotLayer", data=__pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
+    "ScatterplotLayer", data=pd.DataFrame([{"lat":CENTER_LAT,"lon":CENTER_LON}]),
     get_position=["lon","lat"], get_fill_color=[255,0,0,128], get_radius=alert_width, pickable=False
 ))
+# Sun trails
 if show_sun_lines:
     for ac, trail in sun_trails:
         layers.append(pdk.Layer(
@@ -210,9 +211,10 @@ if show_sun_lines:
         ))
         slat, slon, _ = trail[0]
         layers.append(pdk.Layer(
-            "ScatterplotLayer", data=__pd.DataFrame([{"lat":slat,"lon":slon}]),
+            "ScatterplotLayer", data=pd.DataFrame([{"lat":slat,"lon":slon}]),
             get_position=["lon","lat"], get_fill_color=[0,0,0,255], get_radius=50, pickable=False
         ))
+# Moon trails
 if show_moon_lines:
     for ac, trail in moon_trails:
         layers.append(pdk.Layer(
@@ -220,19 +222,19 @@ if show_moon_lines:
             get_color=[128,128,128], width_scale=ac["alt"]/10000+1, width_min_pixels=2, pickable=False
         ))
 
-# Render pydeck map
+# Render pydeck chart
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON, zoom=12)
 st.pydeck_chart(
     pdk.Deck(layers=layers, initial_view_state=view, map_style="light",
-             tooltip={"html":"<b>Callsign:</b> {callsign}<br/><b>Altitude:</b> {alt} ft<br/><b>Speed:</b> {vel} kts<br/><b>Heading:</b> {hdg}°","style":{"backgroundColor":"black","color":"white"}}),
+        tooltip={"html":"<b>Callsign:</b> {callsign}<br/><b>Altitude:</b> {alt} ft<br/><b>Speed:</b> {vel} kts<br/><b>Heading:</b> {hdg}°","style":{"backgroundColor":"black","color":"white"}}),
     use_container_width=True
 )
 
-# On-screen alerts
+# Display on-screen alerts
 for msg in alert_msgs:
     st.warning(msg)
 
-# Trigger test alerts
+# Test buttons
 if test_alert:
     st.success("Test shadow alert triggered!")
 if test_push:
@@ -244,8 +246,8 @@ if sun_export or moon_export:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         if sun_export:
-            z.writestr("sun_shadows.csv", __pd.DataFrame(sun_export).to_csv(index=False))
+            z.writestr("sun_shadows.csv", pd.DataFrame(sun_export).to_csv(index=False))
         if moon_export:
-            z.writestr("moon_shadows.csv", __pd.DataFrame(moon_export).to_csv(index=False))
+            z.writestr("moon_shadows.csv", pd.DataFrame(moon_export).to_csv(index=False))
     buf.seek(0)
     st.download_button("Download Shadow Exports", buf, file_name="shadow_exports.zip")
