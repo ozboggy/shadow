@@ -407,22 +407,5 @@ for trail in sun_trails:
             # log
             log_alert(cs, lat, lon, transit, dist_mi)
             # pushover
-                        if pushover_alerts:
-                send_pushover("✈️ Shadow Alert", f"{cs}: {dist_mi:.2f} mi away, {transit} sec transit")
-            break  # Only trigger alert once per shadow per run
-
-# Test buttons (at very end)
-if test_alert:
-    ph = st.empty()
-    ph.success("🔔 Test alert triggered!")
-    time.sleep(2)
-    ph.empty()
-if test_pushover:
-    ph2 = st.empty()
-    if not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
-        ph2.error("⚠️ Missing Pushover credentials")
-    else:
-        ok = send_pushover("✈️ Test", "This is a test from your app.")
-        ph2.success("✅ Test Pushover sent!" if ok else "❌ Test Pushover failed")
-    time.sleep(2)
-    ph2.empty()
+            if pushover_alerts:
+                send_pushover("✈️ Shadow
