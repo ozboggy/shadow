@@ -116,28 +116,24 @@ with st.sidebar:
 
     st.markdown("---")
     # Alert preferences
-    on_screen_alerts = st.checkbox("Enable On-Screen Alerts", value=True, key="on_screen")
-    pushover_alerts = st.checkbox("Enable Pushover Alerts", value=True, key="pushover")
+    on_screen_alerts = st.checkbox("Enable On-Screen Alerts", value=True)
+    pushover_alerts = st.checkbox("Enable Pushover Alerts", value=True)
 
     st.markdown("---")
     # Map settings
-    radius_km = st.slider("Search Radius (km)", 1, MAX_RADIUS_KM, DEFAULT_RADIUS_KM, key="radius")
-    track_sun = st.checkbox("Show Sun Shadows", value=True, key="track_sun")
-    track_moon = st.checkbox("Show Moon Shadows", value=False, key="track_moon")
-    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50, key="alert_width")
+    radius_km = radius_km = st.slider("Search Radius (km)", 1, MAX_RADIUS_KM, DEFAULT_RADIUS_KM)
+    track_sun = st.checkbox("Show Sun Shadows", value=True)
+    track_moon = st.checkbox("Show Moon Shadows", value=False)
+    alert_width = st.slider("Shadow Alert Width (m)", 0, 1000, 50)
 
-    # Toggle recent alerts panel
-    show_alerts = st.checkbox("Show Recent Alerts", value=True, key="show_alerts")
-
-    st.markdown("---")
     # Test buttons
-    test_alert = st.button("Test Alert", key="test_alert")
-    test_pushover = st.button("Test Pushover", key="test_pushover")
+    test_alert = st.button("Test Alert")
+    test_pushover = st.button("Test Pushover")
 
     st.markdown("---")
     # Download
     if os.path.exists(log_path):
-        st.download_button("📥 Download alert_log.csv", open(log_path, 'rb'), "alert_log.csv", "text/csv", key="download_log")
+        st.download_button("📥 Download alert_log.csv", open(log_path, 'rb'), "alert_log.csv", "text/csv")
     else:
         st.info("No alert_log.csv yet")
 
@@ -398,34 +394,32 @@ tooltip = {
     ),
     "style": {"backgroundColor":"black","color":"white"}
 }
-st.pydeck_chart(
-    pdk.Deck(
-        layers=layers,
-        initial_view_state=view,
-        map_style="light",
-        tooltip=tooltip
-    ),
-    use_container_width=True
-)
+st.pydeck_chart(pdk.Deck(
+    layers=layers,
+    initial_view_state=view,
+    map_style="mapbox://styles/mapbox/light-v10",
+    tooltip=tooltip
+),
+    tooltip=tooltip
+), use_container_width=True)
 
-# 📊 Recent Alerts (moved below map), conditional on sidebar toggle
-if show_alerts:
-    try:
-        df_log = pd.read_csv(log_path)
-        if not df_log.empty:
-            df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
-            df_log['y'] = 0
-            df_disp = df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']].copy()
-            df_disp.rename(columns={'Time Until Alert (sec)':'Transit (s)'}, inplace=True)
-            st.markdown("### 📊 Recent Alerts")
-            st.dataframe(df_disp.tail(10))
-            fig = px.scatter(df_log, x='Time UTC', y='y', size='Distance (mi)', size_max=40,
-                             hover_name='Callsign', hover_data={'Transit (s)':True}, title="Alert Proximity Timeline")
-            fig.add_hline(y=0, line_color='lightgray', line_width=1)
-            fig.update_yaxes(visible=False, range=[-0.5,0.5])
-            st.plotly_chart(fig, use_container_width=True)
-    except FileNotFoundError:
-        st.warning(f"Alert log not found at `{log_path}`")
+# 📊 Recent Alerts (moved below map)
+try:
+    df_log = pd.read_csv(log_path)
+    if not df_log.empty:
+        df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
+        df_log['y'] = 0
+        df_disp = df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']].copy()
+        df_disp.rename(columns={'Time Until Alert (sec)':'Transit (s)'}, inplace=True)
+        st.markdown("### 📊 Recent Alerts")
+        st.dataframe(df_disp.tail(10))
+        fig = px.scatter(df_log, x='Time UTC', y='y', size='Distance (mi)', size_max=40,
+                         hover_name='Callsign', hover_data={'Transit (s)':True}, title="Alert Proximity Timeline")
+        fig.add_hline(y=0, line_color='lightgray', line_width=1)
+        fig.update_yaxes(visible=False, range=[-0.5,0.5])
+        st.plotly_chart(fig, use_container_width=True)
+except FileNotFoundError:
+    st.warning(f"Alert log not found at `{log_path}`")
 
 # Alert detection & logging
 for trail in sun_trails:
