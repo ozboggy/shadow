@@ -186,7 +186,7 @@ if show_sun_lines:
             "PathLayer", data=[{"path": [(lon,lat) for lat,lon,_ in trail]}],
             get_path="path", get_color=[0,0,0], width_scale=(ac['alt']/10000+1)*0.5, width_min_pixels=1, pickable=False
         ))
-        slat, slon,_ = trail[0]
+        slat, slon, _ = trail[0]
         layers.append(pdk.Layer(
             "ScatterplotLayer", data=pd.DataFrame([{"lat":slat,"lon":slon}]),
             get_position=["lon","lat"], get_fill_color=[0,0,0,255], get_radius=50, pickable=False
@@ -215,19 +215,10 @@ for row, trail in sun_trails:
             dist = hav(lat, lon, CENTER_LAT, CENTER_LON)
             if dist <= alert_width:
                 msg = (
-    f"✈️ {row['callsign']} shadow alert
-"
-    f"⏱ Shadow over home in {sec}s
-"
-    f"📏 Distance: {int(dist)} m
-"
-    f"🛬 Altitude: {int(row['alt'])} ft
-"
-    f"🚀 Speed: {int(row['vel'])} knots"
-)} m
-"
-                    f"🛬 Altitude: {int(row['alt'])} ft
-"
+                    f"✈️ {row['callsign']} shadow alert\n"
+                    f"⏱ Shadow over home in {sec}s\n"
+                    f"📏 Distance: {int(dist)} m\n"
+                    f"🛬 Altitude: {int(row['alt'])} ft\n"
                     f"🚀 Speed: {int(row['vel'])} knots"
                 )
                 st.error(f"🚨 Shadow in {sec}s! ({row['callsign']})")
