@@ -78,6 +78,21 @@ with st.sidebar:
     test_push = st.button("Test Pushover")
     # Aircraft count
     st.markdown(f"**Tracked Aircraft:** {len(st.session_state.get('df_ac', []))}")
+    # Sun/Moon heights
+    now = datetime.now(timezone.utc)
+    sa = get_altitude(CENTER_LAT, CENTER_LON, now)
+    ma = None
+    if ephem:
+        obs = ephem.Observer()
+        obs.lat, obs.lon = str(CENTER_LAT), str(CENTER_LON)
+        obs.date = now
+        moon_ob = ephem.Moon(obs)
+        ma = math.degrees(moon_ob.alt)
+    sun_col = "green" if sa > 0 else "red"
+    st.markdown(f"<span style='color:{sun_col}'>Sun Altitude: {sa:.1f}°</span>", unsafe_allow_html=True)
+    if ma is not None:
+        moon_col = "green" if ma > 0 else "red"
+        st.markdown(f"<span style='color:{moon_col}'>Moon Altitude: {ma:.1f}°</span>", unsafe_allow_html=True))}")
 
 # Current UTC time
 now_utc = datetime.now(timezone.utc)
