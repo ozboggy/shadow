@@ -224,6 +224,11 @@ for row, trail in sun_trails:
                     f"🛬 Altitude: {int(row['alt'])} ft
 "
                     f"🚀 Speed: {int(row['vel'])} knots"
+                )} m
+"
+                    f"🛬 Altitude: {int(row['alt'])} ft
+"
+                    f"🚀 Speed: {int(row['vel'])} knots"
                 )
                 st.error(f"🚨 Shadow in {sec}s! ({row['callsign']})")
                 st.markdown(dot_html, unsafe_allow_html=True)
