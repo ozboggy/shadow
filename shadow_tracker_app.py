@@ -167,21 +167,6 @@ for ac in data:
         })
 
 df_ac = pd.DataFrame(aircraft_list)
-mil_count = 0
-if not df_ac.empty:
-    df_ac[['alt_ft', 'vel', 'hdg']] = df_ac[['alt_ft','vel','hdg']].apply(
-        pd.to_numeric, errors='coerce').fillna(0)
-    df_ac['vel_kt'] = df_ac['vel'].round().astype(int)
-    df_ac['alt_ft'] = df_ac['alt_ft'].astype(int)
-    df_ac['distance_m'] = df_ac.apply(
-        lambda r: hav(r['lat'], r['lon'], CENTER_LAT, CENTER_LON), axis=1
-    )
-    df_ac['distance_mi'] = df_ac['distance_m'] / 1609.34
-    mil_df = df_ac[
-        df_ac['callsign'].str.contains(r'^(?:MIL|USAF|RAF|RCAF)', na=False) &
-        (df_ac['distance_mi'] <= 200)
-    ]
-    mil_count = len(mil_df)
 
 # Status display
 st.markdown(f"**Home:** {CENTER_LAT:.6f}, {CENTER_LON:.6f}")
@@ -191,7 +176,6 @@ if moon_alt is not None:
 else:
     st.warning("Moon data unavailable")
 st.metric("Total airborne aircraft", len(df_ac))
-st.metric("Military (≤200 mi)", mil_count)
 
 # Build shadow trails
 sun_trails, moon_trails = [], []
