@@ -17,7 +17,7 @@ except ImportError:
 
 # Auto-refresh every second
 from streamlit_autorefresh import st_autorefresh
-st_autorefresh(interval=1000, key="refresh")
+st_autorefresh(interval=1000, key="datarefresh")
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
 LOG_PATH          = os.getenv("LOG_PATH", "alert_log.csv")
@@ -46,38 +46,38 @@ def save_home(lat, lon):
 
 CENTER_LAT, CENTER_LON = load_home()
 
-# ── ENSURE LOG ─────────────────────────────────────────────────────────────────
+# ── ALERT LOG ──────────────────────────────────────────────────────────────────
 if not os.path.exists(LOG_PATH):
     pd.DataFrame(columns=[
-        "Time UTC","Callsign","Lat","Lon",
-        "Time Until Alert (sec)","Distance (mi)"
+        "Time UTC","Callsign","Lat","Lon","Time Until Alert (sec)","Distance (mi)"
     ]).to_csv(LOG_PATH, index=False)
 
 # ── HELPERS ────────────────────────────────────────────────────────────────────
 def hav(lat1, lon1, lat2, lon2):
     R = 6_371_000
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
+    dlat = math.radians(lat2-lat1)
+    dlon = math.radians(lon2-lon1)
     a = (math.sin(dlat/2)**2 +
-         math.cos(math.radians(lat1)) *
-         math.cos(math.radians(lat2)) *
+         math.cos(math.radians(lat1))*
+         math.cos(math.radians(lat2))*
          math.sin(dlon/2)**2)
-    return 2 * R * math.asin(math.sqrt(a))
+    return 2*R*math.asin(math.sqrt(a))
 
-def log_alert(cs, lat, lon, tt, dmi):
+def log_alert(cs, lat, lon, tsec, dmi):
     try:
         df = pd.read_csv(LOG_PATH)
     except:
         df = pd.DataFrame(columns=[
-            "Time UTC","Callsign","Lat","Lon",
-            "Time Until Alert (sec)","Distance (mi)"
+            "Time UTC","Callsign","Lat","Lon","Time Until Alert (sec)","Distance (mi)"
         ])
     new = pd.DataFrame([{
         "Time UTC": datetime.now(timezone.utc).isoformat(),
-        "Callsign": cs, "Lat": lat, "Lon": lon,
-        "Time Until Alert (sec)": tt, "Distance (mi)": dmi
+        "Callsign": cs,
+        "Lat": lat, "Lon": lon,
+        "Time Until Alert (sec)": tsec,
+        "Distance (mi)": dmi
     }])
-    pd.concat([df, new], ignore_index=True).to_csv(LOG_PATH, index=False)
+    pd.concat([df,new], ignore_index=True).to_csv(LOG_PATH, index=False)
 
 # ── SIDEBAR ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -92,18 +92,18 @@ with st.sidebar:
     st.markdown(f"**Radius:** {DEFAULT_RADIUS_MI} mi")
     show_sun  = st.checkbox("Show Sun Shadows", True)
     show_moon = st.checkbox("Show Moon Shadows", False)
-    alert_w   = st.slider("Shadow Alert Width (m)", 10, 1000, 50)
+    alert_w   = st.slider("Alert Width (m)", 10, 1000, 50)
     test_btn  = st.button("Test Alert")
 
     st.markdown("---")
     if os.path.exists(LOG_PATH):
         st.download_button("Download alert_log.csv",
-                           open(LOG_PATH, "rb"),
-                           "alert_log.csv", "text/csv")
+                           open(LOG_PATH,"rb"),
+                           "alert_log.csv","text/csv")
     else:
-        st.info("No alerts logged yet")
+        st.info("No alerts yet")
 
-# ── TIMESTAMP & SOLAR/MOON ALT ─────────────────────────────────────────────────
+# ── CURRENT TIME & SOLAR/MOON ALT ───────────────────────────────────────────────
 now_utc = datetime.now(timezone.utc)
 sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
 moon_alt = None
@@ -119,13 +119,13 @@ if RAPIDAPI_KEY:
            f"lat/{CENTER_LAT}/lon/{CENTER_LON}/dist/{RADIUS_KM}/")
     headers = {
         "x-rapidapi-key": RAPIDAPI_KEY,
-        "x-rapidapi-host":"adsbexchange-com1.p.rapidapi.com"
+        "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
     }
     try:
         r = requests.get(url, headers=headers); r.raise_for_status()
         data = r.json().get("ac", [])
     except:
-        st.warning("Failed to fetch ADS-B data"); data = []
+        st.warning("ADS-B fetch failed"); data=[]
 else:
     data = []
 
@@ -134,21 +134,21 @@ for ac in data:
         lat, lon = float(ac["lat"]), float(ac["lon"])
     except:
         continue
-    cs = (ac.get("flight") or ac.get("hex") or "").strip()
+    cs   = (ac.get("flight") or ac.get("hex") or "").strip()
     baro, geo = ac.get("alt_baro"), ac.get("alt_geo")
     try:
-        if baro:       alt_ft = int(float(baro))
-        elif geo:      alt_ft = int(float(geo)*3.28084)
-        else:          alt_ft = 0
+        if baro:      alt_ft = int(float(baro))
+        elif geo:     alt_ft = int(float(geo)*3.28084)
+        else:         alt_ft = 0
     except:
         alt_ft = 0
-    vel = float(ac.get("gs") or ac.get("spd") or 0)
-    hdg = float(ac.get("track") or ac.get("trak") or 0)
+    vel  = float(ac.get("gs") or ac.get("spd") or 0)
+    hdg  = float(ac.get("track") or ac.get("trak") or 0)
     if alt_ft>0:
         ac_list.append({
-            "lat": lat, "lon": lon,
-            "alt_ft": alt_ft, "vel": vel, "hdg": hdg,
-            "callsign": cs
+            "lat":lat, "lon":lon,
+            "alt_ft":alt_ft, "vel":vel, "hdg":hdg,
+            "callsign":cs
         })
 
 df_ac = pd.DataFrame(ac_list)
@@ -165,45 +165,41 @@ st.metric("Tracked aircraft", len(df_ac))
 # ── BUILD SHADOW TRAILS ────────────────────────────────────────────────────────
 sun_trails, moon_trails = [], []
 if not df_ac.empty:
-    for _, r in df_ac.iterrows():
-        s_path, m_path = [], []
+    for _,r in df_ac.iterrows():
+        s_path,m_path = [],[]
         for i in range(FORECAST_DURATION+1):
             t = now_utc + timedelta(seconds=i)
             d = r["vel"]*i
-            dlat = d*math.cos(math.radians(r["hdg"])) / 111111
-            dlon = d*math.sin(math.radians(r["hdg"])) / (111111*math.cos(math.radians(r["lat"])))
+            dlat = d*math.cos(math.radians(r["hdg"]))/111111
+            dlon = d*math.sin(math.radians(r["hdg"]))/(111111*math.cos(math.radians(r["lat"])))
             li, lo = r["lat"]+dlat, r["lon"]+dlon
 
             if show_sun:
-                sa, saz = get_altitude(li, lo, t), get_azimuth(li, lo, t)
+                sa, saz = get_altitude(li,lo,t), get_azimuth(li,lo,t)
                 if sa>0:
                     sd = r["alt_ft"]/math.tan(math.radians(sa))
                     s_path.append([
                         lo + (sd/(111111*math.cos(math.radians(li))))*math.sin(math.radians(saz+180)),
                         li + (sd/111111)*math.cos(math.radians(saz+180))
                     ])
-
             if show_moon and ephem:
                 obs = ephem.Observer()
-                obs.lat, obs.lon, obs.date = str(li), str(lo), t
+                obs.lat,obs.lon,obs.date = str(li),str(lo),t
                 pm = ephem.Moon(obs)
-                ma, maz = math.degrees(pm.alt), math.degrees(pm.az)
+                ma,maz=math.degrees(pm.alt),math.degrees(pm.az)
                 if ma>0:
                     md = r["alt_ft"]/math.tan(math.radians(ma))
                     m_path.append([
                         lo + (md/(111111*math.cos(math.radians(li))))*math.sin(math.radians(maz+180)),
                         li + (md/111111)*math.cos(math.radians(maz+180))
                     ])
+        if s_path: sun_trails.append({"path":s_path,"callsign":r["callsign"],"current":s_path[0]})
+        if m_path: moon_trails.append({"path":m_path,"callsign":r["callsign"],"current":m_path[0]})
 
-        if s_path:
-            sun_trails.append({"path": s_path, "callsign": r["callsign"], "current": s_path[0]})
-        if m_path:
-            moon_trails.append({"path": m_path, "callsign": r["callsign"], "current": m_path[0]})
-
-# ── ASSEMBLE LAYERS ────────────────────────────────────────────────────────────
+# ── ASSEMBLE ALL LAYERS ────────────────────────────────────────────────────────
 layers = []
 
-# OSM base + rings
+# OSM tiles + rings
 layers.append(pdk.Layer("TileLayer", data=None,
                         get_tile_url="https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
                         tile_size=256, pickable=False))
@@ -218,8 +214,7 @@ for m in [1,2,5,10,20]:
     layers.append(pdk.Layer("PathLayer", data=[{"path":ring}],
                             get_path="path", get_color=[0,200,0,120],
                             width_scale=100, width_min_pixels=1, pickable=False))
-    layers.append(pdk.Layer("TextLayer", data=[{"text":f"{m} mi",
-                                                "position":[CENTER_LON, CENTER_LON+lat_d*1.02]}],
+    layers.append(pdk.Layer("TextLayer", data=[{"text":f"{m} mi","position":[CENTER_LON,CENTER_LAT+lat_d*1.02]}],
                             get_position="position", get_text="text",
                             get_color=[0,200,0,200], get_size=16, pickable=False))
 
@@ -249,53 +244,55 @@ if not df_ac.empty:
                             pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]))
 
 # Alert ring
-ring=[]
+alert_ring=[]
 for a in range(0,360,5):
     b=math.radians(a)
     dy=(alert_w/111111)*math.cos(b)
     dx=(alert_w/(111111*math.cos(math.radians(CENTER_LAT))))*math.sin(b)
-    ring.append([CENTER_LON+dx,CENTER_LAT+dy])
-ring.append(ring[0])
-layers.append(pdk.Layer("PolygonLayer", data=[{"polygon":ring}],
+    alert_ring.append([CENTER_LON+dx,CENTER_LAT+dy])
+alert_ring.append(alert_ring[0])
+layers.append(pdk.Layer("PolygonLayer", data=[{"polygon":alert_ring}],
                         get_polygon="polygon", get_fill_color=[255,0,0,100],
                         stroked=True, get_line_color=[255,0,0], get_line_width=3, pickable=False))
 
-# ── RENDER DECK ───────────────────────────────────────────────────────────────
+# ── RENDER ─────────────────────────────────────────────────────────────────────
 view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON,
                      zoom=max(1, min(16, 14-math.log(RADIUS_KM,2))))
 st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view,
-                         map_provider="openstreetmap"),
+                         map_style="open-street-map"),
                 use_container_width=True)
 
-# ── RECENT ALERTS + ON-SCREEN ─────────────────────────────────────────────────
+# ── RECENT ALERTS & ON-SCREEN ─────────────────────────────────────────────────
 try:
     df_log = pd.read_csv(LOG_PATH)
     if not df_log.empty:
         df_log['Time UTC']=pd.to_datetime(df_log['Time UTC'])
         df_log['y']=0
-        disp=df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']]
+        disp=df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']].copy()
         disp.rename(columns={'Time Until Alert (sec)':'Transit (s)'}, inplace=True)
-        st.markdown("### 📊 Recent Alerts") 
+        st.markdown("### Recent Alerts")
         st.dataframe(disp.tail(10))
-        fig=px.scatter(df_log, x='Time UTC', y='y', size='Distance (mi)',size_max=40,
-                       hover_name='Callsign', hover_data={'Time Until Alert (sec)':True},
-                       title="Alert Proximity Timeline")
-        fig.add_hline(y=0,line_color='lightgray',line_width=1)
-        fig.update_yaxes(visible=False,range=[-0.5,0.5])
-        st.plotly_chart(fig,use_container_width=True)
+        fig = px.scatter(df_log, x='Time UTC', y='y',
+                         size='Distance (mi)', size_max=40,
+                         hover_name='Callsign',
+                         hover_data={'Time Until Alert (sec)':True},
+                         title="Alert Proximity Timeline")
+        fig.add_hline(y=0, line_color='lightgray', line_width=1)
+        fig.update_yaxes(visible=False, range=[-0.5,0.5])
+        st.plotly_chart(fig, use_container_width=True)
 except FileNotFoundError:
     st.warning("No alert log found")
 
 for trail in sun_trails:
-    for lon,lat in trail['path']:
-        if hav(lat,lat,CENTER_LAT,CENTER_LON)<=alert_w:
-            dmi=hav(lat,lon,CENTER_LAT,CENTER_LON)/1609.34
-            idx=trail['path'].index([lon,lat])
-            ts=idx*FORECAST_INTERVAL
+    for lon, lat in trail['path']:
+        if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_w:
+            dmi = hav(lat, lon, CENTER_LAT, CENTER_LON)/1609.34
+            idx = trail['path'].index([lon, lat])
+            tsec = idx * FORECAST_INTERVAL
             if on_screen:
-                st.error(f"🚨 Shadow by {trail['callsign']}: {dmi:.2f} mi, {ts}s")
+                st.error(f"🚨 Shadow by {trail['callsign']}: {dmi:.2f} mi, {tsec}s")
                 st.audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg")
-            log_alert(trail['callsign'],lat,lon,ts,dmi)
+            log_alert(trail['callsign'], lat, lon, tsec, dmi)
             break
 
 if test_btn:
