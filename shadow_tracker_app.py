@@ -4,7 +4,7 @@ import time
 import requests
 import ephem
 import streamlit as st
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pysolar.solar import get_altitude, get_azimuth
 from streamlit_folium import st_folium
 import folium
@@ -31,6 +31,17 @@ st.sidebar.write(f"Search radius: {DEFAULT_RADIUS_MI} mi")
 show_sun = st.sidebar.checkbox("Show Sun Shadows", value=True)
 show_moon = st.sidebar.checkbox("Show Moon Shadows", value=True)
 
+# Manual home location entry
+lat_input = st.sidebar.number_input(
+    "Home Latitude", value=st.session_state.home['lat'], format="%.6f"
+)
+lon_input = st.sidebar.number_input(
+    "Home Longitude", value=st.session_state.home['lon'], format="%.6f"
+)
+# Update session state if changed
+if lat_input != st.session_state.home['lat'] or lon_input != st.session_state.home['lon']:
+    st.session_state.home = {'lat': lat_input, 'lon': lon_input}
+
 # Function to fetch aircraft safely
 def fetch_aircraft(lat, lon, miles):
     url = ADSB_URL.format(lat=lat, lng=lon, dist=miles)
@@ -51,34 +62,12 @@ def fetch_aircraft(lat, lon, miles):
     data = payload.get('acList', [])
     return [ac for ac in data if 'Lat' in ac]
 
-# Map for selecting/updating home location
-st.sidebar.markdown("---")
-st.sidebar.write("Click on the map to set your home location")
-map_center = (st.session_state.home['lat'], st.session_state.home['lon'])
-folium_map = folium.Map(location=map_center, zoom_start=12)
-# Draw reference rings
-for r in [1, 2, 5, 10]:
-    folium.Circle(
-        location=map_center,
-        radius=r * 1609.34,
-        color='blue', fill=False,
-        weight=1,
-        dash_array='5'
-    ).add_to(folium_map)
-click_data = st_folium(folium_map, height=400, key='home_map')
-if click_data and click_data.get('last_clicked'):
-    lat, lon = click_data['last_clicked']['lat'], click_data['last_clicked']['lng']
-    st.session_state.home = {'lat': lat, 'lon': lon}
-
-# Container for map
-map_container = st.empty()
-
-# Main loop-like rerun (Streamlit reruns script on interaction)
+# Main data fetch and map build
 home = st.session_state.home
 ac_list = fetch_aircraft(home['lat'], home['lon'], DEFAULT_RADIUS_MI)
 now = datetime.now(timezone.utc)
 
-# Build map with current data
+# Create map
 m = folium.Map(location=(home['lat'], home['lon']), zoom_start=12)
 # Reference rings
 for r in [1, 2, 5, 10]:
@@ -105,7 +94,7 @@ for ac in ac_list:
     # Aircraft icon
     folium.Marker(
         location=(lat, lon),
-        tooltip=f"{callsign}",
+        tooltip=f"{callsign} | Alt: {ac.get('Alt', 0)} ft | Spd: {ac.get('Spd', 0)} kt",
         icon=folium.Icon(icon='plane', prefix='fa')
     ).add_to(m)
 
@@ -132,7 +121,6 @@ for ac in ac_list:
 
     # Draw shadow lines
     for kind, dist, brng, col in shadows:
-        # Great-circle approx
         R = 6378137
         d_rad = dist / R
         lat1 = math.radians(lat)
@@ -152,6 +140,4 @@ for ac in ac_list:
         ).add_to(m)
 
 # Render map
-map_container.write(st_folium(m, height=600))
-
-# Note: Add your alert scheduling/notifications below based on timing thresholds
+st_folium(m, height=700)
