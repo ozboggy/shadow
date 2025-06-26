@@ -22,17 +22,17 @@ try:
 except ImportError:
     pass
 
-# ── Configuration ─────────────────────────────────────────────────────────────
-LOG_PATH         = os.getenv("LOG_PATH", "alert_log.csv")
-HOME_CFG         = os.getenv("HOME_CONFIG", "home_location.json")
-RAPIDAPI_KEY     = os.getenv("RAPIDAPI_KEY")
-MAPBOX_API_KEY   = os.getenv("MAPBOX_API_KEY")
-DEFAULT_RADIUS_MI   = 10
-RADIUS_KM           = DEFAULT_RADIUS_MI * 1.60934
+# ── Configuration
+LOG_PATH           = os.getenv("LOG_PATH", "alert_log.csv")
+HOME_CFG           = os.getenv("HOME_CONFIG", "home_location.json")
+RAPIDAPI_KEY       = os.getenv("RAPIDAPI_KEY")
+MAPBOX_API_KEY     = os.getenv("MAPBOX_API_KEY")
+DEFAULT_RADIUS_MI  = 10
+RADIUS_KM          = DEFAULT_RADIUS_MI * 1.60934
 FORECAST_INTERVAL_S = 1
 FORECAST_DURATION_S = 60
 
-# ── Home Location Load/Save ───────────────────────────────────────────────────
+# ── Home Location Load/Save
 def load_home():
     default = {"lat": -33.8544014, "lon": 151.2087668}
     if os.path.exists(HOME_CFG):
@@ -50,14 +50,14 @@ def save_home(lat, lon):
 
 CENTER_LAT, CENTER_LON = load_home()
 
-# ── Ensure alert log exists ────────────────────────────────────────────────────
+# ── Ensure alert log exists
 if not os.path.exists(LOG_PATH):
     pd.DataFrame(columns=[
         "Time UTC", "Callsign", "Lat", "Lon",
         "Time Until Alert (sec)", "Distance (mi)"
     ]).to_csv(LOG_PATH, index=False)
 
-# ── Helper Functions ──────────────────────────────────────────────────────────
+# ── Helpers
 def hav(lat1, lon1, lat2, lon2):
     R = 6_371_000
     dlat = math.radians(lat2 - lat1)
@@ -79,15 +79,14 @@ def log_alert(callsign, lat, lon, time_until, distance_mi):
     new = pd.DataFrame([{
         "Time UTC": datetime.now(timezone.utc).isoformat(),
         "Callsign": callsign,
-        "Lat": lat,
-        "Lon": lon,
+        "Lat": lat, "Lon": lon,
         "Time Until Alert (sec)": time_until,
         "Distance (mi)": distance_mi
     }])
     df = pd.concat([df, new], ignore_index=True)
     df.to_csv(LOG_PATH, index=False)
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar
 with st.sidebar:
     st.header("Home & Map Options")
     lat_in = st.number_input("Home Lat", value=CENTER_LAT, format="%.6f")
@@ -98,7 +97,7 @@ with st.sidebar:
     st.markdown("---")
     on_screen_alerts = st.checkbox("Enable On-Screen Alerts", True)
     st.markdown(f"**Search Radius:** {DEFAULT_RADIUS_MI} mi")
-    track_sun  = st.checkbox("Show Sun Shadows",  True)
+    track_sun  = st.checkbox("Show Sun Shadows", True)
     track_moon = st.checkbox("Show Moon Shadows", False)
     alert_width = st.slider("Shadow Alert Width (m)", 10, 1000, 50)
     test_alert = st.button("Test Alert")
@@ -114,16 +113,16 @@ with st.sidebar:
     else:
         st.info("No alert log yet")
 
-# ── Timestamp & Solar/Moon Altitudes ──────────────────────────────────────────
+# ── Timestamp & Solar/Moon Altitudes
 now_utc = datetime.now(timezone.utc)
-sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
+sun_alt  = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
 moon_alt = None
 if ephem:
     obs = ephem.Observer()
     obs.lat, obs.lon, obs.date = str(CENTER_LAT), str(CENTER_LON), now_utc
     moon_alt = math.degrees(ephem.Moon(obs).alt)
 
-# ── Fetch ADS-B Data ───────────────────────────────────────────────────────────
+# ── Fetch ADS-B Data
 aircraft_list = []
 if RAPIDAPI_KEY:
     url = (
@@ -132,12 +131,12 @@ if RAPIDAPI_KEY:
     )
     headers = {
         "x-rapidapi-key": RAPIDAPI_KEY,
-        "x-rapidapi-host":  "adsbexchange-com1.p.rapidapi.com"
+        "x-rapidapi-host": "adsbexchange-com1.p.rapidapi.com"
     }
     try:
-        resp = requests.get(url, headers=headers)
-        resp.raise_for_status()
-        data = resp.json().get("ac", [])
+        r = requests.get(url, headers=headers)
+        r.raise_for_status()
+        data = r.json().get("ac", [])
     except:
         st.warning("Failed to fetch ADS-B data.")
         data = []
@@ -171,7 +170,7 @@ for ac in data:
 
 df_ac = pd.DataFrame(aircraft_list)
 
-# ── Status Display ────────────────────────────────────────────────────────────
+# ── Status Display
 st.markdown(f"**Home:** {CENTER_LAT:.6f}, {CENTER_LON:.6f}")
 st.markdown(f"**Sun alt:** {'🟢' if sun_alt>0 else '🔴'} {sun_alt:.1f}°")
 if moon_alt is not None:
@@ -180,7 +179,7 @@ else:
     st.warning("Moon data unavailable")
 st.metric("Aircraft tracked", len(df_ac))
 
-# ── 1) STATIC MAP + RINGS (cached) ────────────────────────────────────────────
+# ── 1) STATIC MAP + RINGS (cached)
 @st.cache_data(show_spinner=False)
 def get_static_layers():
     view = pdk.ViewState(
@@ -188,7 +187,6 @@ def get_static_layers():
         longitude=CENTER_LON,
         zoom=max(1, min(16, 14 - math.log(RADIUS_KM, 2)))
     )
-    # OpenStreetMap tiles
     tile_layer = pdk.Layer(
         "TileLayer",
         data=None,
@@ -196,7 +194,6 @@ def get_static_layers():
         tile_size=256,
         pickable=False
     )
-    # Distance rings
     rings = []
     for m in [1, 2, 5, 10, 20]:
         km = m * 1.60934
@@ -229,6 +226,7 @@ def get_static_layers():
     return view, [tile_layer] + rings
 
 view_state, static_layers = get_static_layers()
+
 deck_static = pdk.Deck(
     layers=static_layers,
     initial_view_state=view_state,
@@ -237,8 +235,7 @@ deck_static = pdk.Deck(
 )
 st.pydeck_chart(deck_static, use_container_width=True)
 
-# ── 2) DYNAMIC LAYERS (shadows + aircraft + alert ring) ─────────────────────
-# Build shadow trails
+# ── 2) DYNAMIC LAYERS (shadows, aircraft, alert ring)
 sun_trails, moon_trails = [], []
 if not df_ac.empty:
     for _, r in df_ac.iterrows():
@@ -280,7 +277,6 @@ if not df_ac.empty:
         if m_path:
             moon_trails.append({"path": m_path, "callsign": r["callsign"], "current": m_path[0]})
 
-# Assemble dynamic layers
 dynamic_layers = []
 
 # Sun trails
@@ -342,7 +338,7 @@ deck_dynamic = pdk.Deck(
 )
 st.pydeck_chart(deck_dynamic, use_container_width=True)
 
-# ── Recent Alerts & On-Screen Detection ────────────────────────────────────────
+# ── Recent Alerts & On‐Screen Detection
 try:
     df_log = pd.read_csv(LOG_PATH)
     if not df_log.empty:
