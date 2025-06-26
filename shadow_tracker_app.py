@@ -15,10 +15,10 @@ DEFAULT_RADIUS_MI = 10
 PREDICT_SECONDS = 60
 ALERT_TIMES = [60, 30, 15, 10, 5, 0]  # seconds
 
-# ADSB Exchange endpoint (min/max distance both set to radius)
-ADSB_URL = (
-    "https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json"
-    "?lat={lat}&lng={lng}&fDstL={dist}&fDstU={dist}&fAltL=0"
+# OpenSky anonymous API endpoint template
+OPENSKY_URL = (
+    "https://opensky-network.org/api/states/all"
+    "?lamin={lat_min}&lomin={lon_min}&lamax={lat_max}&lomax={lon_max}"
 )
 
 # Initialize session state for home location
@@ -42,27 +42,54 @@ lon_input = st.sidebar.number_input(
 if lat_input != st.session_state.home['lat'] or lon_input != st.session_state.home['lon']:
     st.session_state.home = {'lat': lat_input, 'lon': lon_input}
 
-# Function to fetch aircraft safely
+# Function to fetch aircraft via OpenSky
 def fetch_aircraft(lat, lon, miles):
-    url = ADSB_URL.format(lat=lat, lng=lon, dist=miles)
+    # bounding box in degrees (~1 deg lat ~69 mi)
+    dlat = miles / 69.0
+    dlon = miles / (abs(math.cos(math.radians(lat))) * 69.0)
+    url = OPENSKY_URL.format(
+        lat_min=lat - dlat,
+        lon_min=lon - dlon,
+        lat_max=lat + dlat,
+        lon_max=lon + dlon,
+    )
     try:
         resp = requests.get(url, timeout=10)
     except Exception as e:
         st.error(f"Error fetching aircraft data: {e}")
         return []
     if resp.status_code != 200:
-        st.warning(f"ADS-B API returned status {resp.status_code}")
+        st.warning(f"OpenSky API returned status {resp.status_code}")
         return []
     try:
-        payload = resp.json()
+        data = resp.json()
     except ValueError:
         text_snippet = resp.text[:200].replace('\n', ' ')
-        st.warning(f"Invalid JSON response: {text_snippet}")
+        st.warning(f"Invalid JSON from OpenSky: {text_snippet}")
         return []
-    data = payload.get('acList', [])
-    return [ac for ac in data if 'Lat' in ac]
+    states = data.get('states', [])
+    result = []
+    for s in states:
+        # state vector indices: [latitude=6, longitude=5, altitude=7, callsign=1, velocity=9]
+        lat_s = s[6]
+        lon_s = s[5]
+        alt_m = (s[7] or 0)  # meters
+        icao = s[0]
+        call = s[1].strip() if s[1] else icao
+        spd_ms = s[9] or 0
+        if lat_s and lon_s:
+            result.append({
+                'Lat': lat_s,
+                'Long': lon_s,
+                'Alt': alt_m / 0.3048,  # convert to feet for consistency
+                'Call': call,
+                'Spd': spd_ms * 1.94384,  # m/s to knots
+            })
+    return result
 
 # Main data fetch and map build
+title = "Aircraft Shadow Tracker"
+st.header(title)
 home = st.session_state.home
 ac_list = fetch_aircraft(home['lat'], home['lon'], DEFAULT_RADIUS_MI)
 now = datetime.now(timezone.utc)
@@ -89,12 +116,12 @@ folium.Marker(
 for ac in ac_list:
     lat, lon = ac['Lat'], ac['Long']
     alt_m = ac.get('Alt', 0) * 0.3048
-    callsign = ac.get('Call', '').strip()
+    callsign = ac.get('Call', '')
 
     # Aircraft icon
     folium.Marker(
         location=(lat, lon),
-        tooltip=f"{callsign} | Alt: {ac.get('Alt', 0)} ft | Spd: {ac.get('Spd', 0)} kt",
+        tooltip=f"{callsign} | Alt: {ac.get('Alt', 0):.0f} ft | Spd: {ac.get('Spd', 0):.0f} kt",
         icon=folium.Icon(icon='plane', prefix='fa')
     ).add_to(m)
 
@@ -141,3 +168,5 @@ for ac in ac_list:
 
 # Render map
 st_folium(m, height=700)
+
+# TODO: implement on-screen alerts at 60 s, 30 s, 15 s, 10 s, 5 s and impact
