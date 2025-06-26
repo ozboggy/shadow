@@ -41,7 +41,7 @@ lon_input = st.sidebar.number_input(
 if (lat_input, lon_input) != (st.session_state.home['lat'], st.session_state.home['lon']):
     st.session_state.home = {'lat': lat_input, 'lon': lon_input}
 
-# Fetch aircraft with caching
+# Fetch aircraft
 def fetch_aircraft(lat, lon, miles):
     url = get_opensky_url(lat, lon, miles)
     try:
@@ -141,12 +141,16 @@ layers.append(
     )
 )
 
-# Render without specifying mapbox style (uses default tiles)
+# Render with light basemap and live updates
 deck = pdk.Deck(
+    map_style="mapbox://styles/mapbox/light-v9",
     initial_view_state=view_state,
     layers=layers,
     tooltip={"text": "{call}"}
 )
 st.pydeck_chart(deck, use_container_width=True)
+
+# Refresh every second for live positions
+st.experimental_rerun()
 
 # TODO: Alerts at 60s/30s/... based on predicted intercept
