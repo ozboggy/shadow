@@ -49,16 +49,41 @@ RADIUS_KM = RADIUS_MI * 1.60934
 # Alert radius for aircraft (m)
 ALERT_WIDTH = 100
 
-# Set up streamlit layout
 st.set_page_config(page_title="Live Aircraft Shadow Tracker", layout="wide")
 st.title("✈️ Live Aircraft Shadow Tracker")
+
+# --- SIDEBAR (info only, no controls) ---
+with st.sidebar:
+    # Aircraft count will be added after data fetch
+    st.markdown("### Tracker Info")
+    # Sun altitude
+    now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
+    sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
+    sun_az = get_azimuth(CENTER_LAT, CENTER_LON, now_utc)
+    sun_col = "green" if sun_alt > 0 else "red"
+    st.markdown(f"<span style='color:{sun_col}'>☀️ Sun Altitude: {sun_alt:.1f}°</span>", unsafe_allow_html=True)
+
+    # Moon altitude (if ephem available)
+    if ephem:
+        obs = ephem.Observer()
+        obs.lat, obs.lon, obs.elevation = str(CENTER_LAT), str(CENTER_LON), HOME_ALT
+        moon = ephem.Moon(obs)
+        moon_alt = math.degrees(moon.alt)
+        moon_col = "green" if moon_alt > 0 else "red"
+        st.markdown(f"<span style='color:{moon_col}'>🌕 Moon Altitude: {moon_alt:.1f}°</span>", unsafe_allow_html=True)
+    st.write("---")  # Divider for aircraft count
 
 # Aircraft data source
 def fetch_adsb_data(lat, lon, radius_km):
     try:
         url = f"https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat={lat}&lng={lon}&fDstL=0&fDstU={radius_km}"
         resp = requests.get(url, timeout=10)
-        data = resp.json()
+        # If the content is not JSON, raise error for user feedback
+        try:
+            data = resp.json()
+        except Exception:
+            st.error("❌ Unable to fetch aircraft data (API returned invalid response). This is usually temporary—try again soon.")
+            return pd.DataFrame([])
         ac_list = []
         for ac in data.get('acList', []):
             if 'Lat' in ac and 'Long' in ac and ac.get('Alt') is not None:
@@ -73,29 +98,14 @@ def fetch_adsb_data(lat, lon, radius_km):
                 })
         return pd.DataFrame(ac_list)
     except Exception as e:
-        st.warning(f"Failed to fetch aircraft data: {e}")
+        st.error(f"❌ Failed to fetch aircraft data: {e}")
         return pd.DataFrame([])
 
 df_ac = fetch_adsb_data(CENTER_LAT, CENTER_LON, RADIUS_KM)
 
-# Aircraft count
-st.sidebar.markdown(f"**Tracked Aircraft:** {len(df_ac)}")
-
-# Sun & moon calculations
-now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
-sun_alt = get_altitude(CENTER_LAT, CENTER_LON, now_utc)
-sun_az = get_azimuth(CENTER_LAT, CENTER_LON, now_utc)
-
-sun_col = "green" if sun_alt > 0 else "red"
-st.sidebar.markdown(f"<span style='color:{sun_col}'>☀️ Sun Altitude: {sun_alt:.1f}°</span>", unsafe_allow_html=True)
-
-if ephem:
-    obs = ephem.Observer()
-    obs.lat, obs.lon, obs.elevation = str(CENTER_LAT), str(CENTER_LON), HOME_ALT
-    moon = ephem.Moon(obs)
-    moon_alt = math.degrees(moon.alt)
-    moon_col = "green" if moon_alt > 0 else "red"
-    st.sidebar.markdown(f"<span style='color:{moon_col}'>🌕 Moon Altitude: {moon_alt:.1f}°</span>", unsafe_allow_html=True)
+# Update aircraft count in the sidebar
+with st.sidebar:
+    st.markdown(f"**Tracked Aircraft:** {len(df_ac)}")
 
 # Draw radius circles for 1, 2, 5, 10 miles
 def get_circle(lat, lon, radius_m):
@@ -177,9 +187,6 @@ st.pydeck_chart(
     ),
     use_container_width=True
 )
-
-# Alerts and proximity logic (minimal for this version, can expand as needed)
-# Add more logic here if needed for alerting when aircraft are in range, etc.
 
 st.caption(f"Tracking aircraft within **{RADIUS_MI} miles** of home.")
 
