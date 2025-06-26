@@ -169,7 +169,7 @@ for ac in data:
 df_ac = pd.DataFrame(aircraft_list)
 mil_count = 0
 if not df_ac.empty:
-    df_ac[['alt_ft','vel','hdg']] = df_ac[['alt_ft','vel','hdg']].apply(
+    df_ac[['alt_ft', 'vel', 'hdg']] = df_ac[['alt_ft','vel','hdg']].apply(
         pd.to_numeric, errors='coerce').fillna(0)
     df_ac['vel_kt'] = df_ac['vel'].round().astype(int)
     df_ac['alt_ft'] = df_ac['alt_ft'].astype(int)
@@ -178,7 +178,7 @@ if not df_ac.empty:
     )
     df_ac['distance_mi'] = df_ac['distance_m'] / 1609.34
     mil_df = df_ac[
-        df_ac['callsign'].str.contains(r'^(MIL|USAF|RAF|RCAF)', na=False) &
+        df_ac['callsign'].str.contains(r'^(?:MIL|USAF|RAF|RCAF)', na=False) &
         (df_ac['distance_mi'] <= 200)
     ]
     mil_count = len(mil_df)
@@ -286,38 +286,48 @@ if not df_ac.empty:
                             get_fill_color=[0,128,255,200], get_radius=300,
                             pickable=True, auto_highlight=True, highlight_color=[255,255,0,255]))
 
-# Render map
-view = pdk.ViewState(latitude=CENTER_LAT, longitude=CENTER_LON,
-                     zoom=max(1, min(16, 14 - math.log(radius_km,2))))
+# Render map with OpenStreetMap tiles
+view = pdk.ViewState(
+    latitude=CENTER_LAT,
+    longitude=CENTER_LON,
+    zoom=max(1, min(16, 14 - math.log(radius_km, 2)))
+)
 tooltip = {
-    "html": ("<b>Callsign:</b> {callsign}<br/>"
-             "<b>Alt:</b> {alt_ft} ft<br/>"
-             "<b>Speed:</b> {vel_kt} kt<br/>"
-             "<b>Heading:</b> {hdg}°"),
-    "style": {"backgroundColor":"black","color":"white"}
+    "html": (
+        "<b>Callsign:</b> {callsign}<br/>"
+        "<b>Alt:</b> {alt_ft} ft<br/>"
+        "<b>Speed:</b> {vel_kt} kt<br/>"
+        "<b>Heading:</b> {hdg}°"
+    ),
+    "style": {"backgroundColor": "black", "color": "white"}
 }
-st.pydeck_chart(pdk.Deck(
-    layers=layers,
-    initial_view_state=view,
-    map_style="light",
-    tooltip=tooltip
-), use_container_width=True)
+st.pydeck_chart(
+    pdk.Deck(
+        layers=layers,
+        initial_view_state=view,
+        map_style="open-street-map",
+        tooltip=tooltip
+    ),
+    use_container_width=True
+)
 
-# Recent Alerts table + chart (unchanged)
+# Recent Alerts table + chart
 try:
     df_log = pd.read_csv(log_path)
     if not df_log.empty:
         df_log['Time UTC'] = pd.to_datetime(df_log['Time UTC'])
         df_log['y'] = 0
-        df_disp = df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']]
-        df_disp = df_disp.rename(columns={'Time Until Alert (sec)':'Transit (s)'})
+        df_disp = df_log[['Time UTC','Callsign','Distance (mi)','Time Until Alert (sec)']].copy()
+        df_disp.rename(columns={'Time Until Alert (sec)':'Transit (s)'}, inplace=True)
         st.markdown("### 📊 Recent Alerts")
         st.dataframe(df_disp.tail(10))
-        fig = px.scatter(df_log, x='Time UTC', y='y',
-                         size='Distance (mi)', size_max=40,
-                         hover_name='Callsign',
-                         hover_data={'Time Until Alert (sec)':True},
-                         title="Alert Proximity Timeline")
+        fig = px.scatter(
+            df_log, x='Time UTC', y='y',
+            size='Distance (mi)', size_max=40,
+            hover_name='Callsign',
+            hover_data={'Time Until Alert (sec)':True},
+            title="Alert Proximity Timeline"
+        )
         fig.add_hline(y=0, line_color='lightgray', line_width=1)
         fig.update_yaxes(visible=False, range=[-0.5,0.5])
         st.plotly_chart(fig, use_container_width=True)
@@ -329,7 +339,7 @@ for trail in sun_trails:
     for lon, lat in trail['path']:
         if hav(lat, lon, CENTER_LAT, CENTER_LON) <= alert_width:
             cs = trail['callsign']
-            dist_mi = hav(lat, lon, CENTER_LAT, CENTER_LON)/1609.34
+            dist_mi = hav(lat, lon, CENTER_LAT, CENTER_LON) / 1609.34
             idx = trail['path'].index([lon, lat])
             transit = idx * FORECAST_INTERVAL_S
             if on_screen_alerts:
@@ -338,7 +348,7 @@ for trail in sun_trails:
             log_alert(cs, lat, lon, transit, dist_mi)
             break  # one alert per run
 
-# Test button
+# Test Alert button
 if test_alert:
     ph = st.empty()
     ph.success("🔔 Test alert triggered!")
