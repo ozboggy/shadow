@@ -1,11 +1,11 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="ADS-B Sun & Moon Transit Tracker", layout="wide")
+st.set_page_config(page_title="Sun & Moon Transit Tracker", layout="wide")
 
 st.title("ADS-B Sun & Moon Transit Prediction Map")
 st.markdown(
-    "This app embeds the existing Leaflet-based HTML map for real-time ADS-B aircraft tracking and sun/moon shadow projection. "
+    "Real-time ADS-B aircraft tracking and sun/moon shadow projection. "
     "Adjust controls in the sidebar above the map."
 )
 
