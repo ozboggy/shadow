@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sun and Moon Tranist Predictions</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link id="leafletTheme" rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body, html { margin:0; padding:0; height:100%; background:#fff; color:#111; }
+    body.night, html.night { background:#101622; color:#e3e7ef; }
+    #map { position:absolute; top:0; bottom:0; right:0; left:0; }
+    #logo {
+      position: fixed; left: 50%; top: 18px; transform: translateX(-50%);
+      font-size: 1em; font-family: 'Impact', Arial, sans-serif; color: #111;
+      background: rgba(255,255,255,0.86); border-radius: 10px; padding: 6px 24px;
+      font-weight: bold; letter-spacing:2px; z-index: 1600;
+      pointer-events: none; user-select: none;
+      box-shadow: 0 3px 14px 0 rgba(60,60,60,0.08);
+    }
+    body.night #logo {
+      background: rgba(24,26,34,0.89); color: #fff; /* white in night mode */
+      text-shadow: 0 1px 4px #333;
+    }
+    #versionLabel {
+      position:absolute; top:8px; right:12px; font-size:10px;
+      font-family:Arial,sans-serif; color:#555; z-index:1001;
+      pointer-events:none;
+    }
+    body.night #versionLabel { color:#bbb; }
+    #toggleSidebarBtn {
+      position:absolute; top:10px; left:10px; z-index:1001;
+      background:rgba(255,255,255,0.8); border:none; padding:5px 8px;
+      cursor:pointer; border-radius:4px;
+    }
+    body.night #toggleSidebarBtn { background:rgba(24,26,34,0.85); color:#e3e7ef; }
+    #legend {
+      position:absolute; bottom:60px; left:10px; background:rgba(255,255,255,0.9);
+      padding:10px; border-radius:4px; font-family:Arial,sans-serif;
+      font-size:14px; z-index:1000; max-width:240px; display:none;
+    }
+    #legend.visible { display:block; }
+    #legend h4 { margin:0 0 8px 0; font-size:16px; }
+    #legend div { margin-bottom:4px; display:flex; align-items:center; }
+    body.night #legend { background:rgba(24,26,34,0.93); color:#e3e7ef; }
+    .color-box { width:12px; height:12px; margin-right:6px; border:1px solid #000; }
+    .search-box { background:rgba(0,0,255,0.2); border:1px solid blue; }
+    .alert-box  { background:rgba(255,0,0,0.2); border:1px solid red; }
+    #legendToggleBtn, #heatmapToggleBtn {
+      position:absolute; bottom:12px; z-index:1100;
+      background:rgba(255,255,255,0.88); border:none; padding:5px 10px;
+      border-radius:6px; font-size:13px; cursor:pointer;
+    }
+    #legendToggleBtn { left:12px; }
+    #heatmapToggleBtn { left:110px; }
+    body.night #legendToggleBtn, body.night #heatmapToggleBtn {
+      background:rgba(24,26,34,0.85); color:#e3e7ef;
+    }
+    #dataCredit {
+      position:absolute; bottom:8px; right:12px; font-size:11px;
+      font-family:Arial,sans-serif; color:#999; background:rgba(255,255,255,0.88);
+      border-radius:5px; padding:3px 10px; z-index:1200; pointer-events:none;
+    }
+    body.night #dataCredit { background:rgba(24,26,34,0.85); color:#aaa; }
+    #controls {
+      position:absolute; top:50px; left:10px; background:rgba(255,255,255,0.9);
+      padding:10px; border-radius:4px; font-family:Arial,sans-serif;
+      z-index:1000; max-width:340px;
+    }
+    #controls.hidden { display:none; }
+    #controls label, #controls div {
+      margin-bottom:8px; font-size:14px; display:flex;
+      justify-content:space-between; align-items:center;
+    }
+    #controls input[type=range] { margin-left:4px; }
+    #controls span { min-width:30px; text-align:right; }
+    body.night #controls { background:rgba(24,26,34,0.93); color:#e3e7ef; }
+    #flightLog {
+      position:absolute; top:50px; right:10px; width:320px; max-height:60%;
+      overflow:auto; background:rgba(255,255,255,0.9); padding:10px;
+      border-radius:4px; font-family:Arial,sans-serif; font-size:12px; z-index:1000;
+    }
+    #flightLog.hidden { display:none; }
+    body.night #flightLog { background:rgba(24,26,34,0.93); color:#e3e7ef; }
+    .log-tooltip {
+      display:none; position:absolute; left:105%; top:0; z-index:9999;
+      background:#222; color:#fff; border-radius:3px; padding:6px 12px;
+      font-size:12px; white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,0.25);
+    }
+    .log-entry { position:relative; cursor:pointer; }
+    .log-entry:hover .log-tooltip { display:block; }
+    body.night .log-tooltip { background:#445; color:#fff; }
+    #onscreenAlert {
+      display:none; position:fixed; top:18px; left:50%; transform:translateX(-50%);
+      background:rgba(255,30,30,0.95); color:#fff; padding:14px 36px;
+      border-radius:8px; box-shadow:0 6px 24px rgba(0,0,0,0.25);
+      font-size:18px; z-index:4000; font-family:Arial,sans-serif;
+      pointer-events:none; font-weight:bold;
+    }
+    .pulse {
+      animation: pulse 1.2s infinite; box-shadow:0 0 0 rgba(240,0,255,0.6);
+    }
+    @keyframes pulse {
+      0%   { box-shadow:0 0 0 0 rgba(240,0,255,0.6); }
+      70%  { box-shadow:0 0 12px 12px rgba(240,0,255,0); }
+      100% { box-shadow:0 0 0 0 rgba(240,0,255,0); }
+    }
+  </style>
+</head>
+<body>
+  <div id="logo">Spray And Pray</div>
+  <div id="versionLabel">ver 2.20</div>
+  <div id="map"></div>
+  <button id="toggleSidebarBtn">Show</button>
+  <button id="legendToggleBtn" title="Toggle legend">Legend</button>
+  <button id="heatmapToggleBtn" title="Toggle heatmap">Heatmap</button>
+
+  <div id="controls" class="hidden">
+    <button id="nightModeToggle">🌙 Night Mode</button>
+    <div id="timeDisplay" style="font-weight:bold;"></div>
+    <div id="countDisplay"></div>
+    <div id="sunMoonDisplay"></div>
+    <hr>
+    <h4>Home Location & Search Radius</h4>
+    <button id="setHomeToDeviceBtn">📍 Set Home to My Location</button>
+    <label>Home Lat:<input id="homeLat" type="number" value="-33.8487303" step="0.0001"></label>
+    <label>Home Lon:<input id="homeLon" type="number" value="151.2096842" step="0.0001"></label>
+    <label>Search Radius (mi):
+      <input id="radiusInput" type="range" min="1" max="100" value="50" step="1">
+      <span id="radiusValue">50</span>
+    </label>
+    <label>Alert Radius (m):
+      <input id="alertRadius" type="range" min="1" max="1000" value="50" step="1">
+      <span id="alertRadiusValue">50</span>
+    </label>
+    <hr>
+    <h4>Display Toggles</h4>
+    <label><input id="toggleAircraft" type="checkbox" checked> Aircraft</label>
+    <label><input id="toggleFlightPath" type="checkbox" checked> Flight Path</label>
+    <label><input id="toggleSunShadowPath" type="checkbox" checked> Sun Shadow Path</label>
+    <label><input id="toggleMoonShadowPath" type="checkbox" checked> Moon Shadow Path</label>
+    <label><input id="toggleCurrentShadows" type="checkbox" checked> Current Shadows</label>
+    <label><input id="toggleAlerts" type="checkbox"> Browser Alerts</label>
+    <label><input id="toggleVFR" type="checkbox"> VFR Chart Overlay</label>
+    <label id="vfrOpacityLabel" style="margin-left:24px;">
+      Opacity:
+      <input id="vfrOpacity" type="range" min="0" max="100" value="35" step="1">
+      <span id="vfrOpacityValue">35%</span>
+    </label>
+    <hr>
+    <h4>Airport Logging</h4>
+    <label>
+      Preset Airport:
+      <select id="presetAirport">
+        <option value="">-- Select --</option>
+        <option value="YSSY">YSSY (Sydney)</option>
+        <option value="YSRI" selected>YSRI (Richmond)</option>
+        <option value="YWLM">YWLM (Williamtown)</option>
+      </select>
+    </label>
+    <label>Airport Lat:<input id="airportLat" type="number" value="-33.8487303" step="0.0001"></label>
+    <label>Airport Lon:<input id="airportLon" type="number" value="150.7758435" step="0.0001"></label>
+    <label>Airport Radius (mi):
+      <input id="airportRadius" type="range" min="1" max="30" value="2.5" step="1">
+      <span id="airportRadiusValue">2.5</span>
+    </label>
+    <label><input id="enableLogging" type="checkbox"> Enable Logging</label>
+    <label><input id="logSunTransits" type="checkbox"> Log Sun Transits</label>
+    <label><input id="logMoonTransits" type="checkbox"> Log Moon Transits</label>
+    <label><input id="logAirport" type="checkbox"> Log Airport Arr/Dep</label>
+    <div style="display:flex;gap:10px;">
+      <button id="downloadLogBtn">Download Log as CSV</button>
+      <button id="clearLogBtn">Clear Logs</button>
+    </div>
+  </div>
+
+  <div id="legend">
+    <h4>Legend</h4>
+    <div><div class="color-box" style="background:blue;"></div>Aircraft</div>
+    <div><div class="color-box" style="background:green;"></div>Flight Path 0–5k ft</div>
+    <div><div class="color-box" style="background:yellow;"></div>Flight Path 5–10k ft</div>
+    <div><div class="color-box" style="background:orange;"></div>Flight Path 10–20k ft</div>
+    <div><div class="color-box" style="background:red;"></div>Flight Path &gt;20k ft</div>
+    <div><div class="color-box" style="background:black;"></div>Sun Shadow</div>
+    <div><div class="color-box" style="background:gray;"></div>Moon Shadow</div>
+    <div><div class="color-box" style="border:2px solid magenta;"></div>Shadow Alert</div>
+    <div><div class="color-box search-box"></div>Search Radius</div>
+    <div><div class="color-box alert-box"></div>Alert Radius</div>
+    <div><div class="color-box" style="border:2px dashed purple; background:rgba(128,0,128,0.15);"></div>Airport Geofence</div>
+    <div><div class="color-box" style="background:orange; border-radius:6px;"></div>Heatmap Density</div>
+  </div>
+
+  <div id="flightLog" class="hidden">
+    <h4>Flight Log</h4>
+    <ul id="logList" style="margin:0; padding-left:20px;"></ul>
+  </div>
+
+  <div id="onscreenAlert"></div>
+  <div id="dataCredit">Data: &copy; ADSBexchange, OpenAIP, & other sources</div>
+  <audio id="alertAudio" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/suncalc@1.8.0/suncalc.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+  <script>
+    // ---------- GLOBALS ----------
+    const LOG_STORAGE_KEY = "adsb_shadow_log";
+    let localFlightLog = [];
+    let HOME = { lat: -33.8487303, lon: 151.2096842 };
+    let airportState = {};
+    let aircraftHistory = {};
+    let lastShadowAlertKeys = {};
+    let shadowTransitLogState = {};
+    let heatmapEnabled = false;
+    let heatLayer = null;
+
+    const airportPresets = {
+      YSSY: { lat: -33.9461833, lon: 151.1727776, name: "YSSY (Sydney)" },
+      YSRI: { lat: -33.5972964, lon: 150.7758435, name: "YSRI (Richmond)" },
+      YWLM: { lat: -32.791735, lon: 151.8273014, name: "YWLM (Williamtown)" }
+    };
+
+
+    // On-screen alert box
+    let onscreenAlertTimeout;
+    function showOnscreenAlert(msg) {
+      const box = document.getElementById('onscreenAlert');
+      box.innerText = msg;
+      box.style.display = 'block';
+      clearTimeout(onscreenAlertTimeout);
+      onscreenAlertTimeout = setTimeout(() => { box.style.display = 'none'; }, 5200);
+    }
+
+    // Logging helpers
+    function isLoggingEnabled()   { return document.getElementById('enableLogging').checked; }
+    function isSunTransitLoggingEnabled()  { return document.getElementById('logSunTransits').checked && isLoggingEnabled(); }
+    function isMoonTransitLoggingEnabled() { return document.getElementById('logMoonTransits').checked && isLoggingEnabled(); }
+    function isAirportLoggingEnabled()     { return document.getElementById('logAirport').checked  && isLoggingEnabled(); }
+
+    // Load/save flight log to localStorage
+    function loadLog() {
+      const j = localStorage.getItem(LOG_STORAGE_KEY);
+      localFlightLog = j ? JSON.parse(j) : [];
+      renderFlightLog();
+    }
+    function saveLog() {
+      localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(localFlightLog));
+    }
+
+    // Determine aircraft type for display
+    function getAircraftType(ac) {
+      for (let key of ['mdl','desc','type','t']) {
+        if (ac[key] && ac[key] !== 'adsb_icao') return ac[key];
+      }
+      return 'Unknown';
+    }
+
+    // Initialize map
+    const map = L.map('map',{ zoomControl:false }).setView([HOME.lat, HOME.lon], 12);
+    const tileLayerDay   = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{ subdomains:'abcd', maxZoom:19, attribution:'© CARTO'}).addTo(map);
+    const tileLayerNight = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{ subdomains:'abcd', maxZoom:19, attribution:'© CARTO'});
+    L.control.zoom({ position:'bottomright' }).addTo(map);
+
+    // Layer groups
+    const layerAircraft       = L.layerGroup().addTo(map),
+          layerFlight         = L.layerGroup().addTo(map),
+          layerShadow         = L.layerGroup().addTo(map),
+          layerCur            = L.layerGroup().addTo(map),
+          layerAlert          = L.layerGroup().addTo(map),
+          ringGroup           = L.layerGroup().addTo(map),
+          layerSearchRadius   = L.layerGroup().addTo(map);
+    const alertCircle = L.circle([HOME.lat,HOME.lon],{ radius:10, color:'red', fill:true, fillColor:'red', fillOpacity:0.1, weight:2 }).addTo(map);
+
+    // VFR chart overlay via OpenAIP
+    map.createPane('chartOverlays');
+    map.getPane('chartOverlays').style.zIndex = 450;
+    const vfrLayer = L.tileLayer(
+      'https://api.tiles.openaip.net/api/data/openaip/{z}/{x}/{y}.png?apiKey=e487eb5d50a5c8f35379f2d71962a4f5',
+      { maxZoom:14, pane:'chartOverlays', attribution:'© OpenAIP.net VFR Chart', opacity:0.35 }
+    );
+    document.getElementById('toggleVFR').addEventListener('change', function(){
+      if(this.checked){ vfrLayer.setOpacity(parseInt(document.getElementById('vfrOpacity').value)/100); vfrLayer.addTo(map); }
+      else vfrLayer.remove();
+    });
+    document.getElementById('vfrOpacity').addEventListener('input', function(){
+      const val = parseInt(this.value);
+      document.getElementById('vfrOpacityValue').textContent = val + '%';
+      vfrLayer.setOpacity(val/100);
+    });
+
+    // Sidebar toggle
+    document.getElementById('toggleSidebarBtn').addEventListener('click', function(){
+      const controls = document.getElementById('controls'),
+            legend   = document.getElementById('legend'),
+            flog     = document.getElementById('flightLog');
+      controls.classList.toggle('hidden');
+      legend.classList.toggle('hidden');
+          // only show flight log if sidebar is open AND logging is enabled
+  const logCheckbox = document.getElementById('enableLogging'),
+        sidebarOpen = !controls.classList.contains('hidden');
+
+  if (sidebarOpen && logCheckbox.checked) {
+    flog.classList.remove('hidden');
+  } else {
+    flog.classList.add('hidden');
+  }
+      this.textContent = controls.classList.contains('hidden') ? 'Show' : 'Hide';
+    });
+
+    // Night mode toggle
+    let isNight = false;
+    document.getElementById('nightModeToggle').addEventListener('click', ()=>{
+      isNight = !isNight;
+      document.body.classList.toggle('night', isNight);
+      if(isNight){ tileLayerDay.remove(); tileLayerNight.addTo(map); }
+      else{ tileLayerNight.remove(); tileLayerDay.addTo(map); }
+      document.getElementById('nightModeToggle').innerText = isNight ? '☀️ Day Mode' : '🌙 Night Mode';
+    });
+
+    // Set home on right-click
+    map.on('contextmenu', e=>{
+      HOME.lat = e.latlng.lat; HOME.lon = e.latlng.lng;
+      document.getElementById('homeLat').value = HOME.lat.toFixed(7);
+      document.getElementById('homeLon').value = HOME.lon.toFixed(7);
+      map.setView([HOME.lat,HOME.lon]);
+      updateMap();
+    });
+
+    // Preset airport selection
+    document.getElementById('presetAirport').addEventListener('change', function(){
+      const code = this.value;
+      if(airportPresets[code]){
+        document.getElementById('airportLat').value = airportPresets[code].lat;
+        document.getElementById('airportLon').value = airportPresets[code].lon;
+        updateMap();
+      }
+    });
+
+    // Geolocation for home
+    document.getElementById('setHomeToDeviceBtn').addEventListener('click', ()=>{
+      if(!navigator.geolocation){ alert("Geolocation not supported."); return; }
+      navigator.geolocation.getCurrentPosition(pos=>{
+        HOME.lat = pos.coords.latitude; HOME.lon = pos.coords.longitude;
+        document.getElementById('homeLat').value = HOME.lat.toFixed(7);
+        document.getElementById('homeLon').value = HOME.lon.toFixed(7);
+        map.setView([HOME.lat,HOME.lon]); updateMap();
+      }, ()=>{ alert("Could not get your location."); });
+    });
+
+    // Draw search radius rings
+    function drawRings(){
+      ringGroup.clearLayers();
+      [1,2,5,10,20,50,100].forEach(m=>{
+        L.circle([HOME.lat,HOME.lon],{
+          radius: m * 1609.34,
+          color: 'blue', fill:false, weight:1, dashArray:'4 4'
+        }).addTo(ringGroup);
+      });
+    }
+
+    // Fetch aircraft via ADS-B Exchange API
+    const API_KEY='e462693263msh88bc8da3fa72b24p1589cajsnc84fccccf993';
+    async function fetchAircraft(lat, lon, mi){
+      try{
+        const resp = await fetch(`https://adsbexchange-com1.p.rapidapi.com/v2/lat/${lat}/lon/${lon}/dist/${mi}/`,{
+          headers:{ 'x-rapidapi-key':API_KEY,'x-rapidapi-host':'adsbexchange-com1.p.rapidapi.com' }
+        });
+        const j = await resp.json();
+        return j.ac || [];
+      }catch{
+        return [];
+      }
+    }
+
+    // Project shadow for sun/moon
+    function projectShadow(lat, lon, alt, tm, isSun){
+      const pos = isSun
+        ? SunCalc.getPosition(tm, HOME.lat, HOME.lon)
+        : SunCalc.getMoonPosition(tm, HOME.lat, HOME.lon);
+      if(pos.altitude <= 0) return null;
+      const d = alt / Math.tan(pos.altitude);
+      const R = 6378137;
+      const dist = (d * 0.3048) / R;
+      const φ1 = lat * Math.PI/180, λ1 = lon * Math.PI/180, br = pos.azimuth;
+      const φ2 = Math.asin(Math.sin(φ1)*Math.cos(dist) + Math.cos(φ1)*Math.sin(dist)*Math.cos(br));
+      const λ2 = λ1 + Math.atan2(Math.sin(br)*Math.sin(dist)*Math.cos(φ1), Math.cos(dist)-Math.sin(φ1)*Math.sin(φ2));
+      return [φ2*180/Math.PI, λ2*180/Math.PI];
+    }
+
+    // Render flight log list
+    function renderFlightLog() {
+      const list = document.getElementById('logList');
+      list.innerHTML = '';
+      localFlightLog.forEach(entry=>{
+        const height = entry.height_ft!==undefined ? `${entry.height_ft} ft` : '';
+        const bodyAlt = entry.body_altitude_deg ? `${entry.body_altitude_deg}°` : '';
+        const li = document.createElement('li');
+        li.className = 'log-entry';
+        li.innerHTML = `
+          <span>${entry.timestamp} – ${entry.flight} (${entry.type}) ${entry.event} @ ${entry.airport||''}</span>
+          <div class="log-tooltip">
+            <b>Flight:</b> ${entry.flight}<br>
+            <b>Type:</b> ${entry.type}<br>
+            <b>Event:</b> ${entry.event}<br>
+            <b>Airport:</b> ${entry.airport||''}<br>
+            <b>Height:</b> ${height}<br>
+            <b>${entry.event==='SUN TRANSIT'?'Sun':'Moon'} Altitude:</b> ${bodyAlt}<br>
+            <b>Time:</b> ${entry.timestamp}
+          </div>
+        `;
+        li.addEventListener('click', ()=> {
+          alert(
+            `Flight: ${entry.flight}\nType: ${entry.type}\nEvent: ${entry.event}`+
+            `\nAirport: ${entry.airport||''}\nHeight: ${height}`+
+            `\n${entry.event==='SUN TRANSIT'?'Sun':'Moon'} Altitude: ${bodyAlt}`+
+            `\nTime: ${entry.timestamp}`
+          );
+        });
+        list.appendChild(li);
+      });
+    }
+
+    // Download/clear log
+    document.getElementById('downloadLogBtn').addEventListener('click', ()=>{
+      if(!localFlightLog.length){ alert("No log entries to download."); return; }
+      let csv = "timestamp,flight,type,event,airport,height_ft,body_altitude_deg\n";
+      localFlightLog.slice().reverse().forEach(r=>{
+        csv += `${r.timestamp},${r.flight},${r.type},${r.event},${r.airport||''},${r.height_ft||''},${r.body_altitude_deg||''}\n`;
+      });
+      const blob = new Blob([csv],{type:"text/csv"});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = "flight_log.csv";
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 500);
+    });
+    document.getElementById('clearLogBtn').addEventListener('click', ()=>{
+      if(confirm("Clear all log entries?")){
+        localFlightLog = []; saveLog(); renderFlightLog();
+      }
+    });
+
+    // Main map update loop
+    async function updateMap(){
+      // Read current UI values
+      HOME.lat = +document.getElementById('homeLat').value;
+      HOME.lon = +document.getElementById('homeLon').value;
+      const searchMi = +document.getElementById('radiusInput').value;
+        document.getElementById('radiusValue').textContent = searchMi;
+      const alertM  = +document.getElementById('alertRadius').value;
+        document.getElementById('alertRadiusValue').textContent = alertM;
+      const showAc  = document.getElementById('toggleAircraft').checked;
+      const showFP = document.getElementById('toggleFlightPath').checked;
+      const showSunP  = document.getElementById('toggleSunShadowPath').checked;
+      const showMoonP = document.getElementById('toggleMoonShadowPath').checked;
+      const showCS = document.getElementById('toggleCurrentShadows').checked;
+      const showAl = document.getElementById('toggleAlerts').checked;
+      const aprtLat = +document.getElementById('airportLat').value;
+      const aprtLon = +document.getElementById('airportLon').value;
+      const aprtRad = +document.getElementById('airportRadius').value * 1609.34;
+        document.getElementById('airportRadiusValue').textContent =
+    document.getElementById('airportRadius').value;
+
+      // Clear layers
+      layerAircraft.clearLayers();
+      layerFlight.clearLayers();
+      layerShadow.clearLayers();
+      layerCur.clearLayers();
+      layerAlert.clearLayers();
+      ringGroup.clearLayers();
+      layerSearchRadius.clearLayers();
+
+      // Draw rings and search circle
+      drawRings();
+      L.circle([HOME.lat, HOME.lon], {
+        radius: searchMi * 1609.34,
+        color:'blue', fillColor:'blue', fillOpacity:0.1, weight:2
+      }).addTo(layerSearchRadius);
+
+      // Update alert circle
+      alertCircle.setLatLng([HOME.lat, HOME.lon]).setRadius(alertM);
+
+      // Airport geofence
+      L.circle([aprtLat, aprtLon], {
+        radius: aprtRad, color:'purple', fill:true, fillColor:'purple',
+        fillOpacity:0.18, weight:2, dashArray:'2 4'
+      }).addTo(layerSearchRadius);
+
+      // Time display
+      const now = new Date();
+      document.getElementById('timeDisplay').innerText = 'Time: ' + now.toLocaleTimeString();
+
+      // Sun/moon display
+      const sp = SunCalc.getPosition(now, HOME.lat, HOME.lon);
+      const mp = SunCalc.getMoonPosition(now, HOME.lat, HOME.lon);
+      document.getElementById('sunMoonDisplay').innerHTML =
+        `<span style="color:${sp.altitude>0?'green':'red'}">Sun:${(sp.altitude*180/Math.PI).toFixed(1)}°</span><br>` +
+        `<span style="color:${mp.altitude>0?'green':'red'}">Moon:${(mp.altitude*180/Math.PI).toFixed(1)}°</span>`;
+
+      // Fetch and filter aircraft
+      let acs = await fetchAircraft(HOME.lat, HOME.lon, searchMi);
+      acs = acs.filter(ac => !ac.Gnd && !ac.gnd && ((ac.alt_geo||ac.alt_baro)>0));
+      document.getElementById('countDisplay').innerText = 'Tracked Aircraft: ' + acs.length;
+
+      // Update history
+      const nowTs = Date.now();
+      acs.forEach(ac=>{
+        const h = ac.hex;
+        aircraftHistory[h] = aircraftHistory[h]||[];
+        aircraftHistory[h].push({ lat:+ac.lat, lon:+ac.lon, ts:nowTs });
+        aircraftHistory[h] = aircraftHistory[h].filter(p => nowTs - p.ts <= 300000);
+      });
+
+      // Prepare heatmap points
+      let heatPoints = [];
+
+      // Loop each aircraft
+      let playedAlertKeys = {};
+      acs.forEach(ac => {
+        const lat = +ac.lat, lon = +ac.lon;
+        const alt = +ac.alt_geo || +ac.alt_baro || 0;
+        const hdg = +ac.track || 0;
+        const spd = +ac.gs || 0;
+        const cs  = ac.flight || ac.hex;
+        const type= getAircraftType(ac);
+        let markerOpts = { radius:4, color:'blue', fillOpacity:0.8, weight:2 };
+        let markerHighlight = false;
+        let liveTransitMsg = null;
+
+        // Add to heatmap
+        heatPoints.push([lat, lon, 0.9]);
+
+        // For each shadow type
+        ['sun','moon'].forEach(typeShadow=>{
+          const showPath = (typeShadow==='sun'?showSunP:showMoonP);
+          if(!showPath) return;
+          const pts = [];
+          for(let t=0; t<=120; t++){
+            const tm = new Date(now.getTime()+t*1000);
+            const dNm = spd*(t/3600);
+            const p = projectShadow(
+              lat + (dNm/60)*Math.cos(hdg*Math.PI/180),
+              lon + (dNm/(60*Math.cos(lat*Math.PI/180)))*Math.sin(hdg*Math.PI/180),
+              alt, tm, typeShadow==='sun'
+            );
+            if(p) pts.push({ coord:p, time:t, datetime:tm });
+          }
+          if(pts.length>1){
+            // Draw polyline
+            L.polyline(pts.map(s=>s.coord), {
+              color: typeShadow==='sun'?'black':'gray',
+              dashArray:'4 4', weight:1, opacity:0.7
+            }).addTo(layerShadow);
+
+            // Detect transit entry points
+            const entryIndices = [];
+            for(let i=1; i<pts.length; i++){
+              const dPrev = map.distance(pts[i-1].coord, [HOME.lat,HOME.lon]);
+              const dCurr = map.distance(pts[i].coord,   [HOME.lat,HOME.lon]);
+              if(dPrev>alertM && dCurr<=alertM) entryIndices.push(i);
+            }
+            entryIndices.forEach(entryIdx=>{
+              // Find closest point
+              let minDist = Infinity, transitIdx = entryIdx;
+              for(let i=entryIdx; i<pts.length; i++){
+                const d = map.distance(pts[i].coord, [HOME.lat,HOME.lon]);
+                if(d<minDist){ minDist = d; transitIdx = i; }
+                if(i>entryIdx && d>minDist) break;
+              }
+              const highlightKey = cs + typeShadow + "_entry" + entryIdx;
+              markerHighlight = true;
+              liveTransitMsg = {
+                t: pts[entryIdx].time,
+                transitDelta: pts[transitIdx].time - pts[entryIdx].time,
+                typeShadow, key: highlightKey,
+                baseTime: Math.floor(Date.now()/1000),
+                entryTime: Math.floor(pts[entryIdx].datetime.getTime()/1000)
+              };
+
+              // Logging transit
+              const nowS = Math.floor(Date.now()/1000);
+              const lastLogged = shadowTransitLogState[ac.hex]?.[typeShadow] || 0;
+              if(((typeShadow==='sun' && isSunTransitLoggingEnabled()) ||
+                 (typeShadow==='moon'&& isMoonTransitLoggingEnabled())) &&
+                 (nowS - lastLogged) > 60) {
+                // Remove old entries
+                localFlightLog = localFlightLog.filter(e=>
+                  !(e.flight===cs && e.event === (typeShadow==='sun'?'SUN TRANSIT':'MOON TRANSIT'))
+                );
+                const ts = new Date().toLocaleTimeString();
+                const bodyAlt = (typeShadow==='sun'
+                  ? SunCalc.getPosition(pts[entryIdx].datetime, HOME.lat, HOME.lon).altitude
+                  : SunCalc.getMoonPosition(pts[entryIdx].datetime, HOME.lat, HOME.lon).altitude
+                ) * 180/Math.PI;
+                localFlightLog.unshift({
+                  timestamp: ts,
+                  flight: cs,
+                  type,
+                  event: typeShadow==='sun'?'SUN TRANSIT':'MOON TRANSIT',
+                  airport: '@ Home',
+                  height_ft: alt,
+                  body_altitude_deg: bodyAlt.toFixed(2)
+                });
+                saveLog(); renderFlightLog();
+                shadowTransitLogState[ac.hex] = shadowTransitLogState[ac.hex]||{};
+                shadowTransitLogState[ac.hex][typeShadow] = nowS;
+              }
+
+              // Alerts
+              if(!lastShadowAlertKeys[highlightKey]){
+                playedAlertKeys[highlightKey] = true;
+                if(showAl){
+                  try{ const audio = document.getElementById('alertAudio'); audio.pause(); audio.currentTime=0; audio.play(); }
+                  catch(e){}
+                  showOnscreenAlert(`⚠️ ${typeShadow.toUpperCase()} shadow for ${cs}: transit in ${pts[entryIdx].time}s`);
+                }
+              }
+            });
+          }
+        });
+
+        // Draw aircraft marker
+        let marker;
+        if(showAc){
+          if(markerHighlight){
+            markerOpts = { radius:7, color:'magenta', fillColor:'magenta', fillOpacity:0.9, weight:3, className:'pulse' };
+          }
+          marker = L.circleMarker([lat,lon], markerOpts)
+            .addTo(layerAircraft)
+            .bindTooltip(`<b>${cs}</b><br>Type:${type}<br>Alt:${alt} ft<br>Spd:${spd} kt<br>Hdg:${hdg}°`,{sticky:true});
+          marker.on('click', ()=>{
+            let msg = `Callsign: ${cs}\nType: ${type}\nAlt: ${alt} ft\nSpd: ${spd} kt\nHdg: ${hdg}°`;
+            msg += ac.r ? `\nReg: ${ac.r}` : '';
+            msg += ac.squawk ? `\nSquawk: ${ac.squawk}` : '';
+            msg += ac.dst ? `\nDst: ${ac.dst}` : '';
+            msg += ac.from ? `\nFrom: ${ac.from}` : '';
+            msg += ac.to   ? `\nTo: ${ac.to}` : '';
+            alert(msg);
+            // Draw history trail
+            if(window.historyLine) map.removeLayer(window.historyLine);
+            const trail = aircraftHistory[ac.hex] || [];
+            if(trail.length>1){
+              window.historyLine = L.polyline(trail.map(p=>[p.lat,p.lon]),{
+                color:'magenta', weight:3, opacity:0.8, dashArray:'6 6'
+              }).addTo(map);
+            }
+          });
+        }
+
+        // Flight path polyline
+        if(showFP){
+          const pts = [];
+          for(let t=0; t<=60; t+=5){
+            const dNm = spd*(t/3600);
+            const dLat = (dNm/60)*Math.cos(hdg*Math.PI/180);
+            const dLon = (dNm/(60*Math.cos(lat*Math.PI/180))) * Math.sin(hdg*Math.PI/180);
+            pts.push([lat+dLat, lon+dLon]);
+          }
+          let c='red';
+          if(alt<5000) c='green';
+          else if(alt<10000) c='yellow';
+          else if(alt<20000) c='orange';
+          L.polyline(pts,{color:c,weight:2,opacity:0.7}).addTo(layerFlight);
+        }
+
+        // Live transit tooltip update
+        if(markerHighlight && marker && liveTransitMsg){
+          const updatePopup = ()=>{
+            const elapsed = Math.floor(Date.now()/1000) - liveTransitMsg.baseTime;
+            const remaining = liveTransitMsg.transitDelta - elapsed;
+            if(remaining > 0){
+              marker.bindTooltip(
+                `<b>${cs}</b><br><span style="color:magenta;font-weight:bold">${liveTransitMsg.typeShadow} transit in ${remaining}s</span>`,
+                { permanent:true, direction:'top', className:'highlight-tooltip' }
+              ).openTooltip();
+              setTimeout(updatePopup, 1000);
+            } else {
+              marker.bindTooltip(
+                `<b>${cs}</b><br><span style="color:magenta;font-weight:bold">${liveTransitMsg.typeShadow} transit now!</span>`,
+                { permanent:true, direction:'top', className:'highlight-tooltip' }
+              ).openTooltip();
+              setTimeout(()=>marker.unbindTooltip(), 4000);
+            }
+          };
+          updatePopup();
+        }
+
+        // Current shadow positions
+        if(showCS){
+          ['sun','moon'].forEach(type=>{
+            const p = projectShadow(lat, lon, alt, now, type==='sun');
+            if(p){
+              L.circleMarker(p,{radius:3,color:type==='sun'?'black':'gray',fillOpacity:0.5}).addTo(layerCur);
+            }
+          });
+        }
+      });
+
+      // Save last alert keys
+      lastShadowAlertKeys = playedAlertKeys;
+
+      // --- HEATMAP LOGIC ---
+      if(heatmapEnabled){
+        if(heatLayer){ map.removeLayer(heatLayer); heatLayer=null; }
+        if(heatPoints.length >= 3){
+          heatLayer = L.heatLayer(heatPoints, {
+            radius:24, blur:20, maxZoom:10, minOpacity:0.3, max:1
+          }).addTo(map);
+        }
+      } else if(heatLayer){
+        map.removeLayer(heatLayer); heatLayer=null;
+      }
+
+      // Airport arrival/departure logging
+      const acsAirport = (await fetchAircraft(aprtLat,aprtLon,document.getElementById('airportRadius').value))
+        .filter(ac=>!ac.Gnd&&!ac.gnd&&((ac.alt_geo||ac.alt_baro)>0));
+      acsAirport.forEach(ac=>{
+        const hex = ac.hex, lat=+ac.lat, lon=+ac.lon;
+        const cs = ac.flight||hex, type = getAircraftType(ac);
+        const dist = map.distance([lat,lon],[aprtLat,aprtLon]);
+        const nowIn = dist <= aprtRad;
+        const alt = +ac.alt_geo||+ac.alt_baro||0;
+        const preset = document.getElementById('presetAirport').value;
+        const label = preset && airportPresets[preset]
+          ? airportPresets[preset].name
+          : `Custom [${aprtLat.toFixed(4)},${aprtLon.toFixed(4)}]`;
+        const prev = airportState[hex] || { in:false, alt:null, lastEvent:null };
+
+        if(!prev.in && nowIn && alt<1000 && prev.lastEvent!=="ARRIVAL"){
+          if(isAirportLoggingEnabled()){
+            localFlightLog = localFlightLog.filter(e=>e.flight!==cs);
+            localFlightLog.unshift({ timestamp:new Date().toLocaleTimeString(), flight:cs, type, event:"ARRIVAL", airport:label, height_ft:alt });
+            saveLog(); renderFlightLog();
+          }
+          airportState[hex]={in:nowIn,alt, lastEvent:"ARRIVAL"};
+          return;
+        }
+        if(prev.in && !nowIn && prev.lastEvent==="ARRIVAL" && alt>500){
+          if(isAirportLoggingEnabled()){
+            localFlightLog = localFlightLog.filter(e=>e.flight!==cs);
+            localFlightLog.unshift({ timestamp:new Date().toLocaleTimeString(), flight:cs, type, event:"DEPARTURE", airport:label, height_ft:alt });
+            saveLog(); renderFlightLog();
+          }
+          airportState[hex]={in:nowIn,alt, lastEvent:"DEPARTURE"};
+          return;
+        }
+        airportState[hex]={in:nowIn,alt, lastEvent:prev.lastEvent};
+      });
+    }
+
+    // Initial load
+    loadLog();
+    updateMap();
+    setInterval(updateMap, 3000);
+
+    // Attach UI change listeners
+    [
+      'homeLat','homeLon','radiusInput','alertRadius',
+      'toggleAircraft','toggleFlightPath','toggleSunShadowPath','toggleMoonShadowPath',
+      'toggleCurrentShadows','toggleAlerts','toggleVFR',
+      'airportLat','airportLon','airportRadius',
+      'enableLogging','logSunTransits','logMoonTransits','logAirport'
+    ].forEach(id=>{
+      document.getElementById(id).addEventListener('change', updateMap);
+    });
+
+    // Logging panel toggle
+    document.getElementById('enableLogging').addEventListener('change', function(){
+      document.getElementById('flightLog').classList.toggle('hidden', !this.checked);
+      if(this.checked) document.getElementById('logAirport').checked = true;
+    });
+
+    // Legend toggle
+    document.getElementById('legendToggleBtn').addEventListener('click', ()=>{
+      document.getElementById('legend').classList.toggle('visible');
+    });
+
+    // Heatmap toggle (redundant but ensures button works)
+    document.getElementById('heatmapToggleBtn').addEventListener('click', ()=>{
+      heatmapEnabled = !heatmapEnabled;
+      document.getElementById('heatmapToggleBtn').textContent = heatmapEnabled ? 'Hide Heatmap' : 'Heatmap';
+      updateMap();
+    });
+
+    // Ensure initial hidden states
+    window.addEventListener('DOMContentLoaded', ()=>{
+      document.getElementById('presetAirport').value = "YSRI";
+      document.getElementById('airportLat').value = "-33.5972964";
+      document.getElementById('airportLon').value = "150.7758435";
+      document.getElementById('controls').classList.add('hidden');
+      document.getElementById('legend').classList.remove('visible');
+      document.getElementById('flightLog').classList.add('hidden');
+      document.getElementById('toggleSidebarBtn').textContent = "Show";
+      document.getElementById('enableLogging').checked = false;
+      document.getElementById('logSunTransits').checked = false;
+      document.getElementById('logMoonTransits').checked = false;
+      document.getElementById('logAirport').checked = false;
+      document.getElementById('toggleVFR').checked = false;
+      document.getElementById('heatmapToggleBtn').textContent = "Heatmap";
+      setSystemDarkMode();
+        const radiusInput    = document.getElementById('radiusInput'),
+      radiusValue    = document.getElementById('radiusValue'),
+      alertRadius    = document.getElementById('alertRadius'),
+      alertRadiusVal = document.getElementById('alertRadiusValue');
+
+radiusInput.addEventListener('input', () => {
+  radiusValue.textContent = radiusInput.value;
+});
+alertRadius.addEventListener('input', () => {
+  alertRadiusVal.textContent = alertRadius.value;
+});
+         const airportRadius    = document.getElementById('airportRadius'),
+        airportRadiusVal = document.getElementById('airportRadiusValue');
+
+  airportRadius.addEventListener('input', () => {
+    airportRadiusVal.textContent = airportRadius.value;
+  });
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e=>{
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+      if(e.key==='n'||e.key==='N') document.getElementById('nightModeToggle').click();
+      if(e.key==='l'||e.key==='L') document.getElementById('flightLog').classList.toggle('hidden');
+    });
+
+    // System dark mode init
+    function setSystemDarkMode(){
+      const night = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.body.classList.toggle('night', night);
+      if(night){ tileLayerDay.remove(); tileLayerNight.addTo(map); }
+      else{ tileLayerNight.remove(); tileLayerDay.addTo(map); }
+      isNight = night;
+      document.getElementById('nightModeToggle').innerText = night ? '☀️ Day Mode' : '🌙 Night Mode';
+    }
+  </script>
+</body>
+</html>
