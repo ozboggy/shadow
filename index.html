@@ -71,6 +71,10 @@
       margin-bottom:8px; font-size:14px; display:flex;
       justify-content:space-between; align-items:center;
     }
+        /* hide the 3rd <hr> under #controls but preserve its spacing */
+#controls > hr:nth-of-type(3) {
+  visibility: hidden !important;
+}
     #controls input[type=range] { margin-left:4px; }
     #controls span { min-width:30px; text-align:right; }
     body.night #controls { background:rgba(24,26,34,0.93); color:#e3e7ef; }
@@ -104,10 +108,7 @@
       70%  { box-shadow:0 0 12px 12px rgba(240,0,255,0); }
       100% { box-shadow:0 0 0 0 rgba(240,0,255,0); }
     }
-    /* hide the 3rd <hr> under #controls but preserve its spacing */
-#controls > hr:nth-of-type(3) {
-  visibility: hidden !important;
-}
+
   </style>
 </head>
 <body>
