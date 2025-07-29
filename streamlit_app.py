@@ -16,8 +16,3 @@ with open("index.html", "r", encoding="utf-8") as f:
 # Embed the HTML/JS app in Streamlit
 components.html(html_content, height=800, scrolling=True)  
 
-st.markdown(
-    "---\n"
-    "**Instructions**: Place your `index.html` in the same directory as this script. "
-    "Install dependencies with `pip install streamlit` and run with `streamlit run streamlit_app.py`."
-)
