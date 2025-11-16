@@ -163,5 +163,236 @@ else:
         cs = safe_get(p, -1, "") or "N/A"
         aircraft_states.append([None, cs, None, None, None, lon, lat, None, vel, hdg, alt, None, None, None, None])
 
-# The rest of your processing, mapping, alerts, and log download code...
-# omitted for brevity
+# Process aircraft and calculate shadows
+alerts_triggered = []
+for state in aircraft_states:
+    try:
+        if data_source == "OpenSky":
+            icao24, callsign, origin_country, time_position, last_contact, lon, lat, baro_altitude, on_ground, velocity, true_track, vertical_rate, sensors, geo_altitude, squawk, spi, position_source = state[:17]
+            if lat is None or lon is None or velocity is None or true_track is None or baro_altitude is None:
+                continue
+            altitude_m = baro_altitude
+            heading_deg = true_track
+            speed_mps = velocity
+        else:
+            _, callsign, _, _, _, lon, lat, _, velocity, true_track, altitude_m = state[:11]
+            if lat is None or lon is None:
+                continue
+            heading_deg = true_track if true_track else 0
+            speed_mps = velocity if velocity else 0
+            altitude_m = altitude_m if altitude_m else 0
+
+        callsign = (callsign or "N/A").strip()
+
+        # Calculate sun position
+        sun_alt = get_altitude(lat, lon, selected_time)
+        if sun_alt <= 0:
+            continue  # No shadow if sun is below horizon
+        sun_az = get_azimuth(lat, lon, selected_time)
+
+        # Shadow offset from aircraft
+        shadow_distance_m = altitude_m / math.tan(math.radians(sun_alt))
+        shadow_bearing = (sun_az + 180) % 360
+
+        shadow_lat, shadow_lon = move_position(lat, lon, shadow_bearing, shadow_distance_m)
+
+        # Distance from shadow to target
+        dist_to_target = haversine(shadow_lat, shadow_lon, TARGET_LAT, TARGET_LON)
+
+        # Add aircraft marker
+        popup_text = f"{callsign}<br>Alt: {altitude_m:.0f}m<br>Spd: {speed_mps:.1f}m/s<br>Hdg: {heading_deg:.0f}°<br>Shadow: {dist_to_target:.0f}m from target"
+        folium.Marker(
+            (lat, lon),
+            icon=folium.Icon(color="blue", icon="plane", prefix="fa"),
+            popup=popup_text
+        ).add_to(marker_cluster)
+
+        # Add shadow marker
+        shadow_color = "green" if dist_to_target > ALERT_RADIUS_METERS else "orange"
+        folium.CircleMarker(
+            (shadow_lat, shadow_lon),
+            radius=3,
+            color=shadow_color,
+            fill=True,
+            fillColor=shadow_color,
+            fillOpacity=0.6,
+            popup=f"Shadow of {callsign}"
+        ).add_to(fmap)
+
+        # Draw line from aircraft to shadow
+        folium.PolyLine(
+            [(lat, lon), (shadow_lat, shadow_lon)],
+            color="gray",
+            weight=1,
+            opacity=0.5
+        ).add_to(fmap)
+
+        # Forecast future positions
+        forecast_points = []
+        alert_time = None
+
+        for i in range(1, int(FORECAST_DURATION_MINUTES * 60 / FORECAST_INTERVAL_SECONDS) + 1):
+            dt_seconds = i * FORECAST_INTERVAL_SECONDS
+            future_time = selected_time + timedelta(seconds=dt_seconds)
+
+            # Move aircraft
+            distance_traveled = speed_mps * dt_seconds
+            future_lat, future_lon = move_position(lat, lon, heading_deg, distance_traveled)
+
+            # Recalculate sun position at future time
+            future_sun_alt = get_altitude(future_lat, future_lon, future_time)
+            if future_sun_alt <= 0:
+                continue
+            future_sun_az = get_azimuth(future_lat, future_lon, future_time)
+
+            # Future shadow position
+            future_shadow_dist = altitude_m / math.tan(math.radians(future_sun_alt))
+            future_shadow_bearing = (future_sun_az + 180) % 360
+            future_shadow_lat, future_shadow_lon = move_position(
+                future_lat, future_lon, future_shadow_bearing, future_shadow_dist
+            )
+
+            forecast_points.append((future_shadow_lat, future_shadow_lon))
+
+            # Check if shadow passes near target
+            future_dist = haversine(future_shadow_lat, future_shadow_lon, TARGET_LAT, TARGET_LON)
+            if future_dist < ALERT_RADIUS_METERS and alert_time is None:
+                alert_time = dt_seconds
+                alerts_triggered.append({
+                    "callsign": callsign,
+                    "time_until": dt_seconds,
+                    "lat": future_shadow_lat,
+                    "lon": future_shadow_lon
+                })
+
+                # Log alert
+                with open(log_file, "a", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        datetime.utcnow().isoformat(),
+                        callsign,
+                        dt_seconds,
+                        future_shadow_lat,
+                        future_shadow_lon
+                    ])
+
+                # Send pushover notification
+                send_pushover(
+                    "Aircraft Shadow Alert!",
+                    f"{callsign} shadow will pass within {ALERT_RADIUS_METERS}m in {dt_seconds}s"
+                )
+
+        # Draw forecast path
+        if forecast_points:
+            folium.PolyLine(
+                forecast_points,
+                color="purple" if alert_time else "lightblue",
+                weight=2,
+                opacity=0.7,
+                popup=f"{callsign} forecast"
+            ).add_to(fmap)
+
+            # Mark alert point if exists
+            if alert_time:
+                folium.CircleMarker(
+                    forecast_points[int(alert_time / FORECAST_INTERVAL_SECONDS) - 1],
+                    radius=5,
+                    color="red",
+                    fill=True,
+                    fillColor="red",
+                    fillOpacity=0.8,
+                    popup=f"{callsign} alert in {alert_time}s"
+                ).add_to(fmap)
+
+    except Exception as e:
+        st.sidebar.error(f"Error processing aircraft: {e}")
+        continue
+
+# Draw target radius
+folium.Circle(
+    (TARGET_LAT, TARGET_LON),
+    radius=ALERT_RADIUS_METERS,
+    color="red",
+    fill=True,
+    fillColor="red",
+    fillOpacity=0.2,
+    popup=f"Alert radius: {ALERT_RADIUS_METERS}m"
+).add_to(fmap)
+
+# Display map
+map_output = st_folium(fmap, width=1400, height=700, key="map")
+
+# Update map state if user interacted
+if map_output and map_output.get("zoom"):
+    st.session_state.zoom = map_output["zoom"]
+if map_output and map_output.get("center"):
+    st.session_state.center = map_output["center"]
+
+# Display alerts
+if alerts_triggered:
+    st.warning(f"⚠️ {len(alerts_triggered)} shadow alert(s)!")
+    for alert in alerts_triggered:
+        st.error(f"🎯 **{alert['callsign']}** shadow will pass target in **{alert['time_until']}** seconds!")
+else:
+    st.success("✅ No shadow alerts in the forecast period.")
+
+# Statistics
+st.subheader("📊 Statistics")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Aircraft Tracked", len(aircraft_states))
+with col2:
+    st.metric("Shadows Visible", sum(1 for _ in aircraft_states))
+with col3:
+    st.metric("Active Alerts", len(alerts_triggered))
+
+# Log viewer
+st.subheader("📋 Alert Log")
+if os.path.exists(log_file):
+    try:
+        df = pd.read_csv(log_file)
+        if not df.empty:
+            st.dataframe(df.tail(20), use_container_width=True)
+
+            # Download button
+            csv_data = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Full Log",
+                data=csv_data,
+                file_name="aircraft_shadow_alerts.csv",
+                mime="text/csv"
+            )
+
+            # Visualization
+            if len(df) > 1:
+                st.subheader("📈 Alert Timeline")
+                df['Time UTC'] = pd.to_datetime(df['Time UTC'])
+                fig = px.scatter(
+                    df,
+                    x='Time UTC',
+                    y='Callsign',
+                    size='Time Until Alert (sec)',
+                    color='Callsign',
+                    title='Shadow Alerts Over Time',
+                    hover_data=['Lat', 'Lon']
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No alerts logged yet.")
+    except Exception as e:
+        st.error(f"Error reading log: {e}")
+else:
+    st.info("No alert log file found.")
+
+# Settings info
+st.sidebar.subheader("⚙️ Settings")
+st.sidebar.info(f"""
+**Target Location:**
+Lat: {TARGET_LAT}
+Lon: {TARGET_LON}
+
+**Search Radius:** {RADIUS_KM} km
+**Alert Radius:** {ALERT_RADIUS_METERS} m
+**Forecast Duration:** {FORECAST_DURATION_MINUTES} min
+**Forecast Interval:** {FORECAST_INTERVAL_SECONDS} sec
+""")
